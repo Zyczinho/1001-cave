@@ -2,7 +2,7 @@
 
 An independent product studio for small, concrete tools that solve everyday problems.
 
-This repository is the canonical source for the 1001 CAVE website. Work done in Claude Code, Codex, or another editor should begin from the latest `main` branch and end with a committed, pushed change.
+This repository is the canonical source for the 1001 CAVE website. Work done in Claude Code, Codex, or another editor should begin from the latest `origin/main` and end with a pushed branch and a pull request to `main`.
 
 ## Current version
 
@@ -17,7 +17,10 @@ This repository is the canonical source for the 1001 CAVE website. Work done in 
 .
 ├── .openai/hosting.json   # ChatGPT Sites hosting configuration
 ├── dist/
-│   ├── assets/            # Logo and local fonts
+│   ├── assets/
+│   │   ├── logo-1001-cave-transparent.png
+│   │   ├── logo-1001-cave.png
+│   │   └── *.otf          # Local fonts
 │   ├── index.html
 │   ├── script.js
 │   └── styles.css
@@ -44,12 +47,15 @@ py -m http.server 4173 --directory dist
 
 ## Working rule
 
-Use GitHub `main` as the single source of truth.
+GitHub `origin/main` is the single source of truth. Changes reach it through pull requests.
 
-1. Pull before editing: `git pull --rebase origin main`
-2. Make and test one coherent change.
-3. Commit it with a clear message.
-4. Push it: `git push origin main`
+1. Fetch before editing: `git fetch origin`
+2. Work on a `claude/*` or `codex/*` branch based on the latest `origin/main`.
+3. Make and test one coherent change, committed as one logical commit.
+4. Push the branch: `git push -u origin HEAD`
+5. Open a pull request to `main`.
+
+Never force push. Do not push directly to `main` (`HEAD:main`) without the owner's explicit approval.
 
 Avoid editing the project concurrently in two tools. Finish and push one session before opening the next.
 

@@ -2,7 +2,13 @@
 
 ## Repository workflow
 
-Treat GitHub `main` as the canonical version. Pull with rebase before edits, verify the result locally, commit only the intended files, and push before handing the project back.
+Treat GitHub `origin/main` as the single source of truth.
+
+- Run `git fetch origin` before edits and base the work on the latest `origin/main`.
+- Work on a `codex/*` branch, one logical commit per task.
+- Verify the result locally and commit only the intended files.
+- Push with `git push -u origin HEAD` and open a pull request to `main` before handing the project back.
+- Never force push. Never push `HEAD:main` without the owner's explicit approval.
 
 ## Project boundaries
 

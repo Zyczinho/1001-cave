@@ -2,7 +2,12 @@
 
 ## Source of truth
 
-GitHub `main` is canonical. Always run `git pull --rebase origin main` before editing and push the completed commit before ending the session.
+GitHub `origin/main` is the single source of truth.
+
+- Run `git fetch origin` before editing and make sure the branch is based on the latest `origin/main`.
+- Work on a `claude/*` branch, one logical commit per task.
+- Push with `git push -u origin HEAD` and open a pull request to `main`.
+- Never force push. Never push `HEAD:main` without the owner's explicit approval.
 
 ## Architecture
 
