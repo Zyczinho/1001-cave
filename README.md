@@ -7,9 +7,9 @@ This repository is the canonical source for the 1001 CAVE website. Work done in 
 ## Current version
 
 - Website: static HTML, CSS, and JavaScript
-- Status: private MVP, version 0.4
-- Sections: Home, Foundation, Products, Contact
-- First product in development: JAKUB
+- Status: private MVP, version 0.5
+- Sections: Home, Foundation, Our Products, Contact
+- First product in development: physical NFC commitment object (name in progress)
 
 ## Structure
 
