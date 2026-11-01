@@ -8,6 +8,9 @@ GitHub `origin/main` is the single source of truth.
 - Work on a `claude/*` branch, one logical commit per task.
 - Push with `git push -u origin HEAD` and open a pull request to `main`.
 - Never force push. Never push `HEAD:main` without the owner's explicit approval.
+- Never leave a completed change only on the local computer. Push the branch before ending the session.
+- If the session limit is near, push a clearly marked checkpoint branch; do not merge incomplete work.
+- Do not edit the same feature concurrently with Codex. GitHub is the handoff layer.
 
 ## Architecture
 
@@ -16,6 +19,12 @@ GitHub `origin/main` is the single source of truth.
 - There is no build step and no dependency installation.
 - `.openai/hosting.json` connects the same source to the existing ChatGPT Site.
 - Do not introduce a framework, package manager, or build system unless the task genuinely requires it and the owner approves the change.
+
+## Deployment
+
+- `.github/workflows/deploy-pages.yml` deploys `dist/` after updates reach `main`.
+- GitHub Pages is the independent deployment path and needs one-time enablement in repository settings.
+- The existing ChatGPT Site is only a convenience mirror. Future delivery must not depend on ChatGPT Work.
 
 ## Design direction
 

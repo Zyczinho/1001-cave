@@ -9,6 +9,9 @@ Treat GitHub `origin/main` as the single source of truth.
 - Verify the result locally and commit only the intended files.
 - Push with `git push -u origin HEAD` and open a pull request to `main` before handing the project back.
 - Never force push. Never push `HEAD:main` without the owner's explicit approval.
+- Never leave a completed change only in the Work filesystem. Push the branch before ending the session.
+- If the session limit is near, push a clearly marked checkpoint branch; do not merge incomplete work.
+- Do not edit the same feature concurrently with Claude Code. GitHub is the handoff layer.
 
 ## Project boundaries
 
@@ -16,6 +19,12 @@ Treat GitHub `origin/main` as the single source of truth.
 - The site is static HTML, CSS, and JavaScript with no build step.
 - Keep `.openai/hosting.json`; it identifies the existing ChatGPT Sites project.
 - Do not add a framework or dependency stack without an explicit reason and owner approval.
+
+## Deployment
+
+- `.github/workflows/deploy-pages.yml` deploys `dist/` after updates reach `main`.
+- GitHub Pages is the independent deployment path and needs one-time enablement in repository settings.
+- The existing ChatGPT Site is only a convenience mirror. Future delivery must not depend on ChatGPT Work.
 
 ## Product and visual rules
 
