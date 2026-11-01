@@ -68,6 +68,8 @@ Avoid editing the project concurrently in two tools. Finish and push one session
 
 ## Deployment
 
+Production: [https://1001-cave.jakublojek.workers.dev](https://1001-cave.jakublojek.workers.dev)
+
 Cloudflare Workers Builds is the independent production path. `wrangler.jsonc` publishes `dist/` as static assets. Cloudflare watches `main` and runs `npx wrangler deploy` automatically after every merged change; no build command is required.
 
 The existing ChatGPT Site can remain as a convenience mirror, but GitHub is the canonical source and future publishing does not depend on ChatGPT Work.
