@@ -59,9 +59,17 @@ Never force push. Do not push directly to `main` (`HEAD:main`) without the owner
 
 Avoid editing the project concurrently in two tools. Finish and push one session before opening the next.
 
+## Continuity between agents
+
+- GitHub is the handoff layer. Never treat a ChatGPT Work workspace, a Claude session or one computer as the only copy of finished work.
+- Before ending a session, push every coherent change. If time is running out, push a clearly named checkpoint branch and state that it is not ready to merge.
+- The next agent starts from the newest `origin/main`, or from the named checkpoint branch when continuing unfinished work.
+
 ## Deployment
 
-The current ChatGPT Site reads the static files from `dist/`. Publishing the Site and pushing this repository are separate operations, so every published change must also be committed here.
+`.github/workflows/deploy-pages.yml` deploys `dist/` automatically after every update to `main`. GitHub Pages must be enabled once in repository settings with **GitHub Actions** as the source. Keep the repository private unless the owner explicitly decides otherwise; private-repository Pages requires a GitHub plan that supports it.
+
+The existing ChatGPT Site can remain as a convenience mirror, but GitHub is the canonical source and future publishing must not depend on ChatGPT Work.
 
 ## Brand guardrails
 
