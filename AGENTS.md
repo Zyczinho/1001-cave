@@ -22,9 +22,9 @@ Treat GitHub `origin/main` as the single source of truth.
 
 ## Deployment
 
-- `.github/workflows/deploy-pages.yml` deploys `dist/` after updates reach `main`.
-- GitHub Pages is the independent deployment path and needs one-time enablement in repository settings.
-- The existing ChatGPT Site is only a convenience mirror. Future delivery must not depend on ChatGPT Work.
+- Cloudflare Workers Builds watches `main` and runs `npx wrangler deploy` after merged changes.
+- `wrangler.jsonc` publishes `dist/` as static assets; keep this path aligned with the deployable site.
+- The existing ChatGPT Site is only a convenience mirror. Future delivery does not depend on ChatGPT Work.
 
 ## Product and visual rules
 

@@ -24,6 +24,7 @@ This repository is the canonical source for the 1001 CAVE website. Work done in 
 │   ├── index.html
 │   ├── script.js
 │   └── styles.css
+├── wrangler.jsonc          # Cloudflare Workers static-assets configuration
 ├── AGENTS.md              # Instructions for Codex
 ├── CLAUDE.md              # Instructions for Claude Code
 └── README.md
@@ -67,9 +68,9 @@ Avoid editing the project concurrently in two tools. Finish and push one session
 
 ## Deployment
 
-`.github/workflows/deploy-pages.yml` deploys `dist/` automatically after every update to `main`. GitHub Pages must be enabled once in repository settings with **GitHub Actions** as the source. Keep the repository private unless the owner explicitly decides otherwise; private-repository Pages requires a GitHub plan that supports it.
+Cloudflare Workers Builds is the independent production path. `wrangler.jsonc` publishes `dist/` as static assets. Cloudflare watches `main` and runs `npx wrangler deploy` automatically after every merged change; no build command is required.
 
-The existing ChatGPT Site can remain as a convenience mirror, but GitHub is the canonical source and future publishing must not depend on ChatGPT Work.
+The existing ChatGPT Site can remain as a convenience mirror, but GitHub is the canonical source and future publishing does not depend on ChatGPT Work.
 
 ## Brand guardrails
 
