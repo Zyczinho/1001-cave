@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'"><title>Ratchet</title><link rel="stylesheet" href="style.css"></head>
+<body class="panel-body">
+  <main class="shell" id="app">
+    <header class="header" id="dragbar">
+      <div class="brandmark"><span class="mini-head"><i></i><i></i><b></b></span></div>
+      <div class="brandcopy"><div class="brand-name">ratchet<span class="brand-spark">✦</span></div><div class="brand-subtitle">TWÓJ MAŁY KOORDYNATOR</div></div>
+      <span class="live-tag"><span class="live-dot"></span> LOKALNIE</span>
+      <div class="panel-menu-wrap">
+        <button class="icon-btn menu-toggle" id="appMenuToggle" type="button" aria-expanded="false" aria-controls="appMenu" aria-label="Menu Ratcheta" title="Menu Ratcheta"><span data-icon="more" data-size="20"></span></button>
+        <div class="app-menu" id="appMenu" hidden>
+          <button type="button" data-action="show-settings"><span data-icon="settings"></span> Ustawienia</button>
+          <button type="button" data-action="update-check"><span data-icon="refresh"></span> Sprawdź aktualizacje</button>
+          <button type="button" data-action="hide-panel"><span data-icon="minimize"></span> Ukryj panel</button>
+          <div class="menu-rule"></div>
+          <button type="button" class="menu-danger" data-action="quit"><span data-icon="power"></span> Zakończ Ratchet</button>
+        </div>
+      </div>
+      <button class="icon-btn close-btn" id="closePanel" title="Ukryj panel (Ratchet dalej pracuje)" aria-label="Ukryj panel"><span data-icon="x"></span></button>
+    </header>
+    <section class="topline"><div><div class="tiny-label">TERAZ</div><div class="clock" id="clock">--:--</div></div><div class="date-chip" id="dateLabel">—</div></section>
+    <section class="status-strip" id="statusStrip"><div class="status-box"><span class="s-dot blue"></span> Ładowanie...</div></section>
+    <nav class="tabs" aria-label="Sekcje">
+      <button data-tab="today" class="tab active"><span data-icon="clock"></span> Dziś</button>
+      <button data-tab="agents" class="tab"><span data-icon="bot"></span> Agenci</button>
+      <button data-tab="links" class="tab"><span data-icon="external"></span> Skróty</button>
+      <button data-tab="settings" class="tab"><span data-icon="settings"></span> Ustawienia</button>
+    </nav>
+    <section id="view" class="view"></section>
+    <div class="footer"><span><span class="dot pulse"></span> Ratchet 0.2.5 · 1001 CAVE</span><span>Ctrl + Shift + R</span></div>
+    <div id="toast" role="status"></div>
+    <div class="overlay" id="modal" hidden><div class="modal-card"><div class="modal-head"><h2 id="modalTitle">Nowy element</h2><button class="icon-btn" data-action="modal-close" aria-label="Zamknij formularz"><span data-icon="x"></span></button></div><form id="itemForm"></form></div></div>
+  </main>
+  <script src="browser-bridge.js"></script><script src="icons.js"></script><script src="panel.js"></script>
+</body></html>
