@@ -1,4 +1,4 @@
-# Executed OUTSIDE the running server, after all incoming files are SHA-256 checked.
+﻿# Executed OUTSIDE the running server, after all incoming files are SHA-256 checked.
 # Applies a verified update with snapshot/rollback and a mandatory localhost smoke test.
 param(
   [Parameter(Mandatory=$true)][string]$AppRoot,
