@@ -1,0 +1,10 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {compareVersion,validateManifest,sha256}=require('../updater.cjs');
+test('semver comparison',()=>{assert.equal(compareVersion('0.2.4','0.2.3'),1);assert.equal(compareVersion('0.2.3','0.2.3'),0);assert.equal(compareVersion('0.2.2','0.2.3'),-1);assert.equal(compareVersion('1.0.0','0.99.99'),1);});
+test('manifest rejects traversal',()=>{assert.throws(()=>validateManifest({version:'0.2.4',files:[{path:'../secrets.txt',sha256:'a'.repeat(64)}]}));});
+test('manifest rejects duplicate files',()=>{assert.throws(()=>validateManifest({version:'0.2.4',files:[{path:'ui/panel.js',sha256:'a'.repeat(64)},{path:'ui/panel.js',sha256:'b'.repeat(64)}]}));});
+test('manifest requires SHA256',()=>{assert.throws(()=>validateManifest({version:'0.2.4',files:[{path:'ui/panel.js',sha256:'abc'}]}));});
+test('manifest accepts correct files',()=>{assert.equal(validateManifest({version:'0.2.4',files:[{path:'ui/panel.js',sha256:'a'.repeat(64)}]}).files.length,1);});
+test('sha256 matches reference digest',()=>assert.equal(sha256(Buffer.from('abc')),'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'));
