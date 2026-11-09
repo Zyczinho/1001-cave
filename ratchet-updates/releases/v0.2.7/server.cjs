@@ -226,7 +226,7 @@ function main(){
   read();checkSchedule();
   appServer=http.createServer((req,res)=>{appRequest(req,res).catch(e=>fail(res,e.message,500));});
   appServer.on('error',e=>{console.error('[ratchet] Server:',e.message);process.exit(1);});
-  appServer.listen(PORT,'127.0.0.1',()=>console.log('Ratchet 0.2.6 start: http://127.0.0.1:'+PORT));
+  appServer.listen(PORT,'127.0.0.1',()=>console.log('Ratchet 0.2.7 start: http://127.0.0.1:'+PORT));
   if(process.env.RATCHET_DISABLE_HOOKS!=='1')startHookServer();
   setInterval(checkSchedule,15000);
   refreshGithub(true).catch(e=>console.warn('GitHub:',e.message));

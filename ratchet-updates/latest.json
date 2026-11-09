@@ -1,11 +1,11 @@
 {
   "channel": "stable",
   "version": "0.2.7",
-  "notes": "Stabilność: start bez Terminala, automatyczne wznowienie serwera, jeden panel, naprawa offline i rollback po błędzie uruchomienia. Testy Windows wymagane.",
+  "notes": "Poprawki stabilności 0.2.7: serwer działający bez Terminala, samonaprawa, jedno okno, natywne zamykanie, kopie i rollback. Wymaga testu Windows.",
   "files": [
     {
       "path": "README.md",
-      "sha256": "eef5548c23b246350ff33b34f6711c6374ab6f110740444ac718c4e40b31e710"
+      "sha256": "6cad6e99cdbb7db1a5d81f2fbc957e01735b482492c69aa65422e956857a646c"
     },
     {
       "path": "Ratchet-Backend.ps1",
@@ -13,7 +13,7 @@
     },
     {
       "path": "Ratchet-Kuleczka.ps1",
-      "sha256": "7c013175c96b5eadedacf42473d4997d78c53f5b9a319f00f37755811de90c42"
+      "sha256": "35cc283de5d7f94e0ae21d5c2f0c5d6eb66bcedc25b56996315814709841ecce"
     },
     {
       "path": "Uruchom-Ratchet-Bez-Electron.ps1",
@@ -21,7 +21,7 @@
     },
     {
       "path": "server.cjs",
-      "sha256": "9725bf7e401f8bb5508411f5f28744f681717153ae4471d6a3c60e79ad7fbe1d"
+      "sha256": "f3a919f21f7d7dd1d36433f406079756fdd441911adc889ec863c55a016fd291"
     },
     {
       "path": "updater.cjs",

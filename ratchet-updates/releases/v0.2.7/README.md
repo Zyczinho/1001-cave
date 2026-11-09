@@ -1,104 +1,49 @@
-# Ratchet 0.2.7 — jedno okno, mniejszy panel, stała instalacja
+# Ratchet 0.2.7 — sprint stabilności (1001 CAVE)
 
-Ratchet to prywatny desktopowy pomocnik dla Windows: plan dnia, szybkie linki i foldery, sesje agentów AI, statusy CI z publicznych repozytoriów GitHub. Działa lokalnie bez Electron i bez npm install. Wymaga Node.js (jest już na komputerze, na którym testowano wcześniejsze wersje Ratcheta).
+Ratchet jest małym asystentem Windows: plan dnia, skróty do stron i folderów, monitoring sesji agentów oraz wybrane informacje z GitHuba. Ta wersja koncentruje się na stabilności; bez Electron i bez `npm install`. Wymagany jest lokalnie Node.js.
 
-## Ważne: to jest jednorazowa migracja
+## Aktualizacja z wersji 0.2.4–0.2.5 (zalecana)
 
-1. **Wyodrębnij wszystkie pliki** ZIP do nowego folderu. Nie uruchamiaj plików z widoku ZIP.
-2. Zamknij stare okna panelu Ratchet (jeśli pozostały z v0.2.2).
-3. Kliknij **`ZAINSTALUJ-RAZ.cmd`**. Skrypt zamknie lokalną starszą wersję, skopiuje Ratcheta do stałego folderu użytkownika i utworzy skrót `Ratchet` na Pulpicie.
-4. **Od teraz uruchamiaj tylko skrót `Ratchet` na Pulpicie.** Nie uruchamiaj starego `URUCHOM-RATCHET.cmd` w folderze starej wersji.
-5. Gdy potwierdzisz działanie nowej wersji, możesz usunąć stare foldery `ratchet-v0.2*` i ZIP-y, **ale nie usuwaj** `%APPDATA%\Ratchet\ratchet.json`.
+Jeśli Ratchet jest zainstalowany w `%LOCALAPPDATA%\Ratchet\app`, uruchom jego zwykły skrót, wybierz **Ustawienia → Sprawdź aktualizacje → Zainstaluj 0.2.7**. Kanał jest w prywatnym repozytorium `Zyczinho/1001-cave`, gałąź `ratchet-updates`. Obecna wersja aktualizatora korzysta z jednorazowego logowania do GitHub CLI (`gh auth login`) w przypadku prywatnego repo. Nie trzeba zmieniać widoczności repo ani ponownie rozpakowywać ZIP-ów.
 
-Stała instalacja: `%LOCALAPPDATA%\Ratchet\app`.
-Dane: `%APPDATA%\Ratchet\ratchet.json` (poza folderem aplikacji).
+**Ważne przy pierwszym przejściu:** stara wersja aktualizatora (0.2.4) uruchamia aktualizację według swoich dotychczasowych zasad. Test po restarcie i automatyczny rollback są częścią nowego aktualizatora 0.2.7 i działają dla kolejnych wersji. Nie zamykaj Ratcheta podczas podmiany plików. W przypadku pierwszej awarii sprawdź `%LOCALAPPDATA%\Ratchet\update-log.txt`.
 
-## Co naprawiono
+Jeśli Ratchet nie jest już zainstalowany, uruchom `ZAINSTALUJ-RAZ.cmd` z kompletnego rozpakowanego katalogu. Utworzy jeden skrót na Pulpicie i zapisze aplikację w `%LOCALAPPDATA%\Ratchet\app`.
 
-- **Pojedyncza kuleczka:** nazwany mutex Windows zapobiega uruchomieniu kolejnych instancji.
-- **Pojedynczy panel:** Ratchet szuka otwartego okna Edge o tytule `Ratchet`; jeśli je znajdzie, aktywuje je zamiast otwierać nowe.
-- **Ochrona przed szybkim klikaniem:** limit prób tworzenia nowego okna przez 5 sekund.
-- **Kompaktowe okno:** wymuszony początkowy rozmiar około 480 × 720 px (dopasowywany do ekranu), wygląd CSS oparty na wersji 0.2.1.
-- **Wygodny start:** skrót Windows uruchamia panel i kuleczkę bez terminala.
-- **Zamykanie:** `⋯ → Zakończ Ratchet` i osobny przycisk w Ustawieniach.
-- **Przygotowany updater:** `⋯ → Sprawdź aktualizacje`, z SHA-256, kopią zapasową i restartem bez ręcznego rozpakowywania.
+## Naprawione źródła problemów
 
-## Aktualizacje z prywatnego GitHuba
+- **Jeden panel i jedna kuleczka.** Orb ma międzyprocesowy mutex; drugie uruchomienie wysyła istniejącej instancji żądanie otwarcia panelu. Okno Edge wyszukiwane jest po faktycznych uchwytach Windows, nie wyłącznie po `Process.MainWindowHandle`.
+- **Bez Terminala.** `URUCHOM-RATCHET.cmd` startuje ukryty proces niezależny od otwartego CMD. Skrót instalacyjny również uruchamia Ratcheta w tle.
+- **Nadzór nad serwerem.** Kuleczka monitoruje `127.0.0.1:47823`; gdy serwer przestanie działać, próbuje go wznowić. Międzyprocesowy mutex zapobiega równoczesnemu uruchomieniu kilku serwerów.
+- **Własne menu.** Prawy klik na kuleczce lub ikonie przy zegarze pozwala ją zamknąć również wtedy, gdy localhost nie działa; istnieje też opcja ponownego uruchomienia serwera.
+- **Bezpieczny hitbox.** Okrągły `Form.Region` nie obejmuje niewidzialnych marginesów; przy błędzie tworzenia regionu kuleczka jest ukrywana.
+- **Aktualizator z testem i rollbackiem.** Od tej wersji: SHA-256 przed zastosowaniem plików, backup, restart, sprawdzenie `/api/ping` z oczekiwanym numerem wersji oraz automatyczne przywrócenie plików przy niepowodzeniu.
+- **Status offline.** Etykieta `LOKALNIE` w panelu zmienia się na `BRAK POŁĄCZENIA`, gdy zapytania do backendu przestają działać.
+- **Dane użytkownika poza aplikacją.** Profil jest w `%APPDATA%\Ratchet\ratchet.json`; przy zapisie tworzona jest kopia `.bak`. Instalowanie i usuwanie katalogu aplikacji nie powinno kasować danych użytkownika.
 
-Kanał jest zapisany w repozytorium prywatnym `Zyczinho/1001-cave`, gałąź `ratchet-updates`, katalog `ratchet-updates/`. Nie trzeba upubliczniać repozytorium ani podawać tokenu Ratchetowi. Ratchet najpierw próbuje publiczny HTTPS, a gdy GitHub zwraca 404, korzysta z **GitHub CLI (`gh`)** i sesji, do której użytkownik zalogował się na swoim Windowsie.
+## Testy
 
-- Jednorazowo: zainstaluj GitHub CLI (np. `winget install --id GitHub.cli`) i zaloguj się komendą `gh auth login`, o ile jeszcze tego nie zrobiłeś. Wybierz konto z dostępem do `Zyczinho/1001-cave`.
-- Potem: **⋯ → Sprawdź aktualizacje → Zainstaluj**. Ratchet pobiera wyłącznie opublikowaną wersję z kontrolowanego kanału, sprawdza SHA-256, tworzy kopię, zatrzymuje serwer, podmienia zmodyfikowane pliki i uruchamia się ponownie.
-- Obecnie kanał wskazuje bazową wersję 0.2.6, więc poprawna odpowiedź to **brak nowszej wersji**. Kolejne wersje trzeba najpierw opublikować na gałęzi `ratchet-updates`. Do tego momentu przycisk nie pobierze żadnych plików.
-- Log aktualizacji: `%LOCALAPPDATA%\Ratchet\update-log.txt`.
+Automatycznie: `node --test tests/*.test.cjs` — 34 testy (logika, serwer HTTP, zapisywanie danych, autoryzacja żądań, statyczne kontrole PowerShell). Kontrola składni JS: `node --check`. Testy zostały wykonane w środowisku Linux — nie zastępują testu natywnych okien na Windowsie.
 
-## Aktualizacje bez GitHub CLI
+**Testy manualne Windows są obowiązkowe przed uznaniem wydania za w pełni stabilne:**
 
-Alternatywnie można w przyszłości opublikować osobny **publiczny kanał dystrybucji** bez prywatnych plików projektu. Ratchet będzie mógł wtedy korzystać z HTTPS bez logowania. Tego nie należy robić przez zmianę widoczności istniejącego prywatnego repozytorium.
+1. Uruchom Ratcheta ze skrótu, zamknij każdy otwarty Terminal. `/api/ping` nadal zwraca `ok:true` oraz `version:0.2.7`.
+2. Kliknij kuleczkę szybko pięć razy: pozostaje jedno okno panelu.
+3. Klikaj w pulpit, linki i przyciski tuż poza obrysem kuleczki: żadne kliknięcie nie jest przechwytywane.
+4. Zamknij wyłącznie proces `node.exe` uruchamiający `server.cjs` Ratcheta: kuleczka powinna automatycznie odtworzyć serwer.
+5. Zamknij panel i otwórz ponownie, a następnie przejdź do już otwartego panelu — bez migania i mnożenia okien.
+6. Prawy klik na kuleczce lub ikonie obok zegara → `Zakończ Ratchet`: kula znika, a backend przestaje działać.
+7. Ponowne uruchomienie zachowuje zadania i skróty; awaryjny skrypt `AWARYJNIE-ZATRZYMAJ-RATCHET.cmd` działa bez kasowania danych.
 
-## Test
+## Diagnostyka i odzyskiwanie
 
-1. Otwórz Ratchet ze skrótu na Pulpicie.
-2. Kliknij kuleczkę 5× szybko — powinno pozostać jedno okno panelu (lub istniejące okno powinno zyskać fokus).
-3. Zamknij panel `×`, po czym kliknij kuleczkę — powinno pojawić się jedno małe okno.
-4. Uruchom ponownie skrót na Pulpicie — **nie** powinna powstać druga kuleczka ani drugi panel.
-5. Utwórz zadanie na kilka minut później, otwórz link i sprawdź zapis po ponownym uruchomieniu.
-6. Wyłącz `⋯ → Zakończ Ratchet`. Serwer `http://127.0.0.1:47823/api/ping` powinien przestać odpowiadać.
+- Serwer: `http://127.0.0.1:47823/api/ping`
+- Logi startu: `%LOCALAPPDATA%\Ratchet\logs\*-error.log` i `*-out.log`
+- Log aktualizacji: `%LOCALAPPDATA%\Ratchet\update-log.txt`
+- Log launchera: `%LOCALAPPDATA%\Ratchet\launcher-error.log`
+- Kopie wersji: `%LOCALAPPDATA%\Ratchet\backup-*`
+- Profil: `%APPDATA%\Ratchet\ratchet.json` i `.bak`
 
-16 testów logiki Node.js przechodzi lokalnie. UI sprawdzono w Chromium w oknie 480 × 720. Natywne zachowanie okien i skrótu na Windowsie wymaga testu na komputerze użytkownika.
+Nie usuwaj folderu profilu, nawet jeśli chcesz odinstalować starą aplikację. W razie awarii ustawień autostartu/Windows użyj zwykłego skrótu lub pliku `URUCHOM-RATCHET.cmd` z katalogu instalacji.
 
-## Diagnostyka
-
-Jeżeli coś się nie otwiera: `Diagnostyka-Ratchet.cmd` w `%LOCALAPPDATA%\Ratchet\app`.
-Jeśli okno PowerShell się zamyka, uruchom `URUCHOM-RATCHET.cmd` z zainstalowanego folderu — pokaże ewentualny błąd.
-
-## Projekt
-
-1001 CAVE / Ratchet 0.2.6.
-
-## P0: bezpieczny obszar klikania
-
-Form.Region jest elipsą nałożoną na natywne okno WinForms, zgodną z faktycznie narysowaną kuleczką. Tylko okrąg reaguje na mysz. Jeśli ograniczenie obszaru nie uda się, kuleczka jest automatycznie ukrywana zamiast blokować pulpit. Po aktualizacji sprawdź kliknięcia w otoczeniu kuleczki (również przy skalowaniu 125/150%) i przeciąganie.
-
-## Ikony i UX
-
-Lokalne, spójne ikony SVG w `ui/icons.js`; podmieniono znaki Unicode przy nawigacji, zadaniach, agentach, skrótach i aktualizacjach. Interakcje wykorzystują krótkie przejścia `ease-out`; dla `prefers-reduced-motion` ograniczono ruch. Podejście oparte na wskazówkach Emila Kowalskiego dotyczących design engineering, bez dodatkowych bibliotek/fontów.
-
-## 0.2.6 — poprawka animacji i wyglądu
-- Panel startuje dopiero po kliknięciu w kuleczkę (koniec z miganiem przy uruchomieniu Ratcheta).
-- Panel Edge otrzymuje pozycję i rozmiar w parametrach startowych; nie jest przenoszony po wyświetleniu.
-- Kuleczka jest odświeżona: subtelny gradient, rozświetlenie, buźka, lampka statusu, double-buffering.
-- Klikalna powierzchnia nadal ograniczona do koła (Form.Region), natywny test Windows pozostaje wymagany.
-
-## 0.2.6 — zamykanie kuleczki niezależne od serwera
-
-- Prawy przycisk myszy na kuleczce zawsze wyświetla natywne menu **Zakończ Ratchet**, nawet gdy nie działa localhost.
-- Kliknięcie lewym przyciskiem podczas awarii serwera wyświetla to samo menu zamiast otwierać niedziałający panel Edge.
-- Jeśli serwer odpowiadał i następnie przestanie działać przez dłuższy czas, osierocona kuleczka zamknie się automatycznie.
-- Awaryjny skrót `AWARYJNIE-ZATRZYMAJ-RATCHET.cmd` wywołuje `Zatrzymaj-Ratchet.ps1` i zamyka jedynie procesy związane z Ratchetem. Nie usuwa danych.
-
-Testy Windows wymagają potwierdzenia na komputerze użytkownika.
-
-
-## Stabilizacja 0.2.7 — co naprawdę zmieniono
-
-- **Uruchamianie bez Terminala:** `URUCHOM-RATCHET.cmd` startuje oddzielny, ukryty proces PowerShell. Po jego zamknięciu zewnętrznego okna terminala Ratchet nadal działa.
-- **Samonaprawianie serwera:** proces kuleczki monitoruje localhost i wznawia Node po awarii; uruchomienia są chronione międzyprocesowym muteksem, a logi trafiają do `%LOCALAPPDATA%\Ratchet\logs`.
-- **Jedno okno:** wykrywanie panelu przez rzeczywiste uchwyty okien Edge i zabezpieczenie przed równoległym uruchamianiem nowego panelu.
-- **Bezpieczne zamykanie:** menu systemowej ikonki przy zegarze działa także przy awarii serwera; przywrócenie serwera jest możliwe bez instalacji.
-- **Aktualizacja transakcyjna:** pobranie, weryfikacja SHA-256, kopia plików, restart, test `/api/ping`, a jeśli test nie przejdzie — wycofanie i restart poprzedniej wersji.
-- **Rzetelna informacja o połączeniu:** etykieta w panelu zmienia się na `BRAK POŁĄCZENIA`, gdy lokalny serwer przestaje odpowiadać.
-- **Profil:** zapisywanie tworzy `ratchet.json.bak`, a w przypadku uszkodzenia podstawowego JSON aplikacja próbuje użyć kopii zapasowej.
-- Zachowany jest eliptyczny `Form.Region` kuleczki, aby niewidzialny prostokąt nie blokował pulpitu.
-
-**Ograniczenie:** na Linuxie weryfikowano testy Node i analizę plików PowerShell. Testy zachowania natywnych okien, powiadomień i restartu na rzeczywistym Windowsie są nadal wymagane. Jest to kandydat do stabilnego wydania, a nie potwierdzona stabilność na wszystkich konfiguracjach.
-
-### Test akceptacyjny na Windows
-
-1. Zamknij wszystkie procesy starszego Ratcheta z natywnego menu i uruchom pojedynczy skrót `Ratchet`.
-2. Zamknij dowolny Terminal. Z `http://127.0.0.1:47823/api/ping` nadal powinno być `ok:true`.
-3. Kliknij kulkę 5× szybko: otworzyć powinno się tylko jedno okno.
-4. Klikaj tuż obok kulki, także na przyciskach aplikacji znajdujących się pod nią: wszystkie kliknięcia muszą przechodzić.
-5. W Menedżerze zadań zatrzymaj wyłącznie proces `node.exe` uruchamiający `server.cjs` Ratcheta i sprawdź, czy kuleczka wznowi serwer; nie zabijaj innych procesów Node.
-6. Test lokalnego serwera i aktualizacji: przycisk `Sprawdź aktualizacje` wyświetla czytelny wynik, a restart po instalacji weryfikuje `/api/ping`.
-7. Prawy klik na kuleczce → `Zakończ Ratchet`; znika kulka, zamyka się backend, nie ma `ERR_CONNECTION_REFUSED` przy ponownym uruchomieniu.
+**Status wydania:** automatyczne testy zaliczone; kod opublikowany do ręcznego testu na Windowsie. Natywnego testu PowerShell/WinForms nie można uznać za zakończony na podstawie testów Node.
