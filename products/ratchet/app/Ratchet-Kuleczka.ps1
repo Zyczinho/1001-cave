@@ -79,7 +79,7 @@ $script:notifyIcon.Text = 'Ratchet - plan dnia i agenci AI'
 $script:notifyIcon.Visible = $true
 
 $form = New-Object RatchetOrbForm
-$form.Text = 'Ratchet'
+$form.Text = 'Ratchet Orb'
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
 $form.Size = [System.Drawing.Size]::new($script:orbSize,$script:orbSize)
