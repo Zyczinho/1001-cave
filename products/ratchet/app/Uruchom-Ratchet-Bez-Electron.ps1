@@ -1,4 +1,4 @@
-# Stable launcher: an independent native orb supervising the localhost service.
+﻿# Stable launcher: an independent native orb supervising the localhost service.
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $log = Join-Path $env:LOCALAPPDATA 'Ratchet\launcher-boot.log'
