@@ -1,6 +1,7 @@
 # Ratchet backend supervision. Dot-source from the launcher and the native orb.
 # One server start at a time, no dependence on an open Terminal window.
-$script:ratchetBackendRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$script:ratchetBackendRoot = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($script:ratchetBackendRoot)) { throw 'Cannot resolve Ratchet-Backend.ps1 location' }
 $script:ratchetBackendUrl = 'http://127.0.0.1:47823/api/ping'
 
 function Get-RatchetBackendHealth {
