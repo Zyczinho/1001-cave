@@ -18,7 +18,7 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # Use the existing Edge application window; never spawn another on repeated clicks.
-Add-Type -TypeDefinition @'
+Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing') -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
