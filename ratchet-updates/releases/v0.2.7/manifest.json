@@ -1,0 +1,67 @@
+{
+  "channel": "stable",
+  "version": "0.2.7",
+  "notes": "Poprawki stabilności 0.2.7: serwer działający bez Terminala, samonaprawa, jedno okno, natywne zamykanie, kopie i rollback. Wymaga testu Windows.",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "6cad6e99cdbb7db1a5d81f2fbc957e01735b482492c69aa65422e956857a646c"
+    },
+    {
+      "path": "Ratchet-Backend.ps1",
+      "sha256": "5fd68fc4ede8490e7b7ad63b59334d318a8aa20dbd55e0cbfa4a68ea9f0329f1"
+    },
+    {
+      "path": "Ratchet-Kuleczka.ps1",
+      "sha256": "35cc283de5d7f94e0ae21d5c2f0c5d6eb66bcedc25b56996315814709841ecce"
+    },
+    {
+      "path": "Uruchom-Ratchet-Bez-Electron.ps1",
+      "sha256": "f8d6c18f5fcce57a466e501fb524350f527bd163340db965392d316869186b9d"
+    },
+    {
+      "path": "server.cjs",
+      "sha256": "bf71aa4457ef3da7ab03996b20c27f995b7a51e74bcbed10cdac44ddd0301db0"
+    },
+    {
+      "path": "updater.cjs",
+      "sha256": "aeb91d3448e2cce1d3a062103d81f51416c966afbc606e5ea241a6b0fa99b847"
+    },
+    {
+      "path": "Apply-Ratchet-Update.ps1",
+      "sha256": "535206fdc406ab532832ed06cb844032f48d074145ef07200065d4b1c6042956"
+    },
+    {
+      "path": "URUCHOM-RATCHET.cmd",
+      "sha256": "5961f5e116df03d32c3a34562d2643d7edbc9c6d4ea7d0b604f8cd618d1f9448"
+    },
+    {
+      "path": "Zatrzymaj-Ratchet.ps1",
+      "sha256": "9c0107999e248b0a368eed8b52927a754354eb4caa1aefd9697f2936c5b3497c"
+    },
+    {
+      "path": "AWARYJNIE-ZATRZYMAJ-RATCHET.cmd",
+      "sha256": "99428e65e669e627d0f407285c5e21429f44a1350c70f877984cc68a3e0aa4cb"
+    },
+    {
+      "path": "ZAINSTALUJ-RAZ.cmd",
+      "sha256": "870e44596267744e4e592b2f12e5c87798eec97ffc201a8525d0e1a4765f9cd9"
+    },
+    {
+      "path": "ui/browser-bridge.js",
+      "sha256": "cd5923db34e962debdccc4e695a960a89b374d6f2eb845fdf31b66f68afc0b6c"
+    },
+    {
+      "path": "ui/style.css",
+      "sha256": "e507788f2b9aeb86bf69d997a2065bced3a540a5947d37c3724f8324f9d985ac"
+    },
+    {
+      "path": "ui/panel.html",
+      "sha256": "cd63e5d62ec6f1b4fb4f5716c5a38471f7f846800c36a2f61e7273e1805181c9"
+    },
+    {
+      "path": "ui/panel.js",
+      "sha256": "21ccea9a385e207997becfce2f5918d439942a376a908fbf79478be28bbddc65"
+    }
+  ]
+}
