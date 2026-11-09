@@ -54,6 +54,16 @@ test('local backend: health, permissions, persistence and controlled exit',async
     const after=await (await fetch('http://127.0.0.1:'+port+'/api/snapshot')).json();
     assert.ok(after.state.links.some(x=>x.id==='a'));
     assert.ok(after.state.links.some(x=>x.id==='b'));
+    // Simulate an interrupted file write: last good backup must survive recovery.
+    proc.kill();await new Promise(resolve=>proc.once('exit',resolve));
+    const profile=path.join(dir,'Ratchet','ratchet.json');
+    fs.writeFileSync(profile,'{corrupt data','utf8');
+    proc=await boot(port,dir);
+    const restored=await (await fetch('http://127.0.0.1:'+port+'/api/snapshot')).json();
+    assert.ok(restored.state.links.some(x=>x.id==='a'));
+    assert.ok(fs.readFileSync(profile,'utf8').startsWith('{'));
+    assert.doesNotThrow(()=>JSON.parse(fs.readFileSync(profile,'utf8')));
+    assert.ok(fs.readdirSync(path.dirname(profile)).some(x=>x.startsWith('ratchet.json.corrupt-')));
   } finally {
     if(proc && proc.exitCode===null){proc.kill();await Promise.race([new Promise(r=>proc.once('exit',r)),delay(1000)]);}
     fs.rmSync(dir,{recursive:true,force:true});

@@ -23,8 +23,13 @@ function read() {
   catch(e) {
     console.error('[ratchet] Uszkodzony profil:',e.message);
     const previous=DATA+'.bak';
-    try {state=normalizeStore(JSON.parse(fs.readFileSync(previous,'utf8')));}
-    catch { throw Error('Nie można odczytać danych Ratcheta ani kopii zapasowej. Pliki nie zostały nadpisane: '+DATA); }
+    try {
+      state=normalizeStore(JSON.parse(fs.readFileSync(previous,'utf8')));
+      // Preserve the corrupt original for diagnostics, then restore last-known-good
+      // BEFORE future saves can accidentally overwrite the only valid backup.
+      fs.copyFileSync(DATA,DATA+'.corrupt-'+Date.now());
+      fs.copyFileSync(previous,DATA);
+    } catch {throw Error('Nie można odczytać lub odtworzyć danych Ratcheta. Pliki nie zostały nadpisane: '+DATA);}
   }
 }
 function save() {
