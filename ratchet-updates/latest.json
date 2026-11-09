@@ -21,7 +21,7 @@
     },
     {
       "path": "server.cjs",
-      "sha256": "f3a919f21f7d7dd1d36433f406079756fdd441911adc889ec863c55a016fd291"
+      "sha256": "bf71aa4457ef3da7ab03996b20c27f995b7a51e74bcbed10cdac44ddd0301db0"
     },
     {
       "path": "updater.cjs",
