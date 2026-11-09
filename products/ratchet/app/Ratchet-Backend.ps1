@@ -1,4 +1,4 @@
-# Ratchet backend supervision. Dot-source from the launcher and the native orb.
+﻿# Ratchet backend supervision. Dot-source from the launcher and the native orb.
 # One server start at a time, no dependence on an open Terminal window.
 $script:ratchetBackendRoot = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($script:ratchetBackendRoot)) { throw 'Cannot resolve Ratchet-Backend.ps1 location' }
