@@ -46,7 +46,7 @@ try {
     Write-Host 'DIAG_SUCCESS: 0.2.7 uruchamia backend na porcie testowym.' -ForegroundColor Green
 }catch{
     Write-Host ('DIAG_ERROR: '+$_.Exception.ToString()) -ForegroundColor Red
-    if(Test-Path $scriptFile){Write-Host ('Plik testowany: '+$scriptFile)}
+    if(-not [string]::IsNullOrEmpty($scriptFile)){Write-Host ('Plik testowany: '+$scriptFile)}
     $logs=Join-Path $env:LOCALAPPDATA 'Ratchet\logs'
     Get-ChildItem -LiteralPath $logs -Filter '*-error.log' -ErrorAction SilentlyContinue |
       Sort-Object LastWriteTime -Descending | Select-Object -First 1 |
