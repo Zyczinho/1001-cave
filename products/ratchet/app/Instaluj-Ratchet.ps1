@@ -1,4 +1,4 @@
-# One-time stable setup; future updates are applied from within the Ratchet UI.
+﻿# One-time stable setup; future updates are applied from within the Ratchet UI.
 $ErrorActionPreference = 'Stop'
 $source = Split-Path -Parent $MyInvocation.MyCommand.Path
 $destination = Join-Path $env:LOCALAPPDATA 'Ratchet\app'
