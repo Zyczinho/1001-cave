@@ -1,35 +1,67 @@
 {
   "channel": "stable",
-  "version": "0.2.5",
-  "notes": "Odświeżony wygląd kuleczki, mniej migotania, panel otwierany tylko na żądanie i bez przeskoku z lewej strony.",
+  "version": "0.2.7",
+  "notes": "Stabilność: start bez Terminala, automatyczne wznowienie serwera, jeden panel, naprawa offline i rollback po błędzie uruchomienia. Testy Windows wymagane.",
   "files": [
     {
+      "path": "README.md",
+      "sha256": "eef5548c23b246350ff33b34f6711c6374ab6f110740444ac718c4e40b31e710"
+    },
+    {
+      "path": "Ratchet-Backend.ps1",
+      "sha256": "5fd68fc4ede8490e7b7ad63b59334d318a8aa20dbd55e0cbfa4a68ea9f0329f1"
+    },
+    {
       "path": "Ratchet-Kuleczka.ps1",
-      "sha256": "b1878c939332d845f1be76b742c9fa2f7204f8a14238be0b5984fd08dcbfc16e"
+      "sha256": "7c013175c96b5eadedacf42473d4997d78c53f5b9a319f00f37755811de90c42"
     },
     {
       "path": "Uruchom-Ratchet-Bez-Electron.ps1",
-      "sha256": "7817ebc2621a4e2e0999b686b30db5b4108c6e4a0b269f5d3af64691ba8d0427"
+      "sha256": "f8d6c18f5fcce57a466e501fb524350f527bd163340db965392d316869186b9d"
     },
     {
       "path": "server.cjs",
-      "sha256": "d1d64ebfa4ba2cb57bff9b9a9d9d33d2af1f904f2be643374ae0e18352a3cecc"
+      "sha256": "9725bf7e401f8bb5508411f5f28744f681717153ae4471d6a3c60e79ad7fbe1d"
     },
     {
       "path": "updater.cjs",
-      "sha256": "84ba947a1c357b9cc5f4cea94c33d98c1cde44d5c2484f1cd40b3d014faa790a"
+      "sha256": "aeb91d3448e2cce1d3a062103d81f51416c966afbc606e5ea241a6b0fa99b847"
+    },
+    {
+      "path": "Apply-Ratchet-Update.ps1",
+      "sha256": "535206fdc406ab532832ed06cb844032f48d074145ef07200065d4b1c6042956"
+    },
+    {
+      "path": "URUCHOM-RATCHET.cmd",
+      "sha256": "5961f5e116df03d32c3a34562d2643d7edbc9c6d4ea7d0b604f8cd618d1f9448"
+    },
+    {
+      "path": "Zatrzymaj-Ratchet.ps1",
+      "sha256": "9c0107999e248b0a368eed8b52927a754354eb4caa1aefd9697f2936c5b3497c"
+    },
+    {
+      "path": "AWARYJNIE-ZATRZYMAJ-RATCHET.cmd",
+      "sha256": "99428e65e669e627d0f407285c5e21429f44a1350c70f877984cc68a3e0aa4cb"
+    },
+    {
+      "path": "ZAINSTALUJ-RAZ.cmd",
+      "sha256": "870e44596267744e4e592b2f12e5c87798eec97ffc201a8525d0e1a4765f9cd9"
+    },
+    {
+      "path": "ui/browser-bridge.js",
+      "sha256": "cd5923db34e962debdccc4e695a960a89b374d6f2eb845fdf31b66f68afc0b6c"
+    },
+    {
+      "path": "ui/style.css",
+      "sha256": "e507788f2b9aeb86bf69d997a2065bced3a540a5947d37c3724f8324f9d985ac"
     },
     {
       "path": "ui/panel.html",
-      "sha256": "85bd892f98a68e486168e527708b98e957a948a006cae5c396ba59f9157e51f4"
+      "sha256": "cd63e5d62ec6f1b4fb4f5716c5a38471f7f846800c36a2f61e7273e1805181c9"
     },
     {
       "path": "ui/panel.js",
-      "sha256": "cec864b58d735fc100ac7b594c2fa29a2a756d127b4f28b41a4a17160f5251e3"
-    },
-    {
-      "path": "README.md",
-      "sha256": "6497d10102ee401b3aef1ca21e5ae5ab31381ba3fcfe8c1a063341b0c2760200"
+      "sha256": "21ccea9a385e207997becfce2f5918d439942a376a908fbf79478be28bbddc65"
     }
   ]
 }
