@@ -28,25 +28,33 @@ function Ping {
   catch { return $null }
 }
 function GhDownload([string]$url, [string]$destination) {
-  # Use raw bytes (not PowerShell's text redirect) to preserve release checksums.
+  # GitHub Contents API returns base64. Use the same CLI invocation that works
+  # in the user's PowerShell; do not guess authentication problems.
   $gh = (Get-Command gh.exe -ErrorAction Stop).Source
-  $psi = New-Object System.Diagnostics.ProcessStartInfo
-  $psi.FileName = $gh
-  $psi.Arguments = 'api -H "Accept: application/vnd.github.raw+json" "' + $url + '"'
-  $psi.UseShellExecute = $false
-  $psi.RedirectStandardOutput = $true
-  $psi.CreateNoWindow = $true
-  $p = [System.Diagnostics.Process]::Start($psi)
-  if (-not $p) { throw 'Cannot start GitHub CLI' }
+  $previousErrorAction = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
   try {
-    $stream = [IO.File]::Create($destination)
-    try { $p.StandardOutput.BaseStream.CopyTo($stream) }
-    finally { $stream.Dispose() }
-    $p.WaitForExit(30000) | Out-Null
-    if (-not $p.HasExited) { $p.Kill(); throw 'GitHub CLI timed out' }
-    if ($p.ExitCode -ne 0) { throw 'Cannot download a file from private GitHub; run gh auth login' }
-  } finally { $p.Dispose() }
+    $output = @(& $gh api -H 'Accept: application/vnd.github+json' --jq '.content' $url 2>&1)
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorAction
+  }
+  if ($exitCode -ne 0) {
+    $details = ($output | ForEach-Object { [string]$_ }) -join ' | '
+    throw ('GitHub download failed for ' + $url + ' (exit ' + $exitCode + '): ' + $details)
+  }
+  $encoded = (($output | ForEach-Object { [string]$_ }) -join '') -replace '\\s', ''
+  if ($encoded -notmatch '^[A-Za-z0-9+/=]+$' -or $encoded.Length -gt 6000000) {
+    throw ('GitHub returned invalid base64 content for ' + $url)
+  }
+  try {
+    $bytes = [Convert]::FromBase64String($encoded)
+    [IO.File]::WriteAllBytes($destination, $bytes)
+  } catch {
+    throw ('Could not decode GitHub file ' + $url + ': ' + $_.Exception.Message)
+  }
 }
+
 function Stop-Orb {
   # Only Ratchet launchers/mascots. Do not kill other PowerShell windows.
   try {
