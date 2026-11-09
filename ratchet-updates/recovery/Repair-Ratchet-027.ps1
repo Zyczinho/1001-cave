@@ -104,7 +104,7 @@ try {
   New-Item -ItemType Directory -Path $staging -Force | Out-Null
   Trace 'Downloading verified Ratchet 0.2.7 files...'
   $manifestFile = Join-Path $staging 'manifest.json'
-  GhDownload "repos/$repo/contents/$prefix/manifest.json?ref=$branch" $manifestFile
+  GhDownload ('repos/' + $repo + '/contents/' + $prefix + '/manifest.json?ref=' + $branch) $manifestFile
   $manifest = Get-Content -LiteralPath $manifestFile -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($manifest.version -ne $version -or @($manifest.files).Count -lt 10 -or @($manifest.files).Count -gt 60) { throw 'Invalid pinned release manifest' }
   $seen = New-Object 'System.Collections.Generic.HashSet[string]'
@@ -117,7 +117,9 @@ try {
     $dest = Join-Path $staging $name
     New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force | Out-Null
     $urlPath = ($name -split '/' | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/'
-    GhDownload "repos/$repo/contents/$prefix/$urlPath?ref=$branch" $dest
+    $downloadEndpoint = 'repos/' + $repo + '/contents/' + $prefix + '/' + $urlPath + '?ref=' + $branch
+    Trace ('Fetching ' + $name + ' from ' + $downloadEndpoint)
+    GhDownload $downloadEndpoint $dest
     $actual = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash
     if ($actual -ine $digest) { throw 'SHA256 mismatch for ' + $name }
   }
