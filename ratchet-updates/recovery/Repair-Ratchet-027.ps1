@@ -43,7 +43,7 @@ function GhDownload([string]$url, [string]$destination) {
     $details = ($output | ForEach-Object { [string]$_ }) -join ' | '
     throw ('GitHub download failed for ' + $url + ' (exit ' + $exitCode + '): ' + $details)
   }
-  $encoded = (($output | ForEach-Object { [string]$_ }) -join '') -replace '\\s', ''
+  $encoded = (($output | ForEach-Object { [string]$_ }) -join '') -replace '\s', ''
   if ($encoded -notmatch '^[A-Za-z0-9+/=]+$' -or $encoded.Length -gt 6000000) {
     throw ('GitHub returned invalid base64 content for ' + $url)
   }
