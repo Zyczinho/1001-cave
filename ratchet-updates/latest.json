@@ -1,6 +1,47 @@
 {
   "channel": "stable",
-  "version": "0.2.3",
-  "notes": "Stabilna baza: jeden panel, mniejszy interfejs, aktualizacje z aplikacji.",
-  "files": []
+  "version": "0.2.4",
+  "notes": "Poprawiono niewidoczny obszar klikania kuleczki, dodano ikony SVG i uproszczono UX. Aktualizacje bez kolejnych ZIP-ów.",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "61c76135430de4250cc290cc09350d41fe64c653362c17c13b29cec5ddd971a4"
+    },
+    {
+      "path": "server.cjs",
+      "sha256": "630e8bc28d939a6eda5a725b79b9ed696284d3312c80767fb6993cb27f78aef6"
+    },
+    {
+      "path": "Uruchom-Ratchet-Bez-Electron.ps1",
+      "sha256": "18aa88177fda37e8422635c1fc22dad63fdc974b35b152413671bfd9822e6814"
+    },
+    {
+      "path": "updater.cjs",
+      "sha256": "53cc3b0c47c186d734fe9025b147e123a57322f5dca10c43818b6cd985ac1cba"
+    },
+    {
+      "path": "URUCHOM-RATCHET.cmd",
+      "sha256": "4a132df4b882c4a80ac3dce172a9a0b95769a959a9108d7b1eb05d963ca81526"
+    },
+    {
+      "path": "Ratchet-Kuleczka.ps1",
+      "sha256": "fadd74b7c59241f83aef4c20887db30a0ff7cee770c3c5a7392aed526e2a76ff"
+    },
+    {
+      "path": "ui/icons.js",
+      "sha256": "57ec277d69c7ec0ca11cc23fd6cbaf2366a42d7a22baf1bfd2db126ad72a48d9"
+    },
+    {
+      "path": "ui/panel.html",
+      "sha256": "07c90178c35aece67199a774a92a2b24815c33e97b56812cb41f36d2c5101547"
+    },
+    {
+      "path": "ui/style.css",
+      "sha256": "5b8a5b93e98091797563f2ba867f1a114965f6de77070a61b609e5da309f50ee"
+    },
+    {
+      "path": "ui/panel.js",
+      "sha256": "015e9c30152935345a3d7f88731ac74038b25f0fa93ee68e02399ff8f96f64c3"
+    }
+  ]
 }
