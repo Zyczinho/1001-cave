@@ -1,12 +1,7 @@
 name: Ratchet — portable JS checks
+# Hosted jobs are currently blocked before runner allocation for this repo.
+# Keep this job manually runnable; release still requires a green CI result.
 on:
-  push:
-    branches:
-      - ratchet/stability-0.2.7
-      - codex/ratchet-oneclick-diagnostics
-    paths:
-      - "products/ratchet/app/**"
-      - ".github/workflows/ratchet-static.yml"
   workflow_dispatch:
 
 permissions:
