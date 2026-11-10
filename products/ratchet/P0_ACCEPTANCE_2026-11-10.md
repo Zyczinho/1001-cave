@@ -24,3 +24,16 @@ Zakres: audyt z 10.11.2026, issue #22. Ten dokument **nie potwierdza** testu na 
 - Testy Node: `node --test products/ratchet/app/tests/*.test.cjs`
 - Rzeczywisty Windows UI: `powershell -NoProfile -ExecutionPolicy Bypass -File products/ratchet/app/tests/windows-ui-smoke.ps1` w izolowanym profilu.
 - Jeśli Windows test nie przeszedł, PR pozostaje Draft. Nie publikować aktualizacji.
+
+## Bezpieczny test na komputerze z działającym Ratchetem
+Z osobnej kopii gałęzi `ratchet/p0-audit-2026-11-10`, uruchom skrypt `app/tests/TESTUJ-P0-BEZPIECZNIE.ps1` przez Windows PowerShell 5.1. Automatycznie ustawia testowy port `47830`, izolowany `APPDATA` i `LOCALAPPDATA`, wyłącza hooki Claude Code i nie uruchamia instalatora. Test nie może pracować na produkcyjnym porcie `47823` — `windows-ui-smoke.ps1` odmawia tego poza jednorazowym CI. Przy niepowodzeniu zachowaj logi z katalogu `%TEMP%\\ratchet-p0-safe-<ID>`.
+
+Użyj opcji `-Manual`, jeśli chcesz ręcznie klikać w **drugą** kuleczkę. Zamknij wyłącznie tę testową przez jej menu (PPM → Zakończ Ratchet); oryginalna instalacja cały czas działa.
+
+Przykład (PowerShell, z katalogu roboczego zawierającego repo):
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\\products\\ratchet\\app\\tests\\TESTUJ-P0-BEZPIECZNIE.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\\products\\ratchet\\app\\tests\\TESTUJ-P0-BEZPIECZNIE.ps1 -Manual
+```
+
+NIE uruchamiać instalatora `ZAINSTALUJ RATCHET.cmd` ani `Instaluj-Ratchet.ps1` podczas testów z tej gałęzi.
