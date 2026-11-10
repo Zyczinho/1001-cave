@@ -32,3 +32,13 @@ test('P0: independent comic notification is region-limited and receipts are audi
   assert.match(server,/windowsAttempted:data\.windowsAttempted===true/);
   assert.match(server,/bubbleShown:data\.bubbleShown===true/);
 });
+
+test('P0: isolated launcher automatically selects free ports without shutting down live or older test instances',()=>{
+  const ps=read('tests/TESTUJ-P0-BEZPIECZNIE.ps1');
+  assert.match(ps,/function Find-FreeTestPort/);
+  assert.match(ps,/47832\.\.47880/);
+  assert.match(ps,/\$testPort=Find-FreeTestPort/);
+  assert.match(ps,/\$env:RATCHET_PORT=\[string\]\$testPort/);
+  assert.match(ps,/\$env:RATCHET_DISABLE_HOOKS='1'/);
+  assert.doesNotMatch(ps,/Stop-Process|taskkill\.exe|kill -/i);
+});
