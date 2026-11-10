@@ -75,3 +75,16 @@ To **grupy zmian z rekonstrukcji**, nie udokumentowane pojedyncze testy; nie prz
 **Zamknąć**, gdy identyfikator paczki i hashe na komputerze zgadzają się z wydaniem, prawdziwy Windows E2E zakończył się sukcesem i błąd otwierania panelu jest usunięty także po restarcie.
 
 **Lekcja RAT-001:** rejestrować nie tylko „co zmieniliśmy”, ale przede wszystkim „**jaki dokładnie kod uruchomiliśmy, jakie zachowanie zaobserwowaliśmy i jaki test rozstrzygnął hipotezę**”.
+
+## Aktualizacja diagnostyczna — 10.11.2026 (odczyt z komputera użytkownika)
+
+Nowy **read-only PowerShell smoke** potwierdził:
+- Skrót pulpitu `Ratchet.lnk` wskazuje na `%LOCALAPPDATA%\\Ratchet\\app\\Uruchom-Ratchet-Bez-Electron.ps1` (spójne z katalogiem stałej instalacji).
+- Lokalny `Ratchet-Kuleczka.ps1` istnieje, ale **SHA-256 = `453A88A86B1A29DF4AA092DBABC4A20CAFB90A4F1E83B4F2EE5DA049EA692145`**.
+- Manifest kanału `ratchet-updates/latest.json` dla 0.2.7 deklaruje dla `Ratchet-Kuleczka.ps1` **SHA-256 = `35cc283de5d7f94e0ae21d5c2f0c5d6eb66bcedc25b56996315814709841ecce`**. Nie są identyczne — **potwierdzony local-vs-release drift**.
+- `GET http://127.0.0.1:47823/api/ping` zwrócił `{\"ok\":true,\"version\":\"0.2.7\"}` — backend działa w momencie pomiaru.
+- `Select-String` po dosłownym przypisaniu `$form.Text =` nie zwrócił dopasowania. To **nie dowodzi** konkretnej implementacji ani tego, który skrypt jest uruchomiony; należy zidentyfikować proces, metodę inicjalizacji formularza i fragmenty rzeczywistego kodu lokalnego.
+
+**Skorygowana diagnoza:** nie jest to bieżąca awaria portu 47823. Istnieje jednoznaczna rozbieżność **lokalnej kuleczki i referencyjnego pakietu 0.2.7**. Wersja API `0.2.7` nie gwarantuje jednorodności instalacji. Przed jakąkolwiek reinstalacją/patchowaniem należy odczytać ścieżkę procesu orb oraz funkcje odpowiedzialne za kliknięcie i otwieranie panelu w *tym konkretnym lokalnym pliku*.
+
+**Kolejny test bez mutacji:** lista procesów Ratcheta z `CommandLine`, odczyt linii skryptu zawierających `Open-RatchetPanel`, `FindPanel`, `panel.html`, `Text\s*=` i sprawdzenie `/api/ping` po kliknięciu. Nie zamykać RAT-001.
