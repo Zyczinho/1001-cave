@@ -260,7 +260,7 @@ function Show-RatchetSpeech {
   $script:bubbleEventId=$eventId
   $script:bubbleTaskId=$taskId
   $script:bubblePhase=$phase
-  $script:speechTitle.Text = if($phase -eq 'chatgpt' -or $phase -eq 'chatgpt-failure'){'Ratchet - ChatGPT'} elseif($phase -eq 'coordinator'){'Ratchet - koordynator'} elseif($phase -eq 'agent'){'Ratchet - agent'} elseif($phase -eq 'test'){'Ratchet - test'} else {'Ratchet - przypomnienie'}
+  $script:speechTitle.Text = if($phase -eq 'chatgpt' -or $phase -eq 'chatgpt-failure' -or $phase -eq 'chatgpt-attention'){'Ratchet - ChatGPT'} elseif($phase -eq 'coordinator'){'Ratchet - koordynator'} elseif($phase -eq 'agent'){'Ratchet - agent'} elseif($phase -eq 'test'){'Ratchet - test'} else {'Ratchet - przypomnienie'}
   $script:speechText.Text = if($message.Length -gt 136){$message.Substring(0,133)+'...'}else{$message}
   Place-RatchetSpeech
   $script:bubbleUntil=[datetime]::UtcNow.AddSeconds(9)
@@ -706,6 +706,7 @@ function Get-RatchetReminderTitle([string]$phase) {
         'coordinator' { return 'Ratchet - koordynator zadan' }
         'chatgpt' { return 'Ratchet - ChatGPT zakonczyl zadanie' }
         'chatgpt-failure' { return 'Ratchet - ChatGPT wymaga uwagi' }
+        'chatgpt-attention' { return 'Ratchet - ChatGPT czeka na Ciebie' }
         default { return $null }
     }
 }
