@@ -154,6 +154,10 @@ async function handleAction(key,data) {
     if(!['schedule','links','agents'].includes(data.collection)) throw Error('Nieznana kolekcja');
     const clean=normalizeItem(data.collection,data.item);
     const i=state[data.collection].findIndex(x=>x.id===clean.id);
+    if(data.collection==='schedule'&&i>=0&&!Array.isArray(data.item?.completedDates)){
+      // Form edits should not accidentally erase the persistent calendar history.
+      clean.completedDates=state.schedule[i].completedDates||[];
+    }
     if(i>=0)state[data.collection][i]=clean;else state[data.collection].push(clean);
     save();return clean;
   }
@@ -200,6 +204,7 @@ async function handleAction(key,data) {
       if(item.target)await openTarget(item.kind,item.target);
     }else if(data.action==='finish'){
       state.reminded[`${today}:${item.id}:end`]=true;
+      item.completedDates=[...new Set([...(item.completedDates||[]),today])].sort().slice(-365);
       activity('Zakończono: '+item.title,'reminder',item.id,'finished');
     }else throw Error('Nieznana akcja');
     save();return true;
