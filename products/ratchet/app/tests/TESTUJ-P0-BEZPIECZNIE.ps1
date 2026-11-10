@@ -10,15 +10,26 @@ if ([IO.Path]::GetFullPath($appRoot).TrimEnd('\') -ieq [IO.Path]::GetFullPath($l
 }
 if (-not (Test-Path -LiteralPath $testScript -PathType Leaf)) {throw 'Brak windows-ui-smoke.ps1'}
 $node=Get-Command node.exe -ErrorAction Stop
-$testPort=47830
-# Fail closed if something is already listening on the isolated test port.
-$listener=New-Object System.Net.Sockets.TcpClient
-try {
-    $attempt=$listener.BeginConnect('127.0.0.1',$testPort,$null,$null)
-    if($attempt.AsyncWaitHandle.WaitOne(300) -and $listener.Connected) {
-        throw ('Port testowy '+$testPort+' jest zajety. Niczego nie zamykam. Zakoncz test i uruchom ponownie.')
+# Select a fresh loopback-only port. Never terminate an older test copy.
+# Exclude 47823 (live app) and 47831 (reserved test hook).
+function Find-FreeTestPort {
+    $ports=@(47830) + @(47832..47880)
+    foreach($candidate in $ports) {
+        $listener=$null
+        try {
+            $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,[int]$candidate)
+            $listener.Server.ExclusiveAddressUse=$true
+            $listener.Start()
+            return [int]$candidate
+        } catch [System.Net.Sockets.SocketException] {
+            # Another process is already using this port. Keep it running.
+        } finally {
+            if($listener) {try {$listener.Stop()} catch {}}
+        }
     }
-} finally { $listener.Close() }
+    throw 'Brak wolnego portu testowego 47830, 47832-47880. Nie zamykam zadnego procesu.'
+}
+$testPort=Find-FreeTestPort
 function Get-LiveRatchetPing {
     try { return Invoke-RestMethod 'http://127.0.0.1:47823/api/ping' -TimeoutSec 2 -ErrorAction Stop }
     catch { return $null }
@@ -39,16 +50,17 @@ New-Item -ItemType Directory -Path (Join-Path $base 'local') -Force | Out-Null
 $code=0
 Write-Host ('Izolowany profil: '+$base)
 Write-Host 'Zainstalowany Ratchet: bez zatrzymywania, aktualizacji ani zmian profilu.' -ForegroundColor Cyan
+Write-Host ('Port testowy wybrany automatycznie: '+$testPort) -ForegroundColor Green
 try {
     $env:APPDATA=Join-Path $base 'roaming'
     $env:LOCALAPPDATA=Join-Path $base 'local'
     $env:RATCHET_PORT=[string]$testPort
-    $env:RATCHET_HOOK_PORT='47831'
+    $env:RATCHET_HOOK_PORT='47831' # Hooki w testach pozostaja wylaczone.
     $env:RATCHET_DISABLE_HOOKS='1'
     # Do not execute CI-only Edge preference fixture on a user's actual browser.
     $env:GITHUB_ACTIONS=''
     if($Manual) {
-        Write-Host 'TRYB RECZNY: uruchamiam DRUGA kuleczke Ratcheta na porcie 47830.' -ForegroundColor Cyan
+        Write-Host ('TRYB RECZNY: uruchamiam odrebna kuleczke Ratcheta na porcie '+$testPort+'.') -ForegroundColor Cyan
         Write-Host 'Przetestuj licznik, sygnaly i powiadomienia. Zakoncz test przez PPM na kuleczce -> Zakoncz Ratchet.' -ForegroundColor Yellow
         Write-Host 'Nie zamykaj oryginalnego Ratcheta. Test ma osobne porty i dane.'
         $launcher=Join-Path $appRoot 'Uruchom-Ratchet-Bez-Electron.ps1'
