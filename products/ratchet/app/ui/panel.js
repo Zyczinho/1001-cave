@@ -115,7 +115,10 @@ function renderFilteredAgents(){
   const overlaps=gh?.overlapping||[];
   const blocked=all.filter(x=>x.status==='blocked');
   html+=failed.map(x=>'<div class="alert danger">'+I('alert')+' <div>'+esc(x.name||'GitHub Actions')+' — '+esc(x.conclusion)+' <button class="btn tiny" data-action="open" data-kind="url" data-target="'+esc(x.html_url)+'">Sprawdź CI</button></div></div>').join('');
-  html+=overlaps.map(x=>'<div class="alert">'+I('alert')+' Możliwe nakładanie plików: PR #'+esc(x.a)+' i #'+esc(x.b)+'. '+esc(x.files.join(', '))+'</div>').join('');
+  html+=overlaps.map(x=>{
+    const repo=state().settings.repo;
+    return '<div class="alert">'+I('alert')+' <div>Możliwe nakładanie plików: '+esc(x.files.join(', '))+'<div class="inline-actions"><button class="btn tiny secondary" data-action="open" data-kind="url" data-target="https://github.com/'+esc(repo)+'/pull/'+Number(x.a)+'">PR #'+Number(x.a)+'</button><button class="btn tiny secondary" data-action="open" data-kind="url" data-target="https://github.com/'+esc(repo)+'/pull/'+Number(x.b)+'">PR #'+Number(x.b)+'</button></div></div></div>';
+  }).join('');
   html+=blocked.map(renderAgent).join('');
   if(!failed.length&&!overlaps.length&&!blocked.length)html+=empty('Brak wykrytych ryzyk','Na podstawie ostatniego odczytu GitHuba i sesji agentów.','✓');
   if(snapshot.githubError)html+='<div class="alert danger">'+esc(snapshot.githubError)+'</div>';
