@@ -39,3 +39,14 @@ test('panel offline state explicitly tracks request failures',()=>{
   assert.match(read('ui/panel.js'),/BRAK POŁĄCZENIA/);
   assert.match(read('ui/panel.html'),/id="backendStatus"/);
 });
+
+test('backend startup accepts old versions 0.2.0 through 0.2.7 without corrupt PowerShell regex',()=>{
+  const src=read('Ratchet-Backend.ps1');
+  assert.ok(src.includes(String.raw`-match '^0\.2\.[0-7]$'`),'version-regex must retain closing quote and anchor');
+  assert.ok(src.includes("$existing.version -eq '0.2.8'"));
+});
+test('PowerShell updater message does not interpolate an invalid drive-style variable',()=>{
+  const src=read('Apply-Ratchet-Update.ps1');
+  assert.ok(src.includes('SUCCESS ${ExpectedVersion}: /api/ping confirmed'));
+  assert.doesNotMatch(src,/SUCCESS \$ExpectedVersion:/);
+});
