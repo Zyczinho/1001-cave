@@ -29,7 +29,7 @@ function normalizeStore(obj) {
   if (obj.settings && typeof obj.settings === 'object') {
     for (const key of Object.keys(def.settings)) if (key in obj.settings) def.settings[key] = obj.settings[key];
   }
-  if (![72,84,100,112].includes(def.settings.avatarSize)) def.settings.avatarSize = 84;
+  if (![48,56,64,72,84,100,112].includes(def.settings.avatarSize)) def.settings.avatarSize = 84;
   if (obj.reminded && typeof obj.reminded === 'object') def.reminded = obj.reminded;
   if (Array.isArray(obj.activity)) def.activity = obj.activity.slice(0, 100);
   if (obj.orbPosition && Number.isFinite(obj.orbPosition.x) && Number.isFinite(obj.orbPosition.y)) def.orbPosition = obj.orbPosition;
@@ -53,7 +53,11 @@ function normalizeItem(collection, raw) {
     const days = Array.isArray(raw.days) ? [...new Set(raw.days.map(Number).filter(n => VALID_WEEKDAYS.includes(n)))] : [0,1,2,3,4,5,6];
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(raw.date||'')) && !Number.isNaN(Date.parse(raw.date+'T12:00:00')) ? raw.date : null;
     if (!date && !days.length) throw Error('Wybierz co najmniej jeden dzień');
-    return {id,title,time,date,days,project:cleanText(raw.project,70),target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url', note:cleanText(raw.note,500), enabled:raw.enabled !== false, snoozeUntil:raw.snoozeUntil || null};
+    // Legacy blocks without an end remain start-only. New blocks use a visible end time.
+    const endTime = cleanText(raw.endTime,5);
+    if (endTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime)) throw Error('Koniec bloku musi mieć format HH:MM');
+    if (endTime && endTime <= time) throw Error('Koniec bloku musi być później niż początek (tego samego dnia)');
+    return {id,title,time,endTime:endTime||null,date,days,project:cleanText(raw.project,70),target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url', note:cleanText(raw.note,500), enabled:raw.enabled !== false, snoozeUntil:raw.snoozeUntil || null};
   }
   return {id,title,tool:cleanText(raw.tool,70)||'Inny model',status:STATUS.includes(raw.status)?raw.status:'idle',target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url',branch:cleanText(raw.branch,120),note:cleanText(raw.note,500),source:raw.source === 'hook' ? 'hook' : 'manual',updatedAt:cleanText(raw.updatedAt,50)||new Date().toISOString()};
 }
@@ -70,6 +74,18 @@ function dueTasks(store, now = new Date()) {
     if (snoozed && snoozed <= now.getTime() && snoozed > now.getTime()-60000) return true;
     return minutesSince >= 0 && minutesSince <= 20;
   }).filter(task => !store.reminded[`${dayKey(now)}:${task.id}:${task.snoozeUntil||'base'}`]);
+}
+// End reminders reflect the *planned* end; actual completion requires a user action.
+function dueEndTasks(store, now = new Date()) {
+  const current = minuteOfDay(now);
+  const date = dayKey(now);
+  return store.schedule.filter(task=>{
+    if(!task.enabled || !task.endTime ||
+       (task.date ? task.date!==date : !task.days.includes(now.getDay()))) return false;
+    const planned = Number(task.endTime.slice(0,2))*60+Number(task.endTime.slice(3,5));
+    return current>=planned && current-planned<=20 &&
+      !store.reminded[`${date}:${task.id}:end`];
+  });
 }
 function validateTarget(kind, target) {
   const value = cleanText(target,2048);
@@ -119,4 +135,4 @@ function handoffText(state, github) {
   lines.push('', 'POLECENIE:', 'Przed zmianą kodu sprawdź aktualny main, PR-y, zmieniane pliki i testy. Nie zakładaj, że odpowiedź agenta oznacza wdrożenie. Pracuj na osobnej gałęzi/worktree. Przy nakładaniu się plików uzgodnij kolejność merge. Po zmianie podaj commit, testy i status PR.');
   return lines.join('\n');
 }
-module.exports = {defaults,normalizeStore,normalizeItem,dueTasks,dayKey,validateTarget,mergeRepoData,handoffText};
+module.exports = {defaults,normalizeStore,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText};
