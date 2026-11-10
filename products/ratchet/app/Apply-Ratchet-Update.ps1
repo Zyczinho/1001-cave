@@ -79,7 +79,7 @@ try {
   Trace "Copied $($items.Count) verified files; starting smoke test"
   Launch
   if(-not (WaitForVersion $ExpectedVersion 48)){throw "Nowa wersja $ExpectedVersion nie odpowiada na /api/ping"}
-  Trace "SUCCESS $ExpectedVersion: /api/ping confirmed"
+  Trace "SUCCESS ${ExpectedVersion}: /api/ping confirmed"
   Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
   exit 0
 } catch {
