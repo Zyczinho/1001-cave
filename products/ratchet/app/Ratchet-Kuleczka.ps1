@@ -289,7 +289,10 @@ $script:speechLater.Add_Click({
 })
 function Get-RatchetDefaultOrbLocation {
     $area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    return [System.Drawing.Point]::new(($area.Right - $script:orbSize - 23),($area.Top + 155))
+    # Isolated smoke/manual instances do not cover the user's live mascot.
+    $top = if ($script:RatchetInstanceSuffix) { $area.Top + 300 } else { $area.Top + 155 }
+    $top = [Math]::Min([int]$top,[int]($area.Bottom - $script:orbSize - 12))
+    return [System.Drawing.Point]::new(($area.Right - $script:orbSize - 23),$top)
 }
 $form.Location = Get-RatchetDefaultOrbLocation
 
