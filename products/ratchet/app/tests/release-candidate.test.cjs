@@ -28,6 +28,7 @@ test('release candidate is complete, immutable and not automatically published',
     assert.equal(ledger.version,manifest.version);
     assert.equal(ledger.files.length,packageFiles.length);
     assert.ok(ledger.files.some(f=>f.path==='Diagnostyka-Ratchet.ps1'));
+    assert.ok(ledger.files.some(f=>f.path==='assets/ratchet.ico'),'Windows shortcuts require the branded icon');
     assert.ok(ledger.files.every(f=>manifest.files.some(g=>g.path===f.path&&g.sha256===f.sha256)));
     assert.ok(manifest.files.some(f=>f.path==='ratchet-release-manifest.json'));
   }finally {
