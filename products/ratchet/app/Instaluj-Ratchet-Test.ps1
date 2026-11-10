@@ -1,4 +1,4 @@
-# Ratchet 0.2.8 RC — safe local test installation with backup, health check and rollback.
+﻿# Ratchet 0.2.8 RC — safe local test installation with backup, health check and rollback.
 # Runs only from extracted, complete release candidate directory. Never edits APPDATA profile.
 $ErrorActionPreference='Stop'
 $Version='0.2.8'
