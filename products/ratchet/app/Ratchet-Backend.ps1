@@ -16,7 +16,7 @@ function Start-RatchetBackend {
   param([switch]$ForceCheck)
   $existing = Get-RatchetBackendHealth
   if ($existing -and $existing.version -eq '0.2.8') { return $existing }
-  if ($existing -and $existing.version -match '^0\.2\.[0-7]) {
+  if ($existing -and $existing.version -match '^0\.2\.[0-7]$') {
     try {Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 3 | Out-Null} catch {}
     for($i=0;$i -lt 28;$i++){Start-Sleep -Milliseconds 250;if(-not (Get-RatchetBackendHealth)){break}}
   }
