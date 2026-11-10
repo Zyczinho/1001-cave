@@ -133,7 +133,7 @@ class CoordinatorRunner {
       }
       this.tick();
     };
-    this.active.set(job.id,{child,complete});
+    this.active.set(job.id,{child,complete,timer});
     this.persist();
     child.stdout?.on('data',buf=>{stdout=(stdout+String(buf)).slice(-MAX_OUTPUT);});
     child.stderr?.on('data',buf=>{stderr=(stderr+String(buf)).slice(-1800);});
@@ -155,7 +155,8 @@ class CoordinatorRunner {
   }
   stop(){
     this.stopped=true;
-    for(const [id,{child}] of this.active){
+    for(const [id,{child,timer}] of this.active){
+      clearTimeout(timer);
       const job=this.current().jobs.find(j=>j.id===id);
       if(job){job.status='attention';job.updatedAt=iso();const stage=job.stages[job.stepIndex];if(stage){stage.status='attention';stage.error='Przerwano przez zamknięcie Ratcheta.';}}
       try{child.kill();}catch{}
