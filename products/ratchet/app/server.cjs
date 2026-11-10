@@ -6,6 +6,7 @@ const http = require('node:http');
 const os = require('node:os');
 const {spawn} = require('node:child_process');
 const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
+const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
 const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText} = require('./core.cjs');
 
@@ -20,6 +21,14 @@ let panelRequests = 0, panelHideRequests = 0, orbResetRequests = 0, installingUp
 const coordinatorRunner=new CoordinatorRunner({
   getState:()=>state.coordinator,persist:()=>save(),
   notify:(message,level,taskId,phase)=>activity(message,level,taskId,phase)
+});
+const chatgptWatcher=new ChatGPTWorkspaceWatcher({
+  getJobs:()=>state.chatgptRuns,persist:()=>save(),
+  token:process.env.RATCHET_WORKSPACE_AGENT_TOKEN||'',
+  notify:(message,level,taskId,phase,target)=>{
+    const entry=activity(message,level,taskId,phase);
+    if(target){entry.target=target;save();}
+  }
 });
 // Identity of the files actually running: answers "which copy and which build?" (RAT-001).
 function buildInfo() {
@@ -93,14 +102,15 @@ function checkSchedule(now = new Date()) {
 function health() {
   const a=state.agents;
   const coordinator=state.coordinator?.jobs||[];
+  const monitored=state.chatgptRuns||[];
   const runs=github?.runs||[];
   const failed=runs.some(x=>x.status==='completed'&&['failure','timed_out','action_required'].includes(x.conclusion));
-  const blocked=a.some(x=>x.status==='blocked')||coordinator.some(x=>x.status==='attention');
+  const blocked=a.some(x=>x.status==='blocked')||coordinator.some(x=>x.status==='attention')||monitored.some(x=>x.status==='failed'||x.status==='attention');
   const attention=a.some(x=>x.status==='needs_attention')||(github?.overlapping||[]).length>0;
-  const working=a.some(x=>x.status==='working')||coordinator.some(x=>x.status==='running')||runs.some(x=>x.status!=='completed');
+  const working=a.some(x=>x.status==='working')||coordinator.some(x=>x.status==='running')||monitored.some(x=>['queued','in_progress','suspended','submitting'].includes(x.status))||runs.some(x=>x.status!=='completed');
   return failed||blocked?'blocked':attention?'needs_attention':working?'working':runs.some(x=>x.conclusion==='success')?'ready':'idle';
 }
-function snapshot() {return {state,github,githubError,platform:process.platform};}
+function snapshot() {return {state,github,githubError,platform:process.platform,chatgptWorkspaceReady:chatgptWatcher.isConfigured()};}
 async function refreshGithub(force=false) {
   if(!force && Date.now()-lastFetch<10*60_000) return {github,githubError};
   const repo=state.settings.repo||'';
@@ -156,6 +166,10 @@ function openTarget(kind,target) {
   return Promise.resolve({opened:true});
 }
 async function handleAction(key,data) {
+  if(key==='chatgpt:create')return chatgptWatcher.create(data);
+  if(key==='chatgpt:refresh'){await chatgptWatcher.poll();return {ok:true};}
+  if(key==='chatgpt:resume')return chatgptWatcher.resumeMonitoring(String(data.id||''));
+  if(key==='chatgpt:remove')return chatgptWatcher.remove(String(data.id||''));
   if(key==='coordinator:create'){
     if(state.coordinator.jobs.length>=30)throw Error('Limit 30 zadań — najpierw usuń stare.');
     const job=makeJob(data);
@@ -265,6 +279,9 @@ async function handleAction(key,data) {
     const entry=state.activity.find(x=>x.id===String(data.id||''));
     const task=entry?.taskId&&state.schedule.find(x=>x.id===entry.taskId);
     if(task?.target)return openTarget(task.kind,task.target);
+    // Notification actions may open only verified ChatGPT conversation URLs, never arbitrary links.
+    if(entry?.target && /^https:\/\/chatgpt\.com\/c\/[\w-]+\/?$/.test(entry.target))
+      return openTarget('url',entry.target);
     panelRequests++;return {panelRequested:true};
   }
   if(key==='open-target')return openTarget(data.kind,data.target);
@@ -398,9 +415,11 @@ function main(){
   if(process.env.RATCHET_DISABLE_HOOKS!=='1')startHookServer();
   setInterval(checkSchedule,15000);
   setInterval(()=>coordinatorRunner.tick(),4000);
+  setInterval(()=>chatgptWatcher.poll().catch(()=>{}),15000);
+  chatgptWatcher.poll().catch(()=>{});
   coordinatorRunner.tick();
   refreshGithub(true).catch(e=>console.warn('GitHub:',e.message));
   setInterval(()=>refreshGithub().catch(()=>{}),60000);
 }
 if(require.main===module) main();
-module.exports={read,save,snapshot,health,checkSchedule,handleAction,openTarget,appRequest,main,coordinatorRunner};
+module.exports={read,save,snapshot,health,checkSchedule,handleAction,openTarget,appRequest,main,coordinatorRunner,chatgptWatcher};
