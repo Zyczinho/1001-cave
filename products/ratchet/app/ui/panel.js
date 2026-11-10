@@ -24,6 +24,14 @@ const demoInitial={
 const loadDemo=()=>{try{return JSON.parse(localStorage.getItem('ratchet-demo'))||demoInitial;}catch{return demoInitial;}};
 const persistDemo=()=>{try{localStorage.setItem('ratchet-demo',JSON.stringify(snapshot));}catch{/* Podgląd osadzony może blokować storage — wtedy działa w pamięci. */}};
 let snapshot=DEMO?loadDemo():demoInitial,tab='today',agentFilter=null,toastTimer,updateInfo=null;
+// One-time introduction is UI-only. No API call, model launch, or change to coordinator.enabled.
+const AGENT_GUIDE_KEY='ratchet-agents-intro-v1';
+const agentGuideWasSeen=()=>{try{return localStorage.getItem(AGENT_GUIDE_KEY)==='seen';}catch{return false;}};
+let agentGuideSeen=agentGuideWasSeen(),agentGuideOpen=false,agentGuideStep=0;
+function finishAgentGuide(){
+  agentGuideSeen=true;agentGuideOpen=false;agentGuideStep=0;
+  try{localStorage.setItem(AGENT_GUIDE_KEY,'seen');}catch{/* Keep the choice in this session when storage is unavailable. */}
+}
 const state=()=>snapshot.state;
 const $=sel=>document.querySelector(sel);
 const I=(name)=>`<span class="icon-slot" data-icon="${name}"></span>`;
@@ -159,7 +167,7 @@ function renderAgent(a){const [label,color]=labels[a.status]||labels.idle;return
 function renderFilteredAgents(){
   const all=state().agents, gh=snapshot.github;
   const titles={working:'Agenci w pracy',attention:'Wymaga uwagi',risk:'Ryzyka i błędy'};
-  let html=sectionHeader(titles[agentFilter]||'Agenci','Widok otwarty z licznika statusów.','<button class="btn tiny secondary" data-action="filter-reset">Wszystkie</button>');
+  let html=sectionHeader(titles[agentFilter]||'Agenci','Widok otwarty z licznika statusów.','<button class="btn tiny secondary" data-action="filter-reset">Wszystkie</button>')+renderAgentGuide();
   if(agentFilter==='working'||agentFilter==='attention'){
     const selected=all.filter(a=>agentFilter==='working'?a.status==='working':a.status==='needs_attention'||a.status==='blocked');
     html+=selected.map(renderAgent).join('');
@@ -184,6 +192,49 @@ function renderFilteredAgents(){
   if(!failed.length&&!overlaps.length&&!blocked.length)html+=empty('Brak wykrytych ryzyk','Na podstawie ostatniego odczytu GitHuba i sesji agentów.','✓');
   if(snapshot.githubError)html+='<div class="alert danger">'+esc(snapshot.githubError)+'</div>';
   return html;
+}
+
+
+const agentGuideSteps=[
+  {
+    icon:'glasses',
+    title:'Poznaj dwa tryby pracy',
+    body:'Obserwowanie pokazuje status istniejącej sesji AI. Koordynator uruchamia osobne, lokalne etapy analizy i recenzji. To dwie różne funkcje.',
+    note:'ChatGPT i Claude w przeglądarce nie są automatycznie sterowane przez Ratcheta.'
+  },
+  {
+    icon:'edit',
+    title:'Opisz pierwsze zadanie',
+    body:'W Koordynatorze wpisz tytuł i cel, wybierz folder projektu oraz drugiego wykonawcę: Claude Code lub Codex CLI.',
+    note:'Dodanie zadania zapisuje je w kolejce. Dopiero świadome włączenie Koordynatora może uruchomić agentów i zużyć ich limity.'
+  },
+  {
+    icon:'bell',
+    title:'Odbierz wynik, nie każdy sygnał',
+    body:'Śledź statusy: Oczekuje → Agent analizuje → Analizy gotowe. Po zakończeniu otwórz raporty obu agentów.',
+    note:'Ratchet powiadomi Cię po obu etapach lub przy blokadzie. Raport nie oznacza wdrożenia kodu.'
+  }
+];
+function renderAgentGuide(){
+  if(agentGuideSeen&&!agentGuideOpen){
+    return '<div class="agent-guide-reopen"><button type="button" class="btn tiny ghost" data-action="agent-guide-restart">'
+      +I('bot')+' Jak korzystać z agentów?</button></div>';
+  }
+  const step=agentGuideSteps[agentGuideStep],last=agentGuideStep===agentGuideSteps.length-1;
+  return '<section class="agent-guide" aria-label="Samouczek centrum agentów">'
+    +'<div class="agent-guide-top"><span class="agent-guide-kicker">POZNAJ KOORDYNATORA</span>'
+    +'<span class="agent-guide-position">Krok '+(agentGuideStep+1)+' z '+agentGuideSteps.length+'</span></div>'
+    +'<div class="agent-guide-progress" role="progressbar" aria-label="Postęp samouczka" aria-valuemin="1" aria-valuemax="3" aria-valuenow="'+(agentGuideStep+1)+'">'
+    +agentGuideSteps.map((_,i)=>'<span class="'+(i<=agentGuideStep?'active':'')+'"></span>').join('')+'</div>'
+    +'<div class="agent-guide-icon">'+I(step.icon)+'</div>'
+    +'<h2>'+esc(step.title)+'</h2>'
+    +'<p class="agent-guide-description">'+esc(step.body)+'</p>'
+    +'<p class="agent-guide-note">'+I('shield')+' '+esc(step.note)+'</p>'
+    +'<div class="agent-guide-controls"><button type="button" class="btn tiny ghost" data-action="agent-guide-skip">Pomiń</button>'
+    +'<div class="agent-guide-right">'
+    +(agentGuideStep?'<button type="button" class="btn tiny secondary" data-action="agent-guide-back">Wstecz</button>':'')
+    +'<button type="button" class="btn small" data-action="agent-guide-next">'+(last?'Zakończ samouczek':'Dalej')+I(last?'check':'arrow')+'</button>'
+    +'</div></div></section>';
 }
 
 function renderCoordinator(){
@@ -220,6 +271,7 @@ function renderAgents(){
   if(agentFilter)return renderFilteredAgents();
   const a=state().agents,gh=snapshot.github,err=snapshot.githubError;
   let html=sectionHeader('Centrum agentów','Model zakończył odpowiedź ≠ kod jest sprawdzony.',`<button class="btn small secondary" data-action="new" data-collection="agents">+ Agent</button>`);
+  html+=renderAgentGuide();
   html+=`<div class="github-summary"><div class="github-top"><div><strong>GitHub · ${esc(state().settings.repo)}</strong><br><small>${gh?.checkedAt?`Odczyt: ${formatTime(gh.checkedAt)}`:'Bez ostatniego odczytu'}</small></div><button class="btn small secondary" data-action="github-refresh">${I('refresh')} Odśwież</button></div>`;
   if(gh)html+=`<div class="github-stats"><div class="metric"><b>${gh.prs.length}</b><span>Otwarte PR</span></div><div class="metric"><b>${gh.runs.filter(r=>r.status!=='completed').length}</b><span>CI w toku</span></div><div class="metric"><b>${gh.runs.filter(r=>r.conclusion==='failure').length}</b><span>CI błędy</span></div></div>`;
   else html+=`<p class="sub">${esc(err||'Łączenie z GitHubem...')}</p>`;
@@ -348,6 +400,13 @@ async function handleAction(el){
   if(act==='template')showModal('schedule','',templateMap[el.dataset.template]);
   if(act==='switch'){tab=el.dataset.tab;agentFilter=null;render();}
   if(act==='metric'){tab='agents';agentFilter=el.dataset.metric;render();}
+  if(act==='agent-guide-restart'){agentGuideOpen=true;agentGuideStep=0;render();}
+  if(act==='agent-guide-skip'){finishAgentGuide();render();}
+  if(act==='agent-guide-back'){agentGuideStep=Math.max(0,agentGuideStep-1);render();}
+  if(act==='agent-guide-next'){
+    if(agentGuideStep===agentGuideSteps.length-1){finishAgentGuide();render();}
+    else{agentGuideStep=Math.min(agentGuideSteps.length-1,agentGuideStep+1);render();}
+  }
   if(act==='coordinator-toggle'){
     const enabled=el.dataset.enabled==='true';
     if(enabled&&!await compactConfirm('Włączyć uruchamianie lokalnych agentów Claude Code? Dwa etapy analizy mogą wykorzystać płatne zapytania. Bez edycji kodu.'))return;
