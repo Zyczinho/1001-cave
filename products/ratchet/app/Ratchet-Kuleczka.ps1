@@ -28,6 +28,7 @@ public sealed class RatchetOrbForm : Form {
 public static class RatchetNativeWindow {
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr data);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder title, int max);
   [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
@@ -50,6 +51,7 @@ $script:lastPanelSpawn = [datetime]::MinValue
 $script:lastBackendRecovery = [datetime]::MinValue
 $script:backendStartAttempts = 0
 $script:lastPanelRequest = -1
+$script:lastPanelHideRequest = -1
 $script:hadServer = $false
 $script:consecutiveOfflineTicks = 0
 
@@ -59,6 +61,12 @@ function Find-RatchetPanel {
     return [RatchetNativeWindow]::FindPanel()
 }
 
+function Close-RatchetPanel {
+    $handle=Find-RatchetPanel
+    if ($handle -eq [IntPtr]::Zero) { return }
+    # WM_CLOSE (0x0010) to the exact named Ratchet window; never kill Edge process.
+    [void][RatchetNativeWindow]::PostMessage($handle,16,[IntPtr]::Zero,[IntPtr]::Zero)
+}
 function Focus-RatchetPanel {
     param([IntPtr]$handle)
     if ($handle -eq [IntPtr]::Zero) { return $false }
@@ -117,7 +125,7 @@ catch {
 
 function Set-RatchetOrbSize {
     param([int]$requested)
-    if ($requested -notin @(72,84,100,112)) { return }
+    if ($requested -notin @(48,56,64,72,84,100,112)) { return }
     if ($requested -eq $script:orbSize) { return }
     $old = $script:orbSize
     $script:orbSize = $requested
@@ -145,7 +153,7 @@ function Open-RatchetPanel {
     }
     $existing = Find-RatchetPanel
     if (Focus-RatchetPanel $existing) { return }
-    if (([datetime]::UtcNow - $script:lastPanelSpawn).TotalSeconds -lt 18) { return }
+    if (([datetime]::UtcNow - $script:lastPanelSpawn).TotalSeconds -lt 2) { return }
     $script:lastPanelSpawn = [datetime]::UtcNow
     $edge = @(
         "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
@@ -277,6 +285,10 @@ $diagItem.Add_Click({
         $script:notifyIcon.ShowBalloonTip(3000,'Ratchet','Brakuje pliku Diagnostyka-Ratchet.ps1',[System.Windows.Forms.ToolTipIcon]::Warning)
     }
 })
+$testItem=$menu.Items.Add('Test powiadomienia')
+$testItem.Add_Click({
+    $script:notifyIcon.ShowBalloonTip(7000,'Ratchet - test','To jest próbne powiadomienie systemowe Ratcheta.',[System.Windows.Forms.ToolTipIcon]::Info)
+})
 $retryItem=$menu.Items.Add('Uruchom ponownie serwer')
 $retryItem.Add_Click({
   $script:backendStartAttempts=0
@@ -310,6 +322,10 @@ $timer.Add_Tick({
             $script:lastPanelRequest = [int]$info.panelRequests
             Open-RatchetPanel
         }
+        if ($null -ne $info.panelHideRequests -and [int]$info.panelHideRequests -gt $script:lastPanelHideRequest) {
+            $script:lastPanelHideRequest = [int]$info.panelHideRequests
+            Close-RatchetPanel
+        }
         $script:hadServer = $true
         $script:consecutiveOfflineTicks = 0
         $script:status = [string]$info.status
@@ -317,10 +333,13 @@ $timer.Add_Tick({
         if($info.notifications) {
             foreach($entry in @($info.activity | Sort-Object at)) {
                 $when = ([DateTimeOffset]::Parse($entry.at)).ToUnixTimeMilliseconds()
+                # Cursor prevents replay of old reminders on every status poll.
                 if($when -gt $script:lastSeen) {
-                    $script:notifyIcon.BalloonTipTitle = 'Ratchet - przypomnienie'
-                    $script:notifyIcon.BalloonTipText = [string]$entry.text
-                    $script:notifyIcon.ShowBalloonTip(6500)
+                    $title = if ($entry.phase -eq 'start') {'Ratchet - początek zadania'}
+                             elseif ($entry.phase -eq 'end') {'Ratchet - planowany koniec'}
+                             elseif ($entry.phase -eq 'finished') {'Ratchet - zakończono'}
+                             else {'Ratchet - powiadomienie'}
+                    $script:notifyIcon.ShowBalloonTip(7000,$title,[string]$entry.text,[System.Windows.Forms.ToolTipIcon]::Info)
                     $script:lastSeen=$when
                 }
             }
@@ -366,6 +385,7 @@ try {
     $script:hadServer = [bool]$initial
     if ($null -ne $initial.avatarSize) { Set-RatchetOrbSize -requested ([int]$initial.avatarSize) }
     if ($null -ne $initial.panelRequests) { $script:lastPanelRequest = [int]$initial.panelRequests }
+    if ($null -ne $initial.panelHideRequests) { $script:lastPanelHideRequest = [int]$initial.panelHideRequests }
 } catch {}
 $timer.Start()
 # Start with only the orb. Panel is opened on explicit click.
