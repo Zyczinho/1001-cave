@@ -18,7 +18,7 @@ const demoInitial={
       {id:'box',title:'Box2Box',kind:'url',target:'https://box2box.com.pl',group:'Sklep'},
       {id:'chatgpt',title:'ChatGPT',kind:'url',target:'https://chatgpt.com/',group:'AI'},
       {id:'claude',title:'Claude',kind:'url',target:'https://claude.ai/',group:'AI'}
-    ],agents:[],activity:[],reminded:{}
+    ],agents:[],coordinator:{enabled:false,jobs:[]},activity:[],reminded:{}
   },github:null,githubError:'Podgląd przeglądarkowy — monitorowanie GitHuba działa w aplikacji Windows.'
 };
 const loadDemo=()=>{try{return JSON.parse(localStorage.getItem('ratchet-demo'))||demoInitial;}catch{return demoInitial;}};
@@ -50,6 +50,10 @@ const bridge=window.ratchet||{
   saveSettings:async data=>{state().settings={...state().settings,...data};persistDemo();},
   scheduleAction:async(id,action)=>{const t=state().schedule.find(x=>x.id===id);if(action==='snooze')t.snoozeUntil=new Date(Date.now()+600000).toISOString();if(action==='start'&&t.target)window.open(t.target,'_blank','noopener,noreferrer');persistDemo();},
   open:async(kind,target)=>{if(kind==='folder')throw Error('Otwieranie folderów działa w aplikacji Windows');if(!/^https?:\/\//.test(target))throw Error('Niepoprawny link');window.open(target,'_blank','noopener,noreferrer');},
+  coordinatorCreate:async data=>{throw Error('Uruchamianie agentów działa w aplikacji Windows.');},
+  coordinatorEnable:async enabled=>{state().coordinator.enabled=enabled;persistDemo();return {enabled};},
+  coordinatorRetry:async()=>{throw Error('Uruchamianie agentów działa w aplikacji Windows.');},
+  coordinatorRemove:async id=>{state().coordinator.jobs=state().coordinator.jobs.filter(j=>j.id!==id);persistDemo();},
   handoff:async()=>{const text=`Ratchet (podgląd) — agenci:\n${state().agents.map(a=>`${a.title}: ${a.status} ${a.note}`).join('\n')}`;await navigator.clipboard.writeText(text);return text;},
   refreshGithub:async()=>({github:null,githubError:'GitHub jest obsługiwany w aplikacji Windows.'}),
   checkUpdate:async()=>({available:false,version:'0.2.9',current:'0.2.9'}),
@@ -177,6 +181,36 @@ function renderFilteredAgents(){
   if(snapshot.githubError)html+='<div class="alert danger">'+esc(snapshot.githubError)+'</div>';
   return html;
 }
+
+function renderCoordinator(){
+  const c=state().coordinator||{enabled:false,jobs:[]};
+  const running=(c.jobs||[]).filter(j=>j.status==='running').length;
+  let html='<div class="group-title"><h3>Koordynator · Beta</h3><span class="quiet">'+running+'/2 pracuje</span></div>';
+  html+='<div class="coordinator-box"><div class="coordinator-top"><div><strong>Przekazywanie agent → agent</strong><p class="hint">2 etapy: analiza Claude Code → niezależna recenzja Claude Code. Odczyt repo, bez zapisu, commitów i wdrożeń.</p></div>'
+    +'<button class="btn small '+(c.enabled?'danger':'secondary')+'" data-action="coordinator-toggle" data-enabled="'+String(!c.enabled)+'">'+(c.enabled?'Wyłącz nowe':'Włącz')+'</button></div>';
+  html+='<form id="coordinatorForm" class="coordinator-form">'
+    +'<input name="title" aria-label="Tytuł zadania" placeholder="Np. Audyt zdjęć City Route" maxlength="120" required>'
+    +'<textarea name="goal" aria-label="Cel analizy" placeholder="Opisz, co mają przeanalizować i zweryfikować agenci. Minimum 15 znaków." required minlength="15" maxlength="3000"></textarea>'
+    +'<input name="projectRoot" aria-label="Folder projektu Windows" placeholder="C:\\Users\\...\\city-route-app" required>'
+    +'<button class="btn small full" type="submit">+ Zleć analizę i recenzję</button></form>'
+    +'<p class="hint">Tryb wykonawczy domyślnie wyłączony. Włączenie uruchamia lokalne procesy CLI z limitem ok. $0.35 na etap (szacunek może zostać przekroczony). Maks. 2 równoczesne zadania. Nie steruje otwartymi rozmowami ChatGPT.</p></div>';
+  for(const job of (c.jobs||[]).slice(0,8)){
+    const names={queued:'Oczekuje',running:'Agent analizuje',attention:'Wymaga uwagi',done:'Analizy gotowe',cancelled:'Anulowano'};
+    const steps=job.stages||[];
+    html+='<article class="coordinator-job"><div class="coordinator-job-head"><strong>'+esc(job.title)+'</strong><span class="pill '+(job.status==='done'?'good':job.status==='attention'?'bad':'')+'">'+(names[job.status]||esc(job.status))+'</span></div>'
+      +'<p class="task-note">'+esc(job.goal)+'</p>'
+      +'<div class="coordinator-stages">'+steps.map((st,i)=>'<span class="'+(st.status==='done'?'is-done':st.status==='running'?'is-active':'')+'">'+(i===0?'1 Analiza':'2 Recenzja')+' · '+esc(st.status)+'</span>').join('')+'</div>';
+    const current=steps[job.stepIndex]||steps[steps.length-1];
+    if(job.status==='attention')html+='<p class="alert danger">'+I('alert')+esc(current?.error||'Brak dalszego wykonawcy')+'</p>';
+    if(job.status==='done')html+='<details class="coordinator-report"><summary>Pokaż raporty agentów</summary>'+steps.map(st=>'<p><strong>'+esc(st.role==='analysis'?'Analiza':'Recenzja')+'</strong></p><pre>'+esc(st.summary||'Brak raportu')+'</pre>').join('')+'</details>';
+    html+='<div class="inline-actions">';
+    if(job.status==='attention'&&!current?.retryUsed)html+='<button class="btn tiny secondary" data-action="coordinator-retry" data-id="'+esc(job.id)+'">Ponów raz</button>';
+    if(job.status!=='running')html+='<button class="btn tiny ghost" data-action="coordinator-remove" data-id="'+esc(job.id)+'">Usuń</button>';
+    html+='</div></article>';
+  }
+  return html;
+}
+
 function renderAgents(){
   if(agentFilter)return renderFilteredAgents();
   const a=state().agents,gh=snapshot.github,err=snapshot.githubError;
@@ -187,6 +221,7 @@ function renderAgents(){
   html+='</div>';
   if(err)html+=`<div class="alert danger">${I('alert')} ${esc(err)}. Publiczne repozytoria są odczytywane bez tokena; prywatne nie są dostępne w tej wersji.</div>`;
   if(gh?.overlapping?.length)html+=gh.overlapping.map(x=>`<div class="alert">${I('alert')} PR #${x.a} i #${x.b} dotykają tych samych plików: <strong>${esc(x.files.join(', '))}</strong>. To ostrzeżenie o nakładaniu zmian, nie potwierdzony konflikt merge.</div>`).join('');
+  html+=renderCoordinator();
   html+=`<div class="group-title"><h3>Sesje modeli · ${a.length}</h3><span class="quiet">Statusy nie weryfikują testów</span></div>`;
   html+=a.length?a.map(renderAgent).join(''):empty('Nie monitorujesz jeszcze sesji','Dodaj rozmowę ChatGPT / Claude lub podłącz Claude Code Hooks.','◇');
   if(gh){html+=`<div class="group-title"><h3>Otwarte PR-y · ${gh.prs.length}</h3></div>`;html+=gh.prs.length?gh.prs.map(p=>{const related=gh.runs.filter(r=>r.head_sha===p.head_sha);const fail=related.some(r=>r.conclusion==='failure');return `<div class="pr-card"><div class="pr-row"><div><div class="pr-title"><span class="pr-number">#${p.number}</span> ${esc(p.title)}</div><div class="pr-branch">${esc(p.branch)}</div></div><button class="btn tiny ${fail?'danger':'secondary'}" data-action="open" data-kind="url" data-target="${esc(p.html_url)}">${fail?'CI błąd':'Otwórz'} ${I('arrow')}</button></div></div>`;}).join(''):empty('Czysta lista PR-ów','Nie ma obecnie otwartych PR-ów w monitorowanym repozytorium.','✓');}
@@ -308,6 +343,20 @@ async function handleAction(el){
   if(act==='template')showModal('schedule','',templateMap[el.dataset.template]);
   if(act==='switch'){tab=el.dataset.tab;agentFilter=null;render();}
   if(act==='metric'){tab='agents';agentFilter=el.dataset.metric;render();}
+  if(act==='coordinator-toggle'){
+    const enabled=el.dataset.enabled==='true';
+    if(enabled&&!await compactConfirm('Włączyć uruchamianie lokalnych agentów Claude Code? Dwa etapy analizy mogą wykorzystać płatne zapytania. Bez edycji kodu.'))return;
+    await bridge.coordinatorEnable(enabled);
+    if(!DEMO)snapshot=await bridge.snapshot();
+    render();toast(enabled?'Koordynator uruchomiony':'Nowe zadania wstrzymane');
+  }
+  if(act==='coordinator-retry'){
+    await bridge.coordinatorRetry(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Ponowienie zlecone (maks. raz)');
+  }
+  if(act==='coordinator-remove'){
+    if(!await compactConfirm('Usunąć zadanie koordynatora wraz z raportami?'))return;
+    await bridge.coordinatorRemove(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zadanie usunięte');
+  }
   if(act==='filter-reset'){agentFilter=null;render();}
   if(act==='activity-remove'){
     await bridge.removeActivity(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Sygnał usunięty');
@@ -381,6 +430,18 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-action]');if(a)safe(()=>handleAction(a));
 });
 document.addEventListener('submit',e=>{
+  if(e.target.id==='coordinatorForm'){
+    e.preventDefault();safe(async()=>{
+      const fd=new FormData(e.target);
+      await bridge.coordinatorCreate({
+        title:String(fd.get('title')||'').trim(),
+        goal:String(fd.get('goal')||'').trim(),
+        projectRoot:String(fd.get('projectRoot')||'').trim()
+      });
+      if(!DEMO)snapshot=await bridge.snapshot();
+      render();toast('Zadanie dodane do kolejki koordynatora');
+    });
+  }
   if(e.target.id==='itemForm'){e.preventDefault();safe(()=>saveForm(e.target));}
   if(e.target.id==='quickPlanForm'){e.preventDefault();safe(async()=>{const raw=String(new FormData(e.target).get('phrase')||'');const match=raw.match(/(?:^|\s)(?:o(?:d)?\s*)?([01]?\d|2[0-3])(?:[:.]([0-5]\d))?(?=\s|$)/i);if(!match)throw Error('Dodaj godzinę, np. o 12:00 spotkanie');const hh=pad(Number(match[1])),mm=match[2]||'00';const title=raw.replace(match[0],' ').replace(/\b(dzisiaj|jutro)\b/ig,'').replace(/^\s*[-–:,]\s*/,'').trim();if(!title)throw Error('Napisz też, co masz zrobić');const d=now();if(/\bjutro\b/i.test(raw))d.setDate(d.getDate()+1);const l=title.toLowerCase();let target='';if(/city\s*route|cityroad|city\s*road/i.test(l))target='https://github.com/Zyczinho/city-route-app';else if(/box\s*2\s*box|box2box|box\s*to\s*box/i.test(l))target='https://box2box.com.pl';else if(/szuk.*prac|ofert.*prac/i.test(l))target=/portal|ogłoszen|ogloszen/i.test(l)?'https://justjoin.it/':'https://chatgpt.com/';const url=title.match(/https?:\/\/[^\s]+/i);if(url)target=url[0];await bridge.save('schedule',{title,time:`${hh}:${mm}`,endTime:plusMinutes(`${hh}:${mm}`),date:dateKey(d),days:[d.getDay()],target,kind:'url',enabled:true});if(!DEMO)snapshot=await bridge.snapshot();if(dateKey(d)!==dateKey()){selectedDay=dateKey(d);calendarMonth=new Date(d.getFullYear(),d.getMonth(),1);tab='calendar';}e.target.reset();render();toast('Dodano do planu ✓');});}
   if(e.target.id==='settingsForm'){
