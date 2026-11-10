@@ -64,7 +64,7 @@ async function stageUpdate(manifest){
   const checked=validateManifest(manifest);
   if(compareVersion(checked.version,CURRENT_VERSION)<=0)throw Error('Brak nowszej wersji');
   if(!checked.files.length)throw Error('Brak plików aktualizacji');
-  if(checked.files.length>=100||checked.files.some(f=>f.path===INSTALLED_MANIFEST))throw Error('Wydanie zawiera niepoprawny lub zastrzeżony plik manifestu');
+  if(checked.files.length>=100&&!checked.files.some(f=>f.path===INSTALLED_MANIFEST))throw Error('Za dużo plików wydania');
   const stage=fs.mkdtempSync(path.join(os.tmpdir(),'ratchet-verified-'));
   try{
     for(const f of checked.files){
@@ -75,12 +75,23 @@ async function stageUpdate(manifest){
       fs.mkdirSync(path.dirname(target),{recursive:true});
       fs.writeFileSync(target,data);
     }
-    // Local version ledger is installed atomically with verified release files.
-    // It is an integrity reference, NOT cryptographic proof of publisher identity.
-    const ledger={version:checked.version,source:'ratchet-updates/latest.json',files:checked.files};
-    fs.writeFileSync(path.join(stage,INSTALLED_MANIFEST),JSON.stringify(ledger,null,2),'utf8');
+    // Release file may include a prebuilt ledger for legacy clients. Otherwise
+    // stage a local ledger for modern clients; never overwrite a verified file.
+    const prebuilt=checked.files.some(f=>f.path===INSTALLED_MANIFEST);
+    if(prebuilt){
+      const ledger=JSON.parse(fs.readFileSync(path.join(stage,INSTALLED_MANIFEST),'utf8'));
+      if(ledger.version!==checked.version||!Array.isArray(ledger.files))throw Error('Niespójny manifest lokalny');
+      const expected=checked.files.filter(f=>f.path!==INSTALLED_MANIFEST);
+      if(ledger.files.length!==expected.length||
+          expected.some(f=>!ledger.files.some(g=>g.path===f.path&&g.sha256===f.sha256))) {
+        throw Error('Manifest lokalny nie odpowiada plikom wydania');
+      }
+    }else{
+      const ledger={version:checked.version,source:'ratchet-updates/latest.json',files:checked.files};
+      fs.writeFileSync(path.join(stage,INSTALLED_MANIFEST),JSON.stringify(ledger,null,2),'utf8');
+    }
     fs.writeFileSync(path.join(stage,'ratchet-update-list.json'),
-      JSON.stringify([...checked.files.map(f=>f.path),INSTALLED_MANIFEST]),'utf8');
+      JSON.stringify([...checked.files.map(f=>f.path),...(prebuilt?[]:[INSTALLED_MANIFEST])]),'utf8');
     return stage;
   }catch(e){fs.rmSync(stage,{recursive:true,force:true});throw e;}
 }
