@@ -58,7 +58,7 @@ try {
   if(Get-Process -Id $ServerProcessId -ErrorAction SilentlyContinue){throw 'Stary serwer nie zakończył pracy'}
   New-Item -ItemType Directory -Path $backup -Force | Out-Null
   foreach($relative in $fileList){
-    if($relative -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(cmd|ps1|cjs|js|html|css|json|md|txt|png)$' -or $relative.Contains('..') -or $relative.Contains('\')) {throw 'Niebezpieczna ścieżka aktualizacji'}
+    if($relative -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(cmd|ps1|cjs|js|html|css|json|md|txt|png|ico)$' -or $relative.Contains('..') -or $relative.Contains('\')) {throw 'Niebezpieczna ścieżka aktualizacji'}
     $src=Join-Path $Staging $relative
     $dst=Join-Path $AppRoot $relative
     if(!(Test-Path -LiteralPath $src -PathType Leaf)){throw "Brak pliku $relative"}
