@@ -25,7 +25,7 @@ test('Agents tutorial: exactly three steps, safe content, progress and controls'
   assert.match(a.html,/data-action="agent-guide-next"/);
   assert.match(a.html,/data-action="agent-guide-skip"/);
   assert.doesNotMatch(a.html,/data-action="coordinator-toggle"/);
-  assert.match(a.steps[0].note,/ChatGPT w przeglądarce nie wysyła/);
+  assert.match(a.steps[0].note,/Zwykła rozmowa ChatGPT nie udostępnia/);
   const b=renderGuide(false,true,1);
   assert.match(b.html,/Krok 2 z 3/);
   assert.match(b.html,/agent-guide-back/);
