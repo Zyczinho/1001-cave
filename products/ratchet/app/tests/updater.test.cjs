@@ -13,9 +13,9 @@ const fs=require('node:fs'),path=require('node:path');
 const {stageUpdate,CURRENT_VERSION}=require('../updater.cjs');
 
 test('stages checked files and creates a local hash ledger automatically',async()=>{
-  assert.equal(CURRENT_VERSION,'0.2.8');
+  assert.equal(CURRENT_VERSION,'0.2.9');
   const payload=Buffer.from('safe test file','utf8');
-  const manifest={version:'0.2.9',files:[{path:'ui/panel.js',sha256:sha256(payload)}]};
+  const manifest={version:'0.3.0',files:[{path:'ui/panel.js',sha256:sha256(payload)}]};
   const original=global.fetch;
   global.fetch=async()=>new Response(payload,{status:200});
   let dir;
@@ -24,7 +24,7 @@ test('stages checked files and creates a local hash ledger automatically',async(
     const list=JSON.parse(fs.readFileSync(path.join(dir,'ratchet-update-list.json'),'utf8'));
     assert.deepEqual(list,['ui/panel.js','ratchet-release-manifest.json']);
     const local=JSON.parse(fs.readFileSync(path.join(dir,'ratchet-release-manifest.json'),'utf8'));
-    assert.equal(local.version,'0.2.9');
+    assert.equal(local.version,'0.3.0');
     assert.deepEqual(local.files,manifest.files);
   }finally{global.fetch=original;if(dir)fs.rmSync(dir,{force:true,recursive:true})}
 });
@@ -32,8 +32,8 @@ test('stages checked files and creates a local hash ledger automatically',async(
 test('first upgrade accepts prebuilt ledger for older updater',async()=>{
   const payload=Buffer.from('fixture panel','utf8');
   const file={path:'ui/panel.js',sha256:sha256(payload)};
-  const ledgerBytes=Buffer.from(JSON.stringify({version:'0.2.9',source:'release',files:[file]}));
-  const manifest={version:'0.2.9',files:[file,{path:'ratchet-release-manifest.json',sha256:sha256(ledgerBytes)}]};
+  const ledgerBytes=Buffer.from(JSON.stringify({version:'0.3.0',source:'release',files:[file]}));
+  const manifest={version:'0.3.0',files:[file,{path:'ratchet-release-manifest.json',sha256:sha256(ledgerBytes)}]};
   const original=global.fetch;
   global.fetch=async url=>new Response(url.endsWith('/ratchet-release-manifest.json')?ledgerBytes:payload,{status:200});
   let dir;

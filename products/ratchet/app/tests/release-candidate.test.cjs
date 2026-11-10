@@ -11,15 +11,28 @@ const hash=x=>crypto.createHash('sha256').update(x).digest('hex');
 test('release candidate is complete, immutable and not automatically published',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ratchet-candidate-test-'));
   try {
-    const result=buildCandidate({outputDir:dir});
-    assert.equal(result.version,'0.2.8');
+    const commit='0123456789abcdef0123456789abcdef01234567';
+    const result=buildCandidate({outputDir:dir,commit});
+    assert.equal(result.version,'0.2.9');
+    assert.equal(result.commit,commit);
     assert.equal(result.files,packageFiles.length+1);
     assert.ok(!fs.existsSync(path.join(dir,'latest.json')));
     assert.ok(!fs.existsSync(path.join(dir,'ratchet-updates','latest.json')));
     const manifest=JSON.parse(fs.readFileSync(path.join(dir,'latest.candidate.json'),'utf8'));
     assert.equal(manifest.channel,'candidate');
-    assert.equal(manifest.version,'0.2.8');
-    const release=path.join(dir,'ratchet-updates','releases','v0.2.8');
+    assert.equal(manifest.version,'0.2.9');
+    assert.equal(manifest.commit,commit);
+    // The user's ZIP has ONE folder: installer + readme at its root, program files under app/.
+    const pkg=path.join(dir,'Ratchet-0.2.9-RC');
+    assert.deepEqual(fs.readdirSync(pkg).sort(),['CZYTAJ-MNIE.txt','ZAINSTALUJ RATCHET.cmd','app']);
+    const installedLedger=JSON.parse(fs.readFileSync(path.join(pkg,'app','ratchet-release-manifest.json'),'utf8'));
+    assert.equal(installedLedger.commit,commit);
+    const listed=new Set(installedLedger.files.map(f=>f.path).concat('ratchet-release-manifest.json'));
+    const walk=(root,prefix='')=>fs.readdirSync(root,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(root,e.name),prefix+e.name+'/'):[prefix+e.name]);
+    for(const file of walk(path.join(pkg,'app')))assert.ok(listed.has(file),'unlisted file in package: '+file);
+    for(const f of installedLedger.files)assert.equal(hash(fs.readFileSync(path.join(pkg,'app',f.path))),f.sha256);
+    for(const dev of ['PODGLAD-OFFLINE.cmd','ui/preview.html','scripts/build-candidate.cjs','tests/core.test.cjs'])assert.ok(!listed.has(dev),dev+' is a developer file');
+    const release=path.join(dir,'ratchet-updates','releases','v0.2.9');
     for(const file of manifest.files){
       const bytes=fs.readFileSync(path.join(release,file.path));
       assert.equal(hash(bytes),file.sha256,'Checksum mismatch for '+file.path);

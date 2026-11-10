@@ -21,10 +21,17 @@ test('diagnostics can launch with Node and backend offline',()=>{
   assert.doesNotMatch(s,/Invoke-WebRequest|UploadFile|Send-MailMessage|Start-RatchetBackend|Stop-Process/);
 });
 
-test('diagnostics launcher is one command, no manual prompt or Node prerequisite',()=>{
-  const s=read('Diagnostyka-Ratchet.cmd');
-  assert.match(s,/Diagnostyka-Ratchet.ps1/);
-  assert.doesNotMatch(s,/node\s+--version|pause\s*$/im);
+test('diagnostics shortcut runs without console, prompt or Node prerequisite',()=>{
+  const s=read('Instaluj-Ratchet.ps1');
+  assert.match(s,/"--diagnostics"/);
+  assert.match(s,/Set-Shortcut \(Join-Path \$desktop 'Ratchet - Diagnostyka\.lnk'\) \$launcher '--diagnostics'/);
+  const d=read('Diagnostyka-Ratchet.ps1');
+  assert.doesNotMatch(d,/Read-Host|pause/i);
+  // Reports which copy and which build is running, and whether Windows can show toasts.
+  assert.match(d,/BACKEND_RUNS_FROM_OTHER_FOLDER/);
+  assert.match(d,/RUNNING_BUILD_DIFFERS_FROM_INSTALLED/);
+  assert.match(d,/POWERSHELL_TOASTS_DISABLED/);
+  assert.ok(d.includes(String.raw`'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications'`));
 });
 
 test('installer creates a separate shortcut which works without orb',()=>{

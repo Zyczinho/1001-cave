@@ -6,7 +6,7 @@ const http = require('node:http');
 const os = require('node:os');
 const {spawn} = require('node:child_process');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText} = require('./core.cjs');
 
 const PORT = Number(process.env.RATCHET_PORT || 47823);
 const CLAUDE_PORT = Number(process.env.RATCHET_HOOK_PORT || 47822);
@@ -15,16 +15,31 @@ const UI_ROOT = path.resolve(__dirname, 'ui');
 const JSON_LIMIT = 64 * 1024;
 let state = defaults(), github = null, githubError = null, lastFetch = 0;
 let appServer, hookServer, shuttingDown = false, quitRequested = false;
-let panelRequests = 0, panelHideRequests = 0, installingUpdate = false, updateAvailable = null;
+let panelRequests = 0, panelHideRequests = 0, orbResetRequests = 0, installingUpdate = false, updateAvailable = null;
+// Identity of the files actually running: answers "which copy and which build?" (RAT-001).
+function buildInfo() {
+  try {
+    const ledger=readJson(path.join(__dirname,'ratchet-release-manifest.json'));
+    return {commit:/^[0-9a-f]{7,40}$/.test(ledger.commit||'')?ledger.commit:null,manifestVersion:String(ledger.version||'')};
+  } catch {return {commit:null,manifestVersion:null};}
+}
+const BUILD=buildInfo();
+// Windows tools (Notepad, PowerShell Set-Content -Encoding UTF8) may add a UTF-8 BOM;
+// it must never make an otherwise valid profile unreadable.
+function readJson(file) {
+  let text=fs.readFileSync(file,'utf8');
+  if(text.charCodeAt(0)===0xFEFF)text=text.slice(1);
+  return JSON.parse(text);
+}
 
 function read() {
   if (!fs.existsSync(DATA)) { state=defaults(); return; }
-  try {state=normalizeStore(JSON.parse(fs.readFileSync(DATA,'utf8')));}
+  try {state=normalizeStore(readJson(DATA));}
   catch(e) {
     console.error('[ratchet] Uszkodzony profil:',e.message);
     const previous=DATA+'.bak';
     try {
-      state=normalizeStore(JSON.parse(fs.readFileSync(previous,'utf8')));
+      state=normalizeStore(readJson(previous));
       // Preserve the corrupt original for diagnostics, then restore last-known-good
       // BEFORE future saves can accidentally overwrite the only valid backup.
       fs.copyFileSync(DATA,DATA+'.corrupt-'+Date.now());
@@ -82,7 +97,7 @@ async function refreshGithub(force=false) {
   if(!/^[-\w.]+\/[-\w.]+$/.test(repo)) {githubError='Repo powinno mieć format właściciel/nazwa';return {github,githubError};}
   lastFetch=Date.now();
   try {
-    const headers={'Accept':'application/vnd.github+json','User-Agent':'Ratchet/0.2.8','X-GitHub-Api-Version':'2022-11-28'};
+    const headers={'Accept':'application/vnd.github+json','User-Agent':'Ratchet/'+CURRENT_VERSION,'X-GitHub-Api-Version':'2022-11-28'};
     async function gh(endpoint) {
       const res=await fetch('https://api.github.com'+endpoint,{headers,signal:AbortSignal.timeout(12000)});
       if(!res.ok) throw Error('GitHub HTTP '+res.status);
@@ -146,6 +161,8 @@ async function handleAction(key,data) {
     if(typeof data.settings?.repo==='string'&&/^[-\w.]+\/[-\w.]+$/.test(data.settings.repo.trim())){s.repo=data.settings.repo.trim();lastFetch=0;github=null;}
     for(const k of ['notifications','autoStart','alwaysOnTop']) if(typeof data.settings?.[k]==='boolean')s[k]=data.settings[k];
     if([48,56,64,72,84,100,112].includes(Number(data.settings?.avatarSize)))s.avatarSize=Number(data.settings.avatarSize);
+    // null resets the panel to the compact default; invalid sizes are ignored.
+    if(data.settings&&'panelSize' in data.settings)s.panelSize=normalizePanelSize(data.settings.panelSize);
     state.settings=s;save();if(data.settings?.repo)refreshGithub(true).catch(()=>{});return s;
   }
   if(key==='schedule:action'){
@@ -161,7 +178,8 @@ async function handleAction(key,data) {
     }else if(data.action==='start'){
       item.snoozeUntil=null;
       state.reminded[`${today}:${item.id}:base`]=true;
-      activity('Rozpoczęto: '+item.title,'reminder',item.id,'start');
+      // 'started' is the user's own click: logged, but not echoed as a Windows toast.
+      activity('Rozpoczęto: '+item.title,'reminder',item.id,'started');
       if(item.target)await openTarget(item.kind,item.target);
     }else if(data.action==='finish'){
       state.reminded[`${today}:${item.id}:end`]=true;
@@ -177,13 +195,19 @@ async function handleAction(key,data) {
   if(key==='handoff')return handoffText(state,github);
   if(key==='panel:show'){ panelRequests++; return true; }
   if(key==='panel:hide'){ panelHideRequests++; return true; }
+  if(key==='orb:reset'){ orbResetRequests++; state.orbPosition=null; save(); return true; }
+  if(key==='orb:position'){
+    const x=Math.round(Number(data.x)),y=Math.round(Number(data.y));
+    if(!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>20000||Math.abs(y)>20000)throw Error('Niepoprawna pozycja');
+    state.orbPosition={x,y};save();return state.orbPosition;
+  }
   if(key==='diagnostics:run'){
     // Fixed command, no user-supplied shell arguments, no data uploaded.
     if(process.platform!=='win32')throw Error('Diagnostyka natywna działa wyłącznie na Windows');
     const script=path.join(__dirname,'Diagnostyka-Ratchet.ps1');
     if(!fs.existsSync(script))throw Error('Brak modułu diagnostyki Ratcheta');
     const child=spawn('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',script],
-      {detached:true,windowsHide:false,stdio:'ignore'});
+      {detached:true,windowsHide:true,stdio:'ignore'});
     child.on('error',e=>console.error('[ratchet] Diagnostics launch:',e.message));
     child.unref();
     return {requested:true,localOnly:true};
@@ -242,9 +266,9 @@ async function appRequest(req,res) {
   if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) return fail(res,'Tylko localhost',403);
   const url=new URL(req.url,`http://127.0.0.1:${PORT}`);
   if(req.method==='GET'){
-    if(url.pathname==='/api/ping') return json(res,{ok:true,version:'0.2.8'});
+    if(url.pathname==='/api/ping') return json(res,{ok:true,version:CURRENT_VERSION,commit:BUILD.commit,root:__dirname,pid:process.pid});
     if(url.pathname==='/api/snapshot') return json(res,snapshot());
-    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,panelRequests,panelHideRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
+    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,alwaysOnTop:state.settings.alwaysOnTop!==false,autoStart:state.settings.autoStart===true,panelSize:state.settings.panelSize||null,orbPosition:state.orbPosition||null,panelRequests,panelHideRequests,orbResetRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
     return staticResponse(url.pathname,res);
   }
   if(req.method==='POST'&&url.pathname==='/api/action'){
@@ -276,7 +300,7 @@ function main(){
   read();checkSchedule();
   appServer=http.createServer((req,res)=>{appRequest(req,res).catch(e=>fail(res,e.message,500));});
   appServer.on('error',e=>{console.error('[ratchet] Server:',e.message);process.exit(1);});
-  appServer.listen(PORT,'127.0.0.1',()=>console.log('Ratchet 0.2.8 start: http://127.0.0.1:'+PORT));
+  appServer.listen(PORT,'127.0.0.1',()=>console.log('Ratchet '+CURRENT_VERSION+' start: http://127.0.0.1:'+PORT+' commit '+(BUILD.commit||'dev')));
   if(process.env.RATCHET_DISABLE_HOOKS!=='1')startHookServer();
   setInterval(checkSchedule,15000);
   refreshGithub(true).catch(e=>console.warn('GitHub:',e.message));

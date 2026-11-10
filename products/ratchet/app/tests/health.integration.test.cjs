@@ -35,7 +35,10 @@ test('local backend: health, permissions, persistence and controlled exit',async
   try{
     proc=await boot(port,dir);
     let response=await fetch('http://127.0.0.1:'+port+'/api/ping');
-    assert.deepEqual(await response.json(),{ok:true,version:'0.2.8'});
+    const ping=await response.json();
+    assert.equal(ping.ok,true);assert.equal(ping.version,'0.2.9');
+    assert.equal(path.resolve(ping.root),path.resolve(__dirname,'..'),'ping must reveal which copy of Ratchet is running');
+    assert.equal(typeof ping.pid,'number');
     response=await action(port,{action:'item:save',data:{collection:'links',item:{id:'a',title:'Example',kind:'url',target:'https://example.com'}}});
     assert.equal(response.status,200);
     response=await action(port,{action:'item:save',data:{collection:'links',item:{id:'b',title:'Example B',kind:'url',target:'https://example.org'}}});
@@ -64,6 +67,46 @@ test('local backend: health, permissions, persistence and controlled exit',async
     assert.ok(fs.readFileSync(profile,'utf8').startsWith('{'));
     assert.doesNotThrow(()=>JSON.parse(fs.readFileSync(profile,'utf8')));
     assert.ok(fs.readdirSync(path.dirname(profile)).some(x=>x.startsWith('ratchet.json.corrupt-')));
+  } finally {
+    if(proc && proc.exitCode===null){proc.kill();await Promise.race([new Promise(r=>proc.once('exit',r)),delay(1000)]);}
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+},{timeout:13000});
+
+test('profile written with a UTF-8 BOM still starts; orb/panel settings persist and validate',async()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ratchet-bom-'));
+  const port=await getFreePort();
+  let proc;
+  try{
+    const profile=path.join(dir,'Ratchet','ratchet.json');
+    fs.mkdirSync(path.dirname(profile),{recursive:true});
+    const original='﻿'+JSON.stringify({version:1,settings:{avatarSize:56},links:[{id:'mine',title:'Moje',kind:'url',target:'https://example.com',group:'X'}]});
+    fs.writeFileSync(profile,original,'utf8');
+    proc=await boot(port,dir);
+    const snap=await (await fetch('http://127.0.0.1:'+port+'/api/snapshot')).json();
+    assert.ok(snap.state.links.some(x=>x.id==='mine'),'BOM profile must load the user data');
+    assert.equal(snap.state.settings.avatarSize,56);
+    assert.equal(fs.readFileSync(profile,'utf8'),original,'reading must not rewrite the profile');
+    // Remembered panel size: valid sizes kept, a desktop-sized window rejected, null resets.
+    await action(port,{action:'settings:save',data:{settings:{panelSize:{w:400,h:600}}}});
+    let status=await (await fetch('http://127.0.0.1:'+port+'/api/status')).json();
+    assert.deepEqual(status.panelSize,{w:400,h:600});
+    await action(port,{action:'settings:save',data:{settings:{panelSize:{w:1800,h:1000}}}});
+    status=await (await fetch('http://127.0.0.1:'+port+'/api/status')).json();
+    assert.equal(status.panelSize,null);
+    // Orb position survives restarts; reset clears it and signals the orb.
+    let r=await action(port,{action:'orb:position',data:{x:1200,y:300}});
+    assert.equal(r.status,200);
+    status=await (await fetch('http://127.0.0.1:'+port+'/api/status')).json();
+    assert.deepEqual(status.orbPosition,{x:1200,y:300});
+    r=await action(port,{action:'orb:position',data:{x:'abc',y:1}});
+    assert.equal(r.status,400);
+    await action(port,{action:'orb:reset',data:{}});
+    status=await (await fetch('http://127.0.0.1:'+port+'/api/status')).json();
+    assert.equal(status.orbPosition,null);
+    assert.equal(status.orbResetRequests,1);
+    assert.equal(status.alwaysOnTop,true);
+    assert.equal(status.autoStart,false);
   } finally {
     if(proc && proc.exitCode===null){proc.kill();await Promise.race([new Promise(r=>proc.once('exit',r)),delay(1000)]);}
     fs.rmSync(dir,{recursive:true,force:true});

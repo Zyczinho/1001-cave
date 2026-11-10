@@ -22,9 +22,7 @@ test('orb recovers backend after crash and keeps a native exit fallback',()=>{
   assert.match(orb,/\$script:notifyIcon\.Visible=\$false/);
 });
 test('emergency quit script targets launcher and orb, not all PowerShell processes',()=>{
-  const cmd=read('AWARYJNIE-ZATRZYMAJ-RATCHET.cmd');
   const ps=read('Zatrzymaj-Ratchet.ps1');
-  assert.match(cmd,/Zatrzymaj-Ratchet[.]ps1/);
   assert.match(ps,/Ratchet-Kuleczka/);
   assert.match(ps,/Uruchom-Ratchet-Bez-Electron/);
   assert.match(ps,/ProcessId -ne \$PID/);

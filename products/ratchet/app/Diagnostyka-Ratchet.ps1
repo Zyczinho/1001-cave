@@ -48,7 +48,10 @@ $report = [ordered]@{
     powershell = $PSVersionTable.PSVersion.ToString()
     appRoot = (Redact-RatchetText $appRoot)
     shortcut = [ordered]@{ exists = $false; target = $null; arguments = $null }
-    backend = [ordered]@{ status = 'UNKNOWN'; version = $null; error = $null }
+    backend = [ordered]@{ status = 'UNKNOWN'; version = $null; commit = $null; root = $null; runsFromInstalledFolder = $null; error = $null }
+    receipt = $null
+    notifications = [ordered]@{ toastsEnabled = $null; powershellToastsEnabled = $null }
+    desktopLeftovers = @()
     processes = @()
     files = @()
     manifest = [ordered]@{ status = 'UNKNOWN_NO_LOCAL_MANIFEST'; verified = $false; mismatches = @() }
@@ -75,7 +78,9 @@ try {
     try {
         $procs = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
             $_.Name -in @('powershell.exe','pwsh.exe','node.exe') -and
-            $_.CommandLine -match '(?i)Ratchet-Kuleczka[.]ps1|Uruchom-Ratchet-Bez-Electron[.]ps1|Ratchet[\\/]app[\\/]server[.]cjs'
+            ($_.CommandLine -match '(?i)Ratchet-Kuleczka[.]ps1|Uruchom-Ratchet-Bez-Electron[.]ps1|Ratchet[\\/]app[\\/]server[.]cjs' -or
+             ($_.Name -eq 'node.exe' -and $_.CommandLine -match '(?i)([A-Za-z]:\\[^"]*?\\)server[.]cjs' -and
+              (Test-Path -LiteralPath (Join-Path $Matches[1] 'Ratchet-Kuleczka.ps1'))))
         } | ForEach-Object {
             $cmd = [string]$_.CommandLine
             $role = if($cmd -match '(?i)server[.]cjs') {'backend'}
@@ -92,6 +97,12 @@ try {
         if ($ping.ok -eq $true) {
             $report.backend.status = 'ONLINE'
             $report.backend.version = [string]$ping.version
+            $report.backend.commit = [string]$ping.commit
+            if ($ping.root) {
+                $report.backend.root = Redact-RatchetText ([string]$ping.root)
+                $installed = [IO.Path]::GetFullPath((Join-Path $stateRoot 'app')).TrimEnd('\')
+                $report.backend.runsFromInstalledFolder = ([IO.Path]::GetFullPath([string]$ping.root).TrimEnd('\') -ieq $installed)
+            }
         } else { $report.backend.status = 'UNHEALTHY' }
     } catch {
         $report.backend.status = 'OFFLINE'
@@ -148,7 +159,29 @@ try {
             [void]$issues.Add('Manifest: ' + (Redact-RatchetText $_.Exception.Message))
         }
     }
-    foreach ($name in @('launcher-boot.log','launcher-error.log','update-log.txt')) {
+    # Installed build according to the installer receipt (version + commit).
+    try {
+        $receiptFile = Join-Path $stateRoot 'install-receipt.json'
+        if (Test-Path -LiteralPath $receiptFile -PathType Leaf) {
+            $r = Get-Content -LiteralPath $receiptFile -Raw | ConvertFrom-Json
+            $report.receipt = [ordered]@{ version = [string]$r.version; commit = [string]$r.commit; installedAt = [string]$r.installedAt; launcher = [string]$r.launcher; verifiedAt = [string]$r.verifiedAt }
+        }
+    } catch { [void]$issues.Add('Receipt: ' + (Redact-RatchetText $_.Exception.Message)) }
+    # A reminder is invisible if Windows blocks toasts globally or for PowerShell (NotifyIcon host).
+    try {
+        $push = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications' -ErrorAction SilentlyContinue
+        $report.notifications.toastsEnabled = if ($push -and $null -ne $push.ToastEnabled) { [int]$push.ToastEnabled -ne 0 } else { $true }
+        $psKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+        $psSetting = Get-ItemProperty -LiteralPath $psKey -ErrorAction SilentlyContinue
+        $report.notifications.powershellToastsEnabled = if ($psSetting -and $null -ne $psSetting.Enabled) { [int]$psSetting.Enabled -ne 0 } else { $true }
+    } catch { [void]$issues.Add('Notifications: ' + (Redact-RatchetText $_.Exception.Message)) }
+    # Loose program files on the Desktop (names only, nothing is read or moved here).
+    try {
+        $desktopDir = [Environment]::GetFolderPath('DesktopDirectory')
+        $report.desktopLeftovers = @(@('server.cjs','core.cjs','updater.cjs','Ratchet-Kuleczka.ps1','Ratchet-Backend.ps1','Uruchom-Ratchet-Bez-Electron.ps1','URUCHOM-RATCHET.cmd','ZAINSTALUJ-RAZ.cmd','ZAINSTALUJ-TEST.cmd','ratchet-release-manifest.json') |
+            Where-Object { Test-Path -LiteralPath (Join-Path $desktopDir $_) -PathType Leaf })
+    } catch { [void]$issues.Add('Desktop: ' + (Redact-RatchetText $_.Exception.Message)) }
+    foreach ($name in @('launcher-boot.log','launcher-error.log','update-log.txt','install.log')) {
         $file = Join-Path $stateRoot $name
         $report.logs[$name] = @(Read-RatchetTail $file)
     }
@@ -169,6 +202,12 @@ try {
     }
     if($report.backend.status -eq 'OFFLINE') { $report.observations += 'BACKEND_OFFLINE' }
     if($report.manifest.status -eq 'MISMATCH') { $report.observations += 'LOCAL_MANIFEST_MISMATCH' }
+    if($report.backend.runsFromInstalledFolder -eq $false) { $report.observations += 'BACKEND_RUNS_FROM_OTHER_FOLDER' }
+    if($report.receipt -and $report.backend.commit -and $report.receipt.commit -and $report.backend.commit -ne $report.receipt.commit) { $report.observations += 'RUNNING_BUILD_DIFFERS_FROM_INSTALLED' }
+    if($report.notifications.toastsEnabled -eq $false) { $report.observations += 'WINDOWS_TOASTS_DISABLED' }
+    if($report.notifications.powershellToastsEnabled -eq $false) { $report.observations += 'POWERSHELL_TOASTS_DISABLED' }
+    if(@($report.desktopLeftovers).Count -gt 0) { $report.observations += 'DESKTOP_HAS_RATCHET_PROGRAM_FILES' }
+    if($report.shortcut.exists -and $report.shortcut.target -match '(?i)powershell[.]exe$') { $report.observations += 'SHORTCUT_STARTS_POWERSHELL_DIRECTLY' }
     $report.observations += @($issues.ToArray())
 
     $jsonFile = Join-Path $reportDir 'report.json'
@@ -178,7 +217,10 @@ try {
     $summary = @(
         'RATCHET - RAPORT DIAGNOSTYCZNY',
         'ID: ' + $reportId,
-        'Backend: ' + $report.backend.status + ' ' + [string]$report.backend.version,
+        'Backend: ' + $report.backend.status + ' ' + [string]$report.backend.version + ' commit ' + [string]$report.backend.commit,
+        'Folder backendu: ' + [string]$report.backend.root,
+        'Zainstalowano: ' + $(if($report.receipt){$report.receipt.version + ' commit ' + $report.receipt.commit}else{'brak potwierdzenia instalatora'}),
+        'Powiadomienia Windows: ' + $(if($report.notifications.toastsEnabled -eq $false -or $report.notifications.powershellToastsEnabled -eq $false){'WYLACZONE w ustawieniach Windows'}else{'wlaczone'}),
         'Procesy Ratcheta: ' + @($report.processes).Count,
         'Launcher / kuleczka: ' + $(if($hasLauncher){'Wykryty proces launchera (orb wymaga potwierdzenia)'}else{'Brak procesu launchera/kuleczki'}),
         'Manifest: ' + $report.manifest.status,
