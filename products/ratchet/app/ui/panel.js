@@ -18,7 +18,7 @@ const demoInitial={
       {id:'box',title:'Box2Box',kind:'url',target:'https://box2box.com.pl',group:'Sklep'},
       {id:'chatgpt',title:'ChatGPT',kind:'url',target:'https://chatgpt.com/',group:'AI'},
       {id:'claude',title:'Claude',kind:'url',target:'https://claude.ai/',group:'AI'}
-    ],agents:[],coordinator:{enabled:false,jobs:[]},activity:[],reminded:{}
+    ],agents:[],coordinator:{enabled:false,jobs:[]},chatgptRuns:[],chatgptSignals:[],activity:[],reminded:{}
   },github:null,githubError:'Podgląd przeglądarkowy — monitorowanie GitHuba działa w aplikacji Windows.'
 };
 const loadDemo=()=>{try{return JSON.parse(localStorage.getItem('ratchet-demo'))||demoInitial;}catch{return demoInitial;}};
@@ -58,6 +58,11 @@ const bridge=window.ratchet||{
   saveSettings:async data=>{state().settings={...state().settings,...data};persistDemo();},
   scheduleAction:async(id,action)=>{const t=state().schedule.find(x=>x.id===id);if(action==='snooze')t.snoozeUntil=new Date(Date.now()+600000).toISOString();if(action==='start'&&t.target)window.open(t.target,'_blank','noopener,noreferrer');persistDemo();},
   open:async(kind,target)=>{if(kind==='folder')throw Error('Otwieranie folderów działa w aplikacji Windows');if(!/^https?:\/\//.test(target))throw Error('Niepoprawny link');window.open(target,'_blank','noopener,noreferrer');},
+  chatgptSignalRemove:async id=>{state().chatgptSignals=(state().chatgptSignals||[]).filter(x=>x.id!==id);persistDemo();return true;},
+  chatgptCreate:async()=>{throw Error('Funkcja wymaga tokenu Workspace Agents w aplikacji Windows.');},
+  chatgptRefresh:async()=>({ok:true}),
+  chatgptResume:async()=>{throw Error('Wymagany token Workspace Agents.');},
+  chatgptRemove:async id=>{state().chatgptRuns=(state().chatgptRuns||[]).filter(j=>j.id!==id);persistDemo();return true;},
   coordinatorCreate:async data=>{throw Error('Uruchamianie agentów działa w aplikacji Windows.');},
   coordinatorEnable:async enabled=>{state().coordinator.enabled=enabled;persistDemo();return {enabled};},
   coordinatorRetry:async()=>{throw Error('Uruchamianie agentów działa w aplikacji Windows.');},
@@ -76,9 +81,9 @@ const bridge=window.ratchet||{
 function updateClock(){const d=now();$('#clock').textContent=`${pad(d.getHours())}:${pad(d.getMinutes())}`;$('#dateLabel').textContent=formatDate(d);}
 function health(){
   const agents=state().agents;
-  const jobs=state().coordinator?.jobs||[];
-  const running=agents.filter(x=>x.status==='working').length+jobs.filter(x=>x.status==='running').length;
-  const attention=agents.filter(x=>x.status==='needs_attention'||x.status==='blocked').length+jobs.filter(x=>x.status==='attention').length;
+  const jobs=state().coordinator?.jobs||[],chatRuns=state().chatgptRuns||[],signals=state().chatgptSignals||[];
+  const running=agents.filter(x=>x.status==='working').length+jobs.filter(x=>x.status==='running').length+chatRuns.filter(x=>['queued','in_progress','suspended','submitting'].includes(x.status)).length+signals.filter(x=>x.status==='working').length;
+  const attention=agents.filter(x=>x.status==='needs_attention'||x.status==='blocked').length+jobs.filter(x=>x.status==='attention').length+chatRuns.filter(x=>x.status==='failed'||x.status==='attention').length+signals.filter(x=>x.status==='needs_attention').length;
   const failed=(snapshot.github?.runs||[]).some(x=>x.status==='completed'&&['failure','timed_out'].includes(x.conclusion));
   const overlaps=(snapshot.github?.overlapping||[]).length;
   return {running,attention,failed,overlaps};
@@ -172,8 +177,12 @@ function renderFilteredAgents(){
     const selected=all.filter(a=>agentFilter==='working'?a.status==='working':a.status==='needs_attention'||a.status==='blocked');
     html+=selected.map(renderAgent).join('');
     const tasks=(state().coordinator?.jobs||[]).filter(j=>agentFilter==='working'?j.status==='running':j.status==='attention');
+    const chatTasks=(state().chatgptRuns||[]).filter(j=>agentFilter==='working'?['queued','in_progress','suspended'].includes(j.status):['attention','failed'].includes(j.status));
+    const signalTasks=(state().chatgptSignals||[]).filter(j=>agentFilter==='working'?j.status==='working':j.status==='needs_attention');
     html+=tasks.map(j=>'<article class="agent-card"><div class="task-title">Koordynator: '+esc(j.title)+'</div><p class="task-note">'+esc(j.status==='running'?'Przekazywanie między agentami trwa':'Brak dalszego wykonawcy, sprawdź zadanie')+'</p><button class="btn tiny secondary" data-action="filter-reset">Otwórz centrum agentów</button></article>').join('');
-    if(!selected.length&&!tasks.length)html+=empty('Brak agentów','Żadna sesja nie ma teraz tego statusu.','✓');
+    html+=chatTasks.map(j=>'<article class="agent-card"><strong>ChatGPT: '+esc(j.title)+'</strong><p class="task-note">'+esc(j.status)+'</p>'+(j.conversationUrl?'<button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(j.conversationUrl)+'">Otwórz ChatGPT</button>':'')+'</article>').join('');
+    html+=signalTasks.map(j=>'<article class="agent-card"><strong>ChatGPT (wtyczka): '+esc(j.title)+'</strong><p class="task-note">'+esc(j.status)+'</p></article>').join('');
+    if(!selected.length&&!tasks.length&&!chatTasks.length&&!signalTasks.length)html+=empty('Brak agentów','Żadna sesja nie ma teraz tego statusu.','✓');
     if(agentFilter==='working'){
       const running=(gh?.runs||[]).filter(x=>x.status!=='completed');
       html+=running.map(x=>'<div class="pr-card"><div class="pr-title">'+esc(x.name||'GitHub Actions')+' · CI trwa</div><button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(x.html_url)+'">Otwórz</button></div>').join('');
@@ -200,7 +209,7 @@ const agentGuideSteps=[
     icon:'glasses',
     title:'Poznaj dwa tryby pracy',
     body:'Obserwowanie pokazuje status istniejącej sesji AI. Koordynator uruchamia osobne, lokalne etapy analizy i recenzji. To dwie różne funkcje.',
-    note:'Claude Code może zgłaszać zakończenie przez hooki. Zwykły ChatGPT w przeglądarce nie wysyła Ratchetowi informacji, że skończył odpowiedź.'
+    note:'Claude Code wysyła hooki, a Workspace Agent ChatGPT ma oficjalne statusy API. Zwykła rozmowa ChatGPT nie udostępnia takiego sygnału.'
   },
   {
     icon:'edit',
@@ -235,6 +244,58 @@ function renderAgentGuide(){
     +(agentGuideStep?'<button type="button" class="btn tiny secondary" data-action="agent-guide-back">Wstecz</button>':'')
     +'<button type="button" class="btn small" data-action="agent-guide-next">'+(last?'Zakończ samouczek':'Dalej')+I(last?'check':'arrow')+'</button>'
     +'</div></div></section>';
+}
+
+
+
+function renderChatGPTSignals(){
+  const signals=state().chatgptSignals||[];
+  let html='<div class="group-title"><h3>ChatGPT · sygnały z wtyczki</h3><span class="quiet">Raportowane przez model</span></div>';
+  html+='<div class="workspace-help">Po podłączeniu prywatnej wtyczki Ratchet ChatGPT może wysłać sygnał rozpoczęcia, ukończenia lub blokady. '
+    +'To nie jest niezależne potwierdzenie zakończenia odpowiedzi przez platformę ChatGPT. '
+    +'Wtyczka musi faktycznie wywołać narzędzie — samo zamknięcie rozmowy nie uruchamia alertu.</div>';
+  for(const item of signals.slice(0,8)){
+    const labels={working:'Zgłosił rozpoczęcie',reported_done:'Zgłosił ukończenie',needs_attention:'Wymaga uwagi'};
+    html+='<article class="workspace-run"><div class="coordinator-job-head"><strong>'+esc(item.title)+'</strong><span class="pill '+(item.status==='needs_attention'?'bad':item.status==='reported_done'?'good':'')+'">'+esc(labels[item.status]||item.status)+'</span></div>'
+      +(item.note?'<p class="task-note">'+esc(item.note)+'</p>':'')+'<div class="inline-actions">'
+      +(item.conversationUrl?'<button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(item.conversationUrl)+'">Otwórz rozmowę</button>':'')
+      +(item.status!=='working'?'<button class="btn tiny ghost" data-action="chatgpt-signal-remove" data-id="'+esc(item.id)+'">Usuń wpis</button>':'')
+      +'</div></article>';
+  }
+  return html;
+}
+
+function renderChatGPTWorkspace(){
+  const jobs=state().chatgptRuns||[],ready=snapshot.chatgptWorkspaceReady===true;
+  let html='<div class="group-title"><h3>ChatGPT · prawdziwe statusy</h3><span class="quiet">Workspace Agents API</span></div>';
+  html+='<section class="chatgpt-workspace"><div class="workspace-head"><div><strong>Uruchom i monitoruj agenta ChatGPT</strong>'
+    +'<p class="hint">Odczytujemy status z API ChatGPT, nie zgadujemy z przeglądarki. Zwykłe rozmowy ChatGPT nie są tutaj automatycznie monitorowane.</p></div>'
+    +'<span class="pill '+(ready?'good':'')+'">'+(ready?'Połączono token':'Brak tokenu')+'</span></div>';
+  if(!ready){
+    html+='<div class="workspace-help">Dostęp wymaga opublikowanego Workspace Agent z kanałem API i osobnego tokenu Workspace Agents. '
+      +'Ustaw <code>RATCHET_WORKSPACE_AGENT_TOKEN</code> w środowisku aplikacji, a następnie uruchom testowego Ratcheta ponownie. '
+      +'Nie wklejaj tokenu do formularza zadania. Integracja jest wyłączona, dopóki nie ma tokenu.</div>';
+  }
+  html+='<form id="chatgptWorkspaceForm" class="coordinator-form">'
+    +'<input name="title" aria-label="Nazwa zadania ChatGPT" placeholder="Np. Audyt UX City Route" required maxlength="160" '+(!ready?'disabled':'')+'>'
+    +'<input name="triggerId" aria-label="Identyfikator kanału agenta ChatGPT" placeholder="agtch_..." required pattern="agtch_[A-Za-z0-9_-]{3,160}" '+(!ready?'disabled':'')+'>'
+    +'<textarea name="input" aria-label="Polecenie dla agenta ChatGPT" placeholder="Co dokładnie ma sprawdzić agent?" required minlength="12" maxlength="5000" '+(!ready?'disabled':'')+'></textarea>'
+    +'<button type="submit" class="btn small full" '+(!ready?'disabled':'')+'>Uruchom agenta ChatGPT i śledź wynik</button></form>';
+  html+='<p class="hint">Uruchomienie może zużywać limity lub środki przypisane do Workspace Agent. Status „Ukończone” to koniec uruchomienia, nie dowód wdrożenia zmian.</p></section>';
+  if(!jobs.length)return html;
+  html+='<div class="workspace-runs-head"><span>Ostatnie uruchomienia · '+jobs.length+'</span><button class="btn tiny ghost" data-action="chatgpt-refresh" '+(!ready?'disabled':'')+'>'+I('refresh')+' Sprawdź statusy</button></div>';
+  for(const j of jobs.slice(0,12)){
+    const labels={submitting:'Wysyłanie',queued:'W kolejce',in_progress:'Pracuje',suspended:'Czeka na działanie',completed:'Ukończone',failed:'Błąd',attention:'Wymaga uwagi'};
+    const color=j.status==='completed'?'good':j.status==='failed'||j.status==='attention'?'bad':'';
+    html+='<article class="workspace-run"><div class="coordinator-job-head"><strong>'+esc(j.title)+'</strong><span class="pill '+color+'">'+esc(labels[j.status]||j.status)+'</span></div>'
+      +(j.reason?'<p class="task-note workspace-reason">'+esc(j.reason)+'</p>':'')
+      +'<div class="inline-actions">';
+    if(j.conversationUrl)html+='<button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(j.conversationUrl)+'">'+I('external')+' Otwórz rozmowę</button>';
+    if(j.status==='attention'&&j.runId&&ready)html+='<button class="btn tiny secondary" data-action="chatgpt-resume" data-id="'+esc(j.id)+'">Wznów sprawdzanie</button>';
+    if(!['submitting','queued','in_progress','suspended'].includes(j.status))html+='<button class="btn tiny ghost" data-action="chatgpt-remove" data-id="'+esc(j.id)+'">Usuń z historii</button>';
+    html+='</div></article>';
+  }
+  return html;
 }
 
 function renderCoordinator(){
@@ -279,6 +340,8 @@ function renderAgents(){
   if(err)html+=`<div class="alert danger">${I('alert')} ${esc(err)}. Publiczne repozytoria są odczytywane bez tokena; prywatne nie są dostępne w tej wersji.</div>`;
   if(gh?.overlapping?.length)html+=gh.overlapping.map(x=>`<div class="alert">${I('alert')} PR #${x.a} i #${x.b} dotykają tych samych plików: <strong>${esc(x.files.join(', '))}</strong>. To ostrzeżenie o nakładaniu zmian, nie potwierdzony konflikt merge.</div>`).join('');
   html+=renderCoordinator();
+  html+=renderChatGPTWorkspace();
+  html+=renderChatGPTSignals();
   html+=`<div class="group-title"><h3>Sesje modeli · ${a.length}</h3><span class="quiet">Statusy nie weryfikują testów</span></div>`;
   html+=a.length?a.map(renderAgent).join(''):empty('Nie monitorujesz jeszcze sesji','Dodaj rozmowę ChatGPT / Claude lub podłącz Claude Code Hooks.','◇');
   if(gh){html+=`<div class="group-title"><h3>Otwarte PR-y · ${gh.prs.length}</h3></div>`;html+=gh.prs.length?gh.prs.map(p=>{const related=gh.runs.filter(r=>r.head_sha===p.head_sha);const fail=related.some(r=>r.conclusion==='failure');return `<div class="pr-card"><div class="pr-row"><div><div class="pr-title"><span class="pr-number">#${p.number}</span> ${esc(p.title)}</div><div class="pr-branch">${esc(p.branch)}</div></div><button class="btn tiny ${fail?'danger':'secondary'}" data-action="open" data-kind="url" data-target="${esc(p.html_url)}">${fail?'CI błąd':'Otwórz'} ${I('arrow')}</button></div></div>`;}).join(''):empty('Czysta lista PR-ów','Nie ma obecnie otwartych PR-ów w monitorowanym repozytorium.','✓');}
@@ -407,6 +470,20 @@ async function handleAction(el){
     if(agentGuideStep===agentGuideSteps.length-1){finishAgentGuide();render();}
     else{agentGuideStep=Math.min(agentGuideSteps.length-1,agentGuideStep+1);render();}
   }
+  if(act==='chatgpt-signal-remove'){
+    if(!await compactConfirm('Usunąć sygnał z historii? Nie usuwa rozmowy ChatGPT.'))return;
+    await bridge.chatgptSignalRemove(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Sygnał usunięty');
+  }
+  if(act==='chatgpt-refresh'){
+    await bridge.chatgptRefresh();if(!DEMO)snapshot=await bridge.snapshot();render();toast('Statusy ChatGPT sprawdzone');
+  }
+  if(act==='chatgpt-resume'){
+    await bridge.chatgptResume(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Monitorowanie wznowione');
+  }
+  if(act==='chatgpt-remove'){
+    if(!await compactConfirm('Usunąć wpis z monitora? Nie usuwa to rozmowy ani agenta ChatGPT.'))return;
+    await bridge.chatgptRemove(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Wpis usunięty');
+  }
   if(act==='coordinator-toggle'){
     const enabled=el.dataset.enabled==='true';
     if(enabled&&!await compactConfirm('Włączyć uruchamianie lokalnych agentów Claude Code? Dwa etapy analizy mogą wykorzystać płatne zapytania. Bez edycji kodu.'))return;
@@ -494,6 +571,18 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-action]');if(a)safe(()=>handleAction(a));
 });
 document.addEventListener('submit',e=>{
+  if(e.target.id==='chatgptWorkspaceForm'){
+    e.preventDefault();safe(async()=>{
+      if(!snapshot.chatgptWorkspaceReady)throw Error('Nie podłączono tokenu Workspace Agents.');
+      const fd=new FormData(e.target);
+      const data={title:String(fd.get('title')||'').trim(),triggerId:String(fd.get('triggerId')||'').trim(),input:String(fd.get('input')||'').trim()};
+      if(!await compactConfirm('Uruchomić Workspace Agent ChatGPT? To nowe zlecenie i może zużywać limity konta.'))return;
+      const outcome=await bridge.chatgptCreate(data);
+      if(!DEMO)snapshot=await bridge.snapshot();
+      render();
+      toast(outcome.status==='queued'?'Agent ChatGPT przyjął zadanie':'Sprawdź status zlecenia w panelu');
+    });
+  }
   if(e.target.id==='coordinatorForm'){
     e.preventDefault();safe(async()=>{
       const fd=new FormData(e.target);

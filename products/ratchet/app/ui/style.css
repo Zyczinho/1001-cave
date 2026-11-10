@@ -182,3 +182,17 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .agent-guide-reopen{display:flex;justify-content:flex-end;margin:-4px 0 12px}
 .agent-guide button{white-space:normal;text-align:center}
 @media(max-width:520px){.agent-guide{padding:12px 11px}.agent-guide h2{font-size:13px}.agent-guide-controls{gap:4px}.agent-guide-controls .btn{padding:6px 7px}}
+
+/* ChatGPT Workspace Agent API status, separate from regular browser chats. */
+.chatgpt-workspace{border:1px solid #415e78;background:linear-gradient(155deg,#1b3141,#192a3d);padding:12px;border-radius:13px;margin-bottom:10px}
+.workspace-head{display:flex;justify-content:space-between;align-items:flex-start;gap:7px}
+.workspace-head strong{font-size:12px}
+.workspace-head>div{flex:1;min-width:0}
+.workspace-head .pill{white-space:nowrap;font-size:9px}
+.workspace-head .hint{margin:5px 0 7px}
+.workspace-help{font-size:10px;color:#adcae3;line-height:1.5;border:1px solid #516072;border-radius:9px;background:#223447;padding:9px;margin:7px 0}
+.workspace-help code{font-size:9px;color:#cee3fa;word-break:break-all}
+.workspace-runs-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:11px 1px 7px;color:#9db4cb;font-size:10px}
+.workspace-run{border:1px solid #35516e;background:#1d2b40;border-radius:12px;padding:11px;margin-bottom:7px}
+.workspace-run .inline-actions{margin-top:8px}
+.workspace-reason{color:#ffb5bf;line-height:1.5}
