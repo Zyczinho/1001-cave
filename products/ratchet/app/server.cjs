@@ -7,6 +7,7 @@ const os = require('node:os');
 const {spawn} = require('node:child_process');
 const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
+const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
 const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText} = require('./core.cjs');
 
@@ -103,11 +104,12 @@ function health() {
   const a=state.agents;
   const coordinator=state.coordinator?.jobs||[];
   const monitored=state.chatgptRuns||[];
+  const signals=state.chatgptSignals||[];
   const runs=github?.runs||[];
   const failed=runs.some(x=>x.status==='completed'&&['failure','timed_out','action_required'].includes(x.conclusion));
-  const blocked=a.some(x=>x.status==='blocked')||coordinator.some(x=>x.status==='attention')||monitored.some(x=>x.status==='failed'||x.status==='attention');
+  const blocked=a.some(x=>x.status==='blocked')||coordinator.some(x=>x.status==='attention')||monitored.some(x=>x.status==='failed'||x.status==='attention')||signals.some(x=>x.status==='needs_attention');
   const attention=a.some(x=>x.status==='needs_attention')||(github?.overlapping||[]).length>0;
-  const working=a.some(x=>x.status==='working')||coordinator.some(x=>x.status==='running')||monitored.some(x=>['queued','in_progress','suspended','submitting'].includes(x.status))||runs.some(x=>x.status!=='completed');
+  const working=a.some(x=>x.status==='working')||coordinator.some(x=>x.status==='running')||monitored.some(x=>['queued','in_progress','suspended','submitting'].includes(x.status))||signals.some(x=>x.status==='working')||runs.some(x=>x.status!=='completed');
   return failed||blocked?'blocked':attention?'needs_attention':working?'working':runs.some(x=>x.conclusion==='success')?'ready':'idle';
 }
 function snapshot() {return {state,github,githubError,platform:process.platform,chatgptWorkspaceReady:chatgptWatcher.isConfigured()};}
@@ -166,6 +168,31 @@ function openTarget(kind,target) {
   return Promise.resolve({opened:true});
 }
 async function handleAction(key,data) {
+  if(key==='chatgpt:signal-start'){
+    const {signal}=startSignal(state.chatgptSignals,data);save();
+    return {id:signal.id,status:signal.status};
+  }
+  if(key==='chatgpt:signal-complete'||key==='chatgpt:signal-attention'){
+    const {signal,changed}=updateSignal(state.chatgptSignals,{
+      ...data,status:key==='chatgpt:signal-complete'?'reported_done':'needs_attention'
+    });
+    if(changed){
+      save();
+      const message=key==='chatgpt:signal-complete'
+        ? 'ChatGPT zgłosił ukończenie: '+signal.title+'. Sprawdź odpowiedź i rezultat.'
+        : 'ChatGPT zgłosił blokadę: '+signal.title+'. '+signal.note;
+      const event=activity(message,'reminder','',key==='chatgpt:signal-complete'?'chatgpt-signal':'chatgpt-signal-attention');
+      if(signal.conversationUrl){event.target=signal.conversationUrl;save();}
+    }
+    return {id:signal.id,status:signal.status,changed};
+  }
+  if(key==='chatgpt:signal-remove'){
+    const id=String(data.id||'');
+    const signal=state.chatgptSignals.find(x=>x.id===id);
+    if(!signal)throw Error('Nie znaleziono sygnału.');
+    if(signal.status==='working')throw Error('Wpis jest aktywny. Zakończ zadanie lub zgłoś blokadę.');
+    state.chatgptSignals=state.chatgptSignals.filter(x=>x.id!==id);save();return true;
+  }
   if(key==='chatgpt:create')return chatgptWatcher.create(data);
   if(key==='chatgpt:refresh'){await chatgptWatcher.poll();return {ok:true};}
   if(key==='chatgpt:resume')return chatgptWatcher.resumeMonitoring(String(data.id||''));
