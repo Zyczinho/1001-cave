@@ -374,7 +374,10 @@ function startHookServer() {
       // Notification and Stop may share the same needs_attention status.
       // Compare the last hook event instead: never suppress a real Stop after Notification,
       // but don't notify twice for a repeated Stop callback.
-      if((event==='Stop'||event==='StopFailure')&&prev?.note!==clean.note){
+      const coordId=String(data.coordinator_job_id||'').slice(0,80);
+      const coordinated=coordId&&state.coordinator.jobs.some(j=>j.id===coordId&&(j.status==='running'||j.status==='queued'));
+      // Coordinator-owned stages report through the runner, not duplicate human Stop alerts.
+      if(!coordinated&&(event==='Stop'||event==='StopFailure')&&prev?.note!==clean.note){
         activity(event==='StopFailure'
           ? 'Claude Code zgłosił błąd: '+clean.title+'. Sprawdź sesję.'
           : 'Claude Code zakończył odpowiedź: '+clean.title+'. Zmiany nie są jeszcze zweryfikowane.',
