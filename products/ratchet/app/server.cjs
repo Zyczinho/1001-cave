@@ -92,11 +92,12 @@ function checkSchedule(now = new Date()) {
 }
 function health() {
   const a=state.agents;
+  const coordinator=state.coordinator?.jobs||[];
   const runs=github?.runs||[];
   const failed=runs.some(x=>x.status==='completed'&&['failure','timed_out','action_required'].includes(x.conclusion));
-  const blocked=a.some(x=>x.status==='blocked');
+  const blocked=a.some(x=>x.status==='blocked')||coordinator.some(x=>x.status==='attention');
   const attention=a.some(x=>x.status==='needs_attention')||(github?.overlapping||[]).length>0;
-  const working=a.some(x=>x.status==='working')||runs.some(x=>x.status!=='completed');
+  const working=a.some(x=>x.status==='working')||coordinator.some(x=>x.status==='running')||runs.some(x=>x.status!=='completed');
   return failed||blocked?'blocked':attention?'needs_attention':working?'working':runs.some(x=>x.conclusion==='success')?'ready':'idle';
 }
 function snapshot() {return {state,github,githubError,platform:process.platform};}
