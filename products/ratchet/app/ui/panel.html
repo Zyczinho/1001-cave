@@ -31,6 +31,16 @@
     <div class="footer"><span><span class="dot pulse"></span> Ratchet 0.2.9 RC · 1001 CAVE</span><span>Ctrl + Shift + R</span></div>
     <div id="toast" role="status"></div>
     <div class="overlay" id="modal" hidden><div class="modal-card"><div class="modal-head"><h2 id="modalTitle">Nowy element</h2><button class="icon-btn" data-action="modal-close" aria-label="Zamknij formularz"><span data-icon="x"></span></button></div><form id="itemForm"></form></div></div>
+    <div class="overlay" id="confirmModal" hidden role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+      <div class="confirm-card">
+        <h2 id="confirmTitle">Potwierdź działanie</h2>
+        <p id="confirmText"></p>
+        <div class="confirm-actions">
+          <button type="button" class="btn secondary small" id="confirmCancel">Anuluj</button>
+          <button type="button" class="btn small" id="confirmAccept">Potwierdź</button>
+        </div>
+      </div>
+    </div>
   </main>
   <script src="browser-bridge.js"></script><script src="icons.js"></script><script src="panel.js"></script>
 </body></html>
