@@ -55,7 +55,11 @@ function save() {
   if(fs.existsSync(DATA)) {try {fs.copyFileSync(DATA,backup);}catch(e){console.warn('[ratchet] Backup:',e.message);} }
   fs.renameSync(tmp,DATA);
 }
-function activity(message, level='info', taskId='', phase='') { state.activity.unshift({id: String(Date.now()) + Math.random(),text:message,level,taskId,phase,at:new Date().toISOString()}); state.activity = state.activity.slice(0,80); save(); }
+function activity(message, level='info', taskId='', phase='') {
+  const entry={id: String(Date.now()) + Math.random(),text:message,level,taskId,phase,at:new Date().toISOString()};
+  state.activity.unshift(entry);state.activity=state.activity.slice(0,80);save();
+  return entry;
+}
 function notification(task,phase,at){
   const start=phase==='start';
   return {
@@ -157,6 +161,18 @@ async function handleAction(key,data) {
     if(!['schedule','links','agents'].includes(data.collection)) throw Error('Nieznana kolekcja');
     state[data.collection]=state[data.collection].filter(x=>x.id!==data.id);save();return true;
   }
+  if(key==='activity:clear'){
+    const removed=state.activity.length;
+    // Clearing a signal is NOT completing/deleting its task or resetting reminders.
+    state.activity=[];save();return {removed};
+  }
+  if(key==='activity:remove'){
+    const id=String(data.id||'');
+    const previous=state.activity.length;
+    state.activity=state.activity.filter(x=>x.id!==id);
+    if(state.activity.length!==previous)save();
+    return {removed:previous-state.activity.length};
+  }
   if(key==='settings:save'){
     const s={...state.settings};
     if(typeof data.settings?.repo==='string'&&/^[-\w.]+\/[-\w.]+$/.test(data.settings.repo.trim())){s.repo=data.settings.repo.trim();lastFetch=0;github=null;}
@@ -189,8 +205,26 @@ async function handleAction(key,data) {
     save();return true;
   }
   if(key==='notification:test'){
-    activity('To jest test powiadomienia Windows. Ratchet działa.','reminder','','test');
-    return {queued:true,method:'Windows NotifyIcon',notificationsEnabled:state.settings.notifications};
+    if(!state.settings.notifications)return {queued:false,notificationsEnabled:false};
+    const event=activity('Ratchet działa. To jest próbny dymek i powiadomienie Windows.','reminder','','test');
+    return {queued:true,id:event.id,notificationsEnabled:true};
+  }
+  if(key==='notification:delivery'){
+    const entry=state.activity.find(x=>x.id===String(data.id||''));
+    if(!entry||entry.level!=='reminder')throw Error('Nie znaleziono powiadomienia');
+    // A call to ShowBalloonTip is only an attempted Windows notification, not proof of visibility.
+    entry.delivery={windowsAttempted:data.windowsAttempted===true,bubbleShown:data.bubbleShown===true,at:new Date().toISOString()};
+    save();return entry.delivery;
+  }
+  if(key==='notification:status'){
+    const entry=state.activity.find(x=>x.id===String(data.id||''));
+    return {found:!!entry,delivery:entry?.delivery||null};
+  }
+  if(key==='notification:open'){
+    const entry=state.activity.find(x=>x.id===String(data.id||''));
+    const task=entry?.taskId&&state.schedule.find(x=>x.id===entry.taskId);
+    if(task?.target)return openTarget(task.kind,task.target);
+    panelRequests++;return {panelRequested:true};
   }
   if(key==='open-target')return openTarget(data.kind,data.target);
   if(key==='handoff')return handoffText(state,github);
@@ -294,7 +328,14 @@ function startHookServer() {
       const status=event==='StopFailure'?'blocked':event==='Stop'||event==='Notification'?'needs_attention':event==='SessionEnd'?'idle':'working';
       const clean=normalizeItem('agents',{...prev,id,title:prev?.title||'Claude · '+session.slice(0,8),tool:'Claude Code',status,source:'hook',kind:'folder',target:String(data.cwd||prev?.target||''),note:event==='Stop'?'Odpowiedź zakończona — CI i wdrożenie niezweryfikowane':'Zdarzenie: '+event,updatedAt:new Date().toISOString()});
       if(index>=0)state.agents[index]=clean;else state.agents.unshift(clean);
-      state.agents=state.agents.slice(0,100);save();res.writeHead(204);res.end();
+      state.agents=state.agents.slice(0,100);save();
+      if((event==='Stop'||event==='StopFailure')&&prev?.status!==status){
+        activity(event==='StopFailure'
+          ? 'Claude Code zgłosił błąd: '+clean.title+'. Sprawdź sesję.'
+          : 'Claude Code zakończył odpowiedź: '+clean.title+'. Zmiany nie są jeszcze zweryfikowane.',
+          'reminder','','agent');
+      }
+      res.writeHead(204);res.end();
     }).catch(()=>{res.writeHead(400);res.end();});
   });
   hookServer.on('error',e=>console.warn('[ratchet] Hook server:',e.message));
