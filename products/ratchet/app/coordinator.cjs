@@ -106,7 +106,9 @@ class CoordinatorRunner {
     try{
       child=this.spawnAgent(spec.command,spec.args,{
         cwd:job.projectRoot,shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],
-        env:{...process.env,RATCHET_COORDINATOR_JOB:job.id,RATCHET_DISABLE_HOOKS:'1'}
+        // Do not pass Workspace Agent API credentials to unrelated Claude/Codex subprocesses.
+        env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>key!=='RATCHET_WORKSPACE_AGENT_TOKEN')),
+          RATCHET_COORDINATOR_JOB:job.id,RATCHET_DISABLE_HOOKS:'1'}
       });
     }catch(e){this.fail(job,'Nie uruchomiono '+spec.command+' CLI: '+e.message);return;}
     job.status='running';job.updatedAt=iso();stage.status='running';stage.startedAt=iso();
