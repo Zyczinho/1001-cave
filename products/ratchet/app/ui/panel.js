@@ -33,6 +33,7 @@ const now=()=>new Date();
 const dateKey=(d=now())=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const weekdays=['Nd','Pn','Wt','Śr','Cz','Pt','Sb'];
 const pad=n=>String(n).padStart(2,'0');
+const plusMinutes=(time,minutes=60)=>{const [h,m]=String(time).split(':').map(Number);const v=Math.min(23*60+59,h*60+m+minutes);return `${pad(Math.floor(v/60))}:${pad(v%60)}`;};
 const formatTime=t=>new Date(t).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
 const formatDate=t=>new Date(t).toLocaleDateString('pl-PL',{day:'numeric',month:'long',weekday:'long'});
 const todayTasks=()=>state().schedule.filter(x=>x.date?x.date===dateKey():x.days.includes(now().getDay())).sort((a,b)=>a.time.localeCompare(b.time));
@@ -50,6 +51,7 @@ const bridge=window.ratchet||{
   refreshGithub:async()=>({github:null,githubError:'GitHub jest obsługiwany w aplikacji Windows.'}),
   checkUpdate:async()=>({available:false,version:'0.2.8',current:'0.2.8'}),
   installUpdate:async()=>toast('Aktualizator działa w aplikacji Windows'),
+  testNotification:async()=>toast('Powiadomienia Windows działają wyłącznie w aplikacji desktopowej'),
   diagnose:async()=>{throw Error('Diagnostyka działa w aplikacji Windows');},
   hidePanel:async()=>toast('Podgląd: ukrywanie działa w aplikacji Windows'),
   quit:async()=>toast('Podgląd: wyłączanie działa w aplikacji Windows'),
@@ -67,14 +69,14 @@ function health(){
 function renderStrip(){const h=health();$('#statusStrip').innerHTML=`<div class="status-box"><span class="s-dot blue"></span><strong>${h.running}</strong> pracuje</div><div class="status-box"><span class="s-dot ${h.attention?'amber':'green'}"></span><strong>${h.attention}</strong> uwagi</div><div class="status-box"><span class="s-dot ${h.failed?'red':h.overlaps?'amber':'violet'}"></span><strong>${h.failed?'Błąd CI':h.overlaps?`${h.overlaps} ryzyk`:'GitHub'}</strong></div>`;}
 function sectionHeader(title,subtitle,button=''){return `<div class="section-header"><div><h1>${title}</h1>${subtitle?`<p class="sub">${subtitle}</p>`:''}</div>${button}</div>`;}
 function empty(title,desc,emoji='✦'){return `<div class="empty"><div class="empty-emoji">${emoji}</div><strong>${title}</strong><p>${desc}</p></div>`;}
-function taskActions(t){return `<div class="task-actions"><button class="btn small" data-action="schedule-start" data-id="${esc(t.id)}">${I('play')} Działam${t.target?' · otwórz':''}</button><button class="btn ghost small" data-action="schedule-snooze" data-id="${esc(t.id)}">+10 min</button><button class="plain-icon" aria-label="Edytuj" title="Edytuj" data-action="edit" data-collection="schedule" data-id="${esc(t.id)}">${I('edit')}</button><button class="plain-icon" aria-label="Usuń" title="Usuń" data-action="remove" data-collection="schedule" data-id="${esc(t.id)}">${I('trash')}</button></div>`;}
+function taskActions(t){return `<div class="task-actions"><button class="btn small" data-action="schedule-start" data-id="${esc(t.id)}">${I('play')} Działam${t.target?' · otwórz':''}</button><button class="btn secondary small" data-action="schedule-finish" data-id="${esc(t.id)}">${I('check')} Zakończ</button><button class="btn ghost small" data-action="schedule-snooze" data-id="${esc(t.id)}">+10 min</button><button class="plain-icon" aria-label="Edytuj" title="Edytuj" data-action="edit" data-collection="schedule" data-id="${esc(t.id)}">${I('edit')}</button><button class="plain-icon" aria-label="Usuń" title="Usuń" data-action="remove" data-collection="schedule" data-id="${esc(t.id)}">${I('trash')}</button></div>`;}
 function renderToday(){
   const tasks=todayTasks();const upcoming=tasks.find(t=>t.enabled&&+t.time.slice(0,2)*60+Number(t.time.slice(3))>=now().getHours()*60+now().getMinutes())||tasks.at(-1);
   const h=health();
   const hero=upcoming?`<section class="hero"><div class="eyebrow">${upcoming.time===`${pad(now().getHours())}:${pad(now().getMinutes())}`?'TERAZ TWOJA KOLEJ':'NASTĘPNY BLOK'}</div><h2>${esc(upcoming.title)} <span style="color:#9bc7ff">· ${esc(upcoming.time)}</span></h2><p>${esc(upcoming.note||`Ratchet przypomni Ci i pomoże od razu przejść do właściwego miejsca.`)}</p><div class="hero-actions"><button class="btn" data-action="schedule-start" data-id="${esc(upcoming.id)}">${I('play')} Działam${upcoming.target?' · otwórz':''}</button><button class="btn secondary" data-action="schedule-snooze" data-id="${esc(upcoming.id)}">Później</button></div></section>`:
   `<section class="hero"><div class="eyebrow">DZIŚ MASZ KONTROLĘ</div><h2>Mniej przełączania.<br>Więcej działania.</h2><p>Dodaj bloki dnia, przypisz im link lub folder. Ratchet przypomni Ci, gdzie masz być.</p><div class="hero-actions"><button class="btn" data-action="new" data-collection="schedule">+ Zaplanuj pierwszy blok</button></div></section>`;
   let html=hero+`<form class="quick-form" id="quickPlanForm"><input name="phrase" aria-label="Dodaj zadanie jednym zdaniem" placeholder="Np. o 12:00 spotkanie z zespołem" required><button class="btn" type="submit">+ Zapisz</button></form><p class="quick-hint">Wpisz jedno zdanie z godziną. Ratchet doda blok na dziś.</p>`+sectionHeader('Twój plan dnia',`${tasks.length} bloków na dziś`,`<button class="btn small secondary" data-action="new" data-collection="schedule">+ Dodaj</button>`);
-  html += tasks.length?`<div class="timeline">${tasks.map(t=>`<article class="task-card" style="opacity:${t.enabled?1:.48}"><div class="time">${esc(t.time)}</div><div class="task-body"><div class="task-title">${esc(t.title)} ${t.project?`<span class="pill">${esc(t.project)}</span>`:''}</div><div class="task-note">${esc(t.note|| (t.target?short(t.target):'Brak przypiętego linku'))}</div>${taskActions(t)}</div></article>`).join('')}</div>`:
+  html += tasks.length?`<div class="timeline">${tasks.map(t=>`<article class="task-card" style="opacity:${t.enabled?1:.48}"><div class="time">${esc(t.time)}${t.endTime?`<div class="task-note">do ${esc(t.endTime)}</div>`:''}</div><div class="task-body"><div class="task-title">${esc(t.title)} ${t.project?`<span class="pill">${esc(t.project)}</span>`:''}</div><div class="task-note">${esc(t.note|| (t.target?short(t.target):'Brak przypiętego linku'))}</div>${taskActions(t)}</div></article>`).join('')}</div>`:
   `<div class="empty"><div class="empty-emoji">${I('calendar')}</div><strong>Żadnych bloków na dziś</strong><p>Wybierz przykład — otworzysz formularz z gotowymi danymi.</p><div class="templates"><button class="template" data-action="template" data-template="job">09:00 Praca</button><button class="template" data-action="template" data-template="city">10:00 City Route</button><button class="template" data-action="template" data-template="box">14:00 Box2Box</button></div></div>`;
   const recent=state().activity.slice(0,3);
   if(recent.length)html+=`<div class="group-title"><h3>Ostatnie sygnały</h3></div>${recent.map(a=>`<article class="task-card"><span class="s-dot ${a.level==='reminder'?'amber':'green'}" style="margin-top:5px"></span><div class="task-body"><div class="task-title">${esc(a.text)}</div><div class="task-note">${formatTime(a.at)}</div>${a.taskId?`<div class="inline-actions"><button class="btn small" data-action="schedule-start" data-id="${esc(a.taskId)}">Działam</button><button class="btn small ghost" data-action="schedule-snooze" data-id="${esc(a.taskId)}">+10 min</button></div>`:''}</div></article>`).join('')}`;
@@ -122,7 +124,9 @@ function showModal(collection,id='',prefill={}){
   let fields='';
   if(collection==='schedule'){
     fields+=input('title','Co robimy?',item.title,'placeholder="Np. spotkanie z zespołem" required maxlength="160"');
-    fields+=`<div class="form-grid">${input('time','Godzina',item.time||'09:00','type="time" required')}${input('project','Projekt',item.project,'placeholder="Np. City Route"')}</div>`;
+    fields+=`<div class="form-grid">${input('time','Początek',item.time||'09:00','type="time" required')}${input('endTime','Koniec',item.endTime||plusMinutes(item.time||'09:00'),'type="time" required')}</div>`;
+    fields+=input('project','Projekt',item.project,'placeholder="Np. City Route"');
+    fields+=`<p class="hint">Ratchet przypomni o rozpoczęciu i planowanym końcu bloku. Jeśli zakończysz wcześniej, kliknij „Zakończ”.</p>`;
     fields+=select('repeat','Kiedy?',item.date===null?'weekly':'once',[['once','Jednorazowo'],['weekly','Co tydzień']]);
     fields+=`<div id="onceFields">${input('date','Data',item.date||dateKey(),'type="date" required')}</div>`;
     fields+=`<div class="field" id="weeklyFields"><label>Dni tygodnia (cyklicznie)</label><div class="weekday-row">${[1,2,3,4,5,6,0].map(d=>`<label class="daycheck"><input type="checkbox" name="days" value="${d}" ${days.includes(d)?'checked':''}><span>${weekdays[d]}</span></label>`).join('')}</div></div>`;
@@ -161,6 +165,7 @@ async function saveForm(form){
     if(data.get('repeat')==='once')item.date=data.get('date');else item.date=null;
     if(!item.date&&!item.days.length)throw Error('Wybierz co najmniej jeden dzień');
     item.enabled=data.get('enabled')==='on';
+    if(!item.endTime||item.endTime<=item.time)throw Error('Koniec bloku musi być później niż początek');
   }
   if(col==='agents'){
     item.source='manual';item.updatedAt=new Date().toISOString();
@@ -182,9 +187,9 @@ async function handleAction(el){
     if(!confirm(`Usunąć: ${item?.title||'element'}?`))return;
     await bridge.remove(col,id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Usunięto');
   }
-  if(act==='schedule-start'||act==='schedule-snooze'){
-    await bridge.scheduleAction(id,act==='schedule-start'?'start':'snooze');
-    if(!DEMO)snapshot=await bridge.snapshot();render();toast(act==='schedule-start'?'Działamy! ✦':'Przypomnę za 10 minut');
+  if(act==='schedule-start'||act==='schedule-snooze'||act==='schedule-finish'){
+    await bridge.scheduleAction(id,act==='schedule-start'?'start':act==='schedule-finish'?'finish':'snooze');
+    if(!DEMO)snapshot=await bridge.snapshot();render();toast(act==='schedule-start'?'Działamy! ✦':act==='schedule-finish'?'Zakończono ✓':'Przypomnę za 10 minut');
   }
   if(act==='open'){await bridge.open(el.dataset.kind,el.dataset.target);toast('Otwieram ↗');}
   if(act==='github-refresh'){toast('Sprawdzam GitHub…');const result=await bridge.refreshGithub();snapshot={...snapshot,...result};render();if(result.githubError)toast(result.githubError);else toast('GitHub zaktualizowany');}
@@ -202,6 +207,7 @@ async function handleAction(el){
     toast('Ratchet uruchomi się ponownie.');
   }
   if(act==='reset-orb'){await bridge.resetOrb();toast('Kuleczka wróciła na ekran główny');}
+  if(act==='notification-test'){const result=await bridge.testNotification();toast(result?.notificationsEnabled===false?'Najpierw włącz powiadomienia w ustawieniach':'Wysłano próbne powiadomienie do kuleczki');}
   if(act==='show-settings'){tab='settings';render();$('#appMenu').hidden=true;$('#appMenuToggle').setAttribute('aria-expanded','false');}
   if(act==='hide-panel'){$('#appMenu').hidden=true;await bridge.hidePanel();}
   if(act==='quit'){
@@ -231,7 +237,7 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('submit',e=>{
   if(e.target.id==='itemForm'){e.preventDefault();safe(()=>saveForm(e.target));}
-  if(e.target.id==='quickPlanForm'){e.preventDefault();safe(async()=>{const raw=String(new FormData(e.target).get('phrase')||'');const match=raw.match(/(?:^|\s)(?:o\s*)?([01]?\d|2[0-3])(?:[:.]([0-5]\d))?(?=\s|$)/i);if(!match)throw Error('Dodaj godzinę, np. o 12:00 spotkanie');const hh=pad(Number(match[1])),mm=match[2]||'00';const title=raw.replace(match[0],' ').replace(/\b(dzisiaj|jutro)\b/ig,'').replace(/^\s*[-–:,]\s*/,'').trim();if(!title)throw Error('Napisz też, co masz zrobić');const d=now();if(/\bjutro\b/i.test(raw))d.setDate(d.getDate()+1);const l=title.toLowerCase();let target='';if(/city\s*route|cityroad|city\s*road/i.test(l))target='https://github.com/Zyczinho/city-route-app';else if(/box\s*2\s*box|box2box|box\s*to\s*box/i.test(l))target='https://box2box.com.pl';else if(/szuk.*prac|ofert.*prac/i.test(l))target='https://chatgpt.com/';const url=title.match(/https?:\/\/[^\s]+/i);if(url)target=url[0];await bridge.save('schedule',{title,time:`${hh}:${mm}`,date:dateKey(d),days:[d.getDay()],target,kind:'url',enabled:true});if(!DEMO)snapshot=await bridge.snapshot();e.target.reset();render();toast('Dodano do planu ✓');});}
+  if(e.target.id==='quickPlanForm'){e.preventDefault();safe(async()=>{const raw=String(new FormData(e.target).get('phrase')||'');const match=raw.match(/(?:^|\s)(?:o\s*)?([01]?\d|2[0-3])(?:[:.]([0-5]\d))?(?=\s|$)/i);if(!match)throw Error('Dodaj godzinę, np. o 12:00 spotkanie');const hh=pad(Number(match[1])),mm=match[2]||'00';const title=raw.replace(match[0],' ').replace(/\b(dzisiaj|jutro)\b/ig,'').replace(/^\s*[-–:,]\s*/,'').trim();if(!title)throw Error('Napisz też, co masz zrobić');const d=now();if(/\bjutro\b/i.test(raw))d.setDate(d.getDate()+1);const l=title.toLowerCase();let target='';if(/city\s*route|cityroad|city\s*road/i.test(l))target='https://github.com/Zyczinho/city-route-app';else if(/box\s*2\s*box|box2box|box\s*to\s*box/i.test(l))target='https://box2box.com.pl';else if(/szuk.*prac|ofert.*prac/i.test(l))target='https://chatgpt.com/';const url=title.match(/https?:\/\/[^\s]+/i);if(url)target=url[0];await bridge.save('schedule',{title,time:`${hh}:${mm}`,endTime:plusMinutes(`${hh}:${mm}`),date:dateKey(d),days:[d.getDay()],target,kind:'url',enabled:true});if(!DEMO)snapshot=await bridge.snapshot();e.target.reset();render();toast('Dodano do planu ✓');});}
   if(e.target.id==='settingsForm'){
     e.preventDefault();safe(async()=>{
       const data=new FormData(e.target),s={repo:String(data.get('repo')||'').trim(),notifications:data.get('notifications')==='on',alwaysOnTop:data.get('alwaysOnTop')==='on',autoStart:data.get('autoStart')==='on',avatarSize:Number(data.get('avatarSize')||84)};
