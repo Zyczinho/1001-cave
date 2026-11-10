@@ -35,6 +35,17 @@ Automatycznie: `node --test tests/*.test.cjs` — 34 testy (logika, serwer HTTP,
 6. Prawy klik na kuleczce lub ikonie obok zegara → `Zakończ Ratchet`: kula znika, a backend przestaje działać.
 7. Ponowne uruchomienie zachowuje zadania i skróty; awaryjny skrypt `AWARYJNIE-ZATRZYMAJ-RATCHET.cmd` działa bez kasowania danych.
 
+## Samodiagnostyka jednym kliknieciem (kandydat do kolejnego wydania)
+
+**Stan: kod na galezi / PR, NIE opublikowano do stabilnego kanalu aktualizacji i NIE potwierdzono Windows E2E.**
+
+Nowy plik `Diagnostyka-Ratchet.ps1` dziala w Windows PowerShell 5.1, nawet gdy lokalny serwer Node, orb lub panel nie odpowiada. Zbiera tylko odczyty: procesy Ratcheta, zdrowie `/api/ping`, skrot desktop, SHA-256 plikow i ostatnie logi. Nie restartuje niczego i nie wysyla danych do internetu. Nie wymaga logowania do GitHub.
+
+Punkty uruchomienia: skrot `Ratchet - Diagnostyka` utworzony po ponownym uruchomieniu instalatora, `Diagnostyka-Ratchet.cmd` w folderze programu, menu kuleczki i panelu. Jezeli launcher rzuci wyjatek, sprobuje uruchomic diagnostyke z `-Quiet`, bez wyswietlania okna.
+
+Raport zapisuje sie w `%LOCALAPPDATA%\Ratchet\diagnostics\<ID>\report.json` wraz z `summary.txt`. Przy zwyklym uruchomieniu podsumowanie otwiera sie w Notatniku. Logi sa lokalne i redagowane pod katem typowych sekretow oraz sciezek profilu, ale przed udostepnieniem nalezy je przejrzec; zadna automatyczna wysylka nie jest jeszcze uruchomiona. Bez lokalnego manifestu release diagnostyka pokazuje status `UNKNOWN_NO_LOCAL_MANIFEST`, a nie sugeruje, ze hash pasuje do wersji w GitHub.
+
+To jest P0: **jeden raport zamiast serii kopiowanych komend**. Drugi etap — autoryzowana komunikacja Ratchet <-> asystent bez przeklejania wynikow — ma specyfikacje w `products/ratchet/DIAGNOSTICS_BRIDGE_SPEC.md` na PR #16 i osobne zadanie #18. Nie jest jeszcze zaimplementowany.
 ## Diagnostyka i odzyskiwanie
 
 - Serwer: `http://127.0.0.1:47823/api/ping`
