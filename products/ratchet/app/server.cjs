@@ -143,6 +143,17 @@ async function handleAction(key,data) {
   if(key==='open-target')return openTarget(data.kind,data.target);
   if(key==='handoff')return handoffText(state,github);
   if(key==='panel:show'){ panelRequests++; return true; }
+  if(key==='diagnostics:run'){
+    // Fixed command, no user-supplied shell arguments, no data uploaded.
+    if(process.platform!=='win32')throw Error('Diagnostyka natywna działa wyłącznie na Windows');
+    const script=path.join(__dirname,'Diagnostyka-Ratchet.ps1');
+    if(!fs.existsSync(script))throw Error('Brak modułu diagnostyki Ratcheta');
+    const child=spawn('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',script],
+      {detached:true,windowsHide:false,stdio:'ignore'});
+    child.on('error',e=>console.error('[ratchet] Diagnostics launch:',e.message));
+    child.unref();
+    return {requested:true,localOnly:true};
+  }
   if(key==='update:check'){
     updateAvailable = await checkUpdate();
     return updateAvailable;
