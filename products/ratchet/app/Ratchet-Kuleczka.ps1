@@ -268,6 +268,15 @@ $script:orbMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $menu = $script:orbMenu
 $openItem=$menu.Items.Add('Otwórz Ratchet')
 $openItem.Add_Click({Open-RatchetPanel})
+$diagItem=$menu.Items.Add('Zdiagnozuj Ratchet')
+$diagItem.Add_Click({
+    $diagnostics = Join-Path $PSScriptRoot 'Diagnostyka-Ratchet.ps1'
+    if (Test-Path -LiteralPath $diagnostics -PathType Leaf) {
+        Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $diagnostics + '"'))
+    } else {
+        $script:notifyIcon.ShowBalloonTip(3000,'Ratchet','Brakuje pliku Diagnostyka-Ratchet.ps1',[System.Windows.Forms.ToolTipIcon]::Warning)
+    }
+})
 $retryItem=$menu.Items.Add('Uruchom ponownie serwer')
 $retryItem.Add_Click({
   $script:backendStartAttempts=0
