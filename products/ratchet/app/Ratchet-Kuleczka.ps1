@@ -702,6 +702,7 @@ function Get-RatchetReminderTitle([string]$phase) {
         'end'   { return 'Ratchet - planowany koniec' }
         'test'  { return 'Ratchet - test powiadomienia' }
         'agent' { return 'Ratchet - zakonczono sesje Claude Code' }
+        'agent-failure' { return 'Ratchet - blad Claude Code' }
         default { return $null }
     }
 }
