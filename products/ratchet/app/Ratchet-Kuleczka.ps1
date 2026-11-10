@@ -203,10 +203,12 @@ function Open-RatchetPanel {
     ) | Where-Object { Test-Path $_ } | Select-Object -First 1
     if ($edge) {
         $area = [System.Windows.Forms.Screen]::FromControl($form).WorkingArea
-        $width = [int][Math]::Min(480,$area.Width-20)
-        $height = [int][Math]::Min(720,$area.Height-20)
-        $x = [int][Math]::Max($area.Left,$area.Right-$width-30)
-        $y = [int][Math]::Max($area.Top,$area.Top+35)
+        # Compact companion panel next to the orb, not a desktop-sized window.
+        # Keep all coordinates inside the active monitor working area.
+        $width = [int][Math]::Min(360,[Math]::Max(280,$area.Width-24))
+        $height = [int][Math]::Min(520,[Math]::Max(340,$area.Height-24))
+        $x = [int][Math]::Max($area.Left+8,[Math]::Min($area.Right-$width-8,$form.Left+$form.Width-$width))
+        $y = [int][Math]::Max($area.Top+8,[Math]::Min($area.Bottom-$height-8,$form.Bottom+10))
         # Set final geometry before opening Edge. Never move a visible window.
         Start-Process -FilePath $edge -ArgumentList @(
           '--app=http://127.0.0.1:47823/ui/panel.html',
