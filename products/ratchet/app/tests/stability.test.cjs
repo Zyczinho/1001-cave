@@ -21,7 +21,7 @@ test('one orb and one panel with native HWND enumeration',()=>{
   assert.match(src,/EnumWindows/);
   assert.match(src,/FindPanel\(\)/);
   assert.match(src,/panel:show/);
-  assert.match(src,/TotalSeconds -lt 18/);
+  assert.match(src,/TotalSeconds -lt 2/);
 });
 test('installer rolls back if new version does not start',()=>{
   const src=read('Apply-Ratchet-Update.ps1');
