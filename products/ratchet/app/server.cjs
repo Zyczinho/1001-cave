@@ -334,11 +334,14 @@ function startHookServer() {
       const clean=normalizeItem('agents',{...prev,id,title:prev?.title||'Claude · '+session.slice(0,8),tool:'Claude Code',status,source:'hook',kind:'folder',target:String(data.cwd||prev?.target||''),note:event==='Stop'?'Odpowiedź zakończona — CI i wdrożenie niezweryfikowane':'Zdarzenie: '+event,updatedAt:new Date().toISOString()});
       if(index>=0)state.agents[index]=clean;else state.agents.unshift(clean);
       state.agents=state.agents.slice(0,100);save();
-      if((event==='Stop'||event==='StopFailure')&&prev?.status!==status){
+      // Notification and Stop may share the same needs_attention status.
+      // Compare the last hook event instead: never suppress a real Stop after Notification,
+      // but don't notify twice for a repeated Stop callback.
+      if((event==='Stop'||event==='StopFailure')&&prev?.note!==clean.note){
         activity(event==='StopFailure'
           ? 'Claude Code zgłosił błąd: '+clean.title+'. Sprawdź sesję.'
           : 'Claude Code zakończył odpowiedź: '+clean.title+'. Zmiany nie są jeszcze zweryfikowane.',
-          'reminder','','agent');
+          'reminder','',event==='StopFailure'?'agent-failure':'agent');
       }
       res.writeHead(204);res.end();
     }).catch(()=>{res.writeHead(400);res.end();});
