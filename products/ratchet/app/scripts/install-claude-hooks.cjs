@@ -14,7 +14,7 @@ settings.hooks ??={};
 for(const event of events){
   if(!Array.isArray(settings.hooks[event]))settings.hooks[event]=[];
   const has=settings.hooks[event].some(group=>(group.hooks||[]).some(h=>String(h.command||'').includes('claude-hook.cjs')));
-  if(!has)settings.hooks[event].push({hooks:[{type:'command',command,timeout:2000}]});
+  if(!has)settings.hooks[event].push({hooks:[{type:'command',command,timeout:5}]});
 }
 fs.writeFileSync(settingsPath,JSON.stringify(settings,null,2)+'\n');
 console.log('Ratchet Hooks dodane do',settingsPath);

@@ -81,7 +81,7 @@ function normalizeItem(collection, raw) {
       : [];
     return {id,title,time,endTime:endTime||null,date,days,project:cleanText(raw.project,70),target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url', note:cleanText(raw.note,500), enabled:raw.enabled !== false, snoozeUntil:raw.snoozeUntil || null,completedDates};
   }
-  return {id,title,tool:cleanText(raw.tool,70)||'Inny model',status:STATUS.includes(raw.status)?raw.status:'idle',target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url',branch:cleanText(raw.branch,120),note:cleanText(raw.note,500),source:raw.source === 'hook' ? 'hook' : 'manual',updatedAt:cleanText(raw.updatedAt,50)||new Date().toISOString()};
+  return {id,title,tool:cleanText(raw.tool,70)||'Inny model',status:STATUS.includes(raw.status)?raw.status:'idle',target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url',branch:cleanText(raw.branch,120),note:cleanText(raw.note,500),source:['hook','browser'].includes(raw.source) ? raw.source : 'manual',updatedAt:cleanText(raw.updatedAt,50)||new Date().toISOString()};
 }
 function dayKey(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
 function minuteOfDay(date) { return date.getHours()*60+date.getMinutes(); }
@@ -157,4 +157,93 @@ function handoffText(state, github) {
   lines.push('', 'POLECENIE:', 'Przed zmianą kodu sprawdź aktualny main, PR-y, zmieniane pliki i testy. Nie zakładaj, że odpowiedź agenta oznacza wdrożenie. Pracuj na osobnej gałęzi/worktree. Przy nakładaniu się plików uzgodnij kolejność merge. Po zmianie podaj commit, testy i status PR.');
   return lines.join('\n');
 }
-module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText};
+// Claude Code hook event -> agent status and at most one human alert.
+// Rules the owner asked for: stay silent while work continues, say "done, come look"
+// only when nothing else in the same project is still working, and say "I need you"
+// at once when an agent waits for a decision or fails.
+const BUSY_WINDOW_MS = 30 * 60 * 1000;
+// The person thinks in projects, not folders: a Claude Code worktree
+// (<repo>\.claude\worktrees\<name>) belongs to <repo>. The server passes the git root
+// (see projectRoot in server.cjs), so a subfolder like "app" is never the name.
+function projectName(cwd) {
+  const parts = String(cwd || '').split(/[\\/]+/).filter(Boolean);
+  const w = parts.findIndex((p, i) => p.toLowerCase() === '.claude' && String(parts[i + 1] || '').toLowerCase() === 'worktrees');
+  if (w > 0) return parts[w - 1];
+  return parts.length ? parts[parts.length - 1] : '';
+}
+function sameProject(a, b) {
+  const x = projectName(a).toLowerCase();
+  return !!x && x === projectName(b).toLowerCase();
+}
+function agentHookOutcome(event, {agents = [], id = '', prev = null, cwd = '', now = Date.now()} = {}) {
+  const status = event === 'StopFailure' ? 'blocked'
+    : event === 'Notification' ? 'needs_attention'
+    : event === 'Stop' ? 'ready'
+    : event === 'SessionEnd' ? (prev?.status === 'needs_attention' || prev?.status === 'blocked' ? prev.status : 'idle')
+    : 'working';
+  const note = event === 'Stop' ? 'Skończył — wejdź i zobacz'
+    : event === 'Notification' ? 'Czeka na Twoją decyzję'
+    : event === 'StopFailure' ? 'Błąd — sprawdź sesję'
+    : event === 'SessionEnd' ? (prev?.note || 'Sesja zamknięta')
+    : 'Pracuje';
+  const label = projectName(cwd) || prev?.title || 'Claude Code';
+  let alert = null;
+  const changed = prev?.status !== status;
+  if (event === 'Notification' && changed) {
+    alert = {phase: 'agent-attention', text: 'Potrzebuję Cię: ' + label + ' — agent czeka na Twoją decyzję.'};
+  } else if (event === 'StopFailure' && changed) {
+    alert = {phase: 'agent-failure', text: 'Potrzebuję Cię: ' + label + ' — agent zgłosił błąd.'};
+  } else if (event === 'Stop' && changed) {
+    const othersBusy = agents.some(a => a.id !== id && a.source === 'hook' && a.status === 'working'
+      && sameProject(a.target, cwd) && now - Date.parse(a.updatedAt || 0) < BUSY_WINDOW_MS);
+    if (!othersBusy) alert = {phase: 'agent-done', text: 'Gotowe: ' + label + ' — wejdź i zobacz.'};
+  }
+  return {status, note, alert};
+}
+// ChatGPT in the browser, reported by the Rachet Edge extension. Only conversation
+// URLs on chatgpt.com are accepted; a ChatGPT project URL gives the project name.
+const CHATGPT_CHAT = /^https:\/\/chatgpt\.com\/(?:g\/g-p-[0-9a-f]{32}(?:-([A-Za-z0-9-]{1,80}))?\/)?c\/([A-Za-z0-9-]{8,80})$/;
+function parseChatUrl(url) {
+  const m = CHATGPT_CHAT.exec(String(url || ''));
+  return m ? {url: m[0], project: m[1] || '', conversation: m[2]} : null;
+}
+const MIN_ANSWER_MS = 15000;
+function browserChatOutcome(signal = {}, {agents = [], now = Date.now()} = {}) {
+  const chat = parseChatUrl(signal.url);
+  if (!chat) throw Error('Nieobsługiwany adres rozmowy ChatGPT');
+  const state = ['working', 'done', 'closed'].includes(signal.state) ? signal.state : null;
+  if (!state) throw Error('Nieznany stan rozmowy');
+  const id = 'chatgpt:' + chat.conversation;
+  const prev = agents.find(a => a.id === id) || null;
+  const chatTitle = String(signal.title || '').replace(/\s*[|–-]\s*ChatGPT\s*$/i, '').replace(/^ChatGPT$/i, '').trim().slice(0, 80);
+  const label = chat.project || chatTitle || 'ChatGPT';
+  const title = (chat.project && chatTitle ? chat.project + ' · ' + chatTitle : label).slice(0, 120);
+  const status = state === 'working' ? 'working' : state === 'done' ? 'ready' : (prev?.status === 'working' ? 'idle' : prev?.status || 'idle');
+  const note = state === 'working' ? 'Pracuje' : state === 'done' ? 'Skończył — wejdź i zobacz' : prev?.note || 'Karta zamknięta';
+  let alert = null;
+  const duration = Number(signal.durationMs) || 0;
+  // Silent when you are looking at that tab or the answer was quick; silent while
+  // another chat of the same ChatGPT project is still working.
+  if (state === 'done' && prev?.status === 'working' && signal.visible !== true && duration >= MIN_ANSWER_MS) {
+    const othersBusy = chat.project && agents.some(a => a.id !== id && a.source === 'browser' && a.status === 'working'
+      && parseChatUrl(a.target)?.project === chat.project && sessionLive(a, now));
+    if (!othersBusy) alert = {phase: 'chatgpt-done', text: 'Gotowe: ' + label + ' — wejdź i zobacz.'};
+  }
+  return {id, url: chat.url, title, status, note, alert};
+}
+// The panel shows one row per project, not one per conversation or session.
+// A row "works" while any of its sessions works; a browser session that stops
+// confirming (closed tab, lost signal) stops counting after 3 minutes.
+const STALE_MS = {browser: 3 * 60 * 1000, hook: BUSY_WINDOW_MS};
+function sessionLive(s, now = Date.now()) {
+  return s.status !== 'working' || now - Date.parse(s.updatedAt || 0) < (STALE_MS[s.source] || BUSY_WINDOW_MS);
+}
+function rowStatus(sessions = [], now = Date.now()) {
+  const live = sessions.map(s => sessionLive(s, now) ? s.status : 'idle');
+  for (const status of ['blocked', 'needs_attention', 'working', 'ready']) if (live.includes(status)) return status;
+  return 'idle';
+}
+function rowKey(source, name) {
+  return 'project:' + source + ':' + String(name || '').toLowerCase().slice(0, 80);
+}
+module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};

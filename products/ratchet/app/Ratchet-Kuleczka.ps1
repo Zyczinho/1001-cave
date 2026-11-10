@@ -61,7 +61,7 @@ public static class RatchetNativeWindow {
       StringBuilder text = new StringBuilder(256);
       GetWindowText(window, text, text.Capacity);
       string name = text.ToString();
-      if (!(name.StartsWith("Ratchet", StringComparison.Ordinal) || name.Contains("127.0.0.1"))) return true;
+      if (!(name.StartsWith("Ratchet", StringComparison.Ordinal) || name.StartsWith("Rachet", StringComparison.Ordinal) || name.Contains("127.0.0.1"))) return true;
       found = window;
       return false;
     }, IntPtr.Zero);
@@ -71,6 +71,16 @@ public static class RatchetNativeWindow {
     RECT r;
     if (window == IntPtr.Zero || !GetWindowRect(window, out r)) return new int[0];
     return new int[] { r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top };
+  }
+  [DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+  // Windows lets only the foreground app hand over focus. A synthetic Alt tap lifts
+  // that lock for this call, so a click in Rachet can bring Claude to the front.
+  public static bool BringToFront(IntPtr window) {
+    if (window == IntPtr.Zero || !IsWindow(window)) return false;
+    if (IsIconic(window)) ShowWindow(window, 9);
+    keybd_event(0x12, 0, 0, UIntPtr.Zero);
+    keybd_event(0x12, 0, 2, UIntPtr.Zero);
+    return SetForegroundWindow(window);
   }
   public static bool Place(IntPtr window, int x, int y, int width, int height) {
     // SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER
@@ -87,6 +97,8 @@ $script:backendStartAttempts = 0
 $script:lastPanelRequest = -1
 $script:lastPanelHideRequest = -1
 $script:lastOrbResetRequest = -1
+$script:lastFocusRequest = -1
+$script:balloonEventId = ''
 $script:hadServer = $false
 $script:consecutiveOfflineTicks = 0
 # Compact companion by default; a size the user sets by dragging the edge is remembered.
@@ -167,7 +179,7 @@ try {
     $ico = Join-Path $script:ratchetBackendRoot 'assets\ratchet.ico'
     if (Test-Path -LiteralPath $ico -PathType Leaf) { $script:notifyIcon.Icon = New-Object System.Drawing.Icon($ico) }
 } catch {}
-$script:notifyIcon.Text = 'Ratchet - plan dnia i agenci AI'
+$script:notifyIcon.Text = 'Rachet - plan dnia i agenci AI'
 $script:notifyIcon.Visible = $true
 
 $form = New-Object RatchetOrbForm
@@ -220,7 +232,7 @@ $script:speechTitle = New-Object System.Windows.Forms.Label
 $script:speechTitle.SetBounds(11,7,225,19)
 $script:speechTitle.ForeColor = [System.Drawing.Color]::FromArgb(144,202,255)
 $script:speechTitle.Font = [System.Drawing.Font]::new('Segoe UI',[single]9,[System.Drawing.FontStyle]::Bold)
-$script:speechTitle.Text = 'Ratchet'
+$script:speechTitle.Text = 'Rachet'
 $script:speechForm.Controls.Add($script:speechTitle)
 $script:speechText = New-Object System.Windows.Forms.Label
 $script:speechText.SetBounds(11,29,224,49)
@@ -260,7 +272,7 @@ function Show-RatchetSpeech {
   $script:bubbleEventId=$eventId
   $script:bubbleTaskId=$taskId
   $script:bubblePhase=$phase
-  $script:speechTitle.Text = if($phase -eq 'chatgpt' -or $phase -eq 'chatgpt-failure' -or $phase -eq 'chatgpt-attention' -or $phase -eq 'chatgpt-signal' -or $phase -eq 'chatgpt-signal-attention'){'Ratchet - ChatGPT'} elseif($phase -eq 'coordinator'){'Ratchet - koordynator'} elseif($phase -eq 'agent'){'Ratchet - agent'} elseif($phase -eq 'test'){'Ratchet - test'} else {'Ratchet - przypomnienie'}
+  $script:speechTitle.Text = if($phase -in @('agent-attention','agent-failure','chatgpt-failure','chatgpt-attention','chatgpt-signal-attention')){'Potrzebuję Cię'} elseif($phase -in @('agent-done','chatgpt-done','agent','chatgpt','chatgpt-signal','coordinator')){'Gotowe'} elseif($phase -eq 'test'){'Rachet - test'} else {'Rachet'}
   $script:speechText.Text = if($message.Length -gt 136){$message.Substring(0,133)+'...'}else{$message}
   Place-RatchetSpeech
   $script:bubbleUntil=[datetime]::UtcNow.AddSeconds(9)
@@ -268,16 +280,38 @@ function Show-RatchetSpeech {
   $script:speechForm.Invalidate()
   return $script:speechForm.Visible
 }
-$script:speechOpen.Add_Click({
-  $id=$script:bubbleEventId
-  $script:speechForm.Hide()
-  if($id) {
+# "Take me there": the Claude window for an agent alert (its project folder when Claude
+# is closed), the task's link for a reminder, otherwise the panel.
+function Focus-RatchetAgent([string]$folder) {
+  $claude = Get-Process -Name 'claude' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+  if ($claude -and [RatchetNativeWindow]::BringToFront($claude.MainWindowHandle)) { Write-RatchetOrbLog 'AGENT_FOCUS claude'; return }
+  if ($folder) {
     try {
-      $body=@{action='notification:open';data=@{id=$id}} | ConvertTo-Json -Compress
+      $body=@{action='open-target';data=@{kind='folder';target=$folder}} | ConvertTo-Json -Compress
       Invoke-RestMethod -Uri ($script:baseUrl+'/api/action') -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body $body -TimeoutSec 2 | Out-Null
-    } catch { Open-RatchetPanel }
-  } else { Open-RatchetPanel }
+      Write-RatchetOrbLog 'AGENT_FOCUS folder'
+      return
+    } catch { Write-RatchetOrbLog ('AGENT_FOCUS_ERROR '+$_.Exception.Message) }
+  }
+  Open-RatchetPanel
+}
+function Open-RatchetNotification([string]$id) {
+  if (-not $id) { Open-RatchetPanel; return }
+  try {
+    $body=@{action='notification:open';data=@{id=$id}} | ConvertTo-Json -Compress
+    $reply=Invoke-RestMethod -Uri ($script:baseUrl+'/api/action') -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body $body -TimeoutSec 2
+    if ($reply -and $reply.result -and [string]$reply.result.focus -eq 'claude') { Focus-RatchetAgent ([string]$reply.result.folder) }
+  } catch { Open-RatchetPanel }
+}
+$script:speechOpen.Add_Click({
+  $script:speechForm.Hide()
+  Open-RatchetNotification $script:bubbleEventId
 })
+# The whole bubble is clickable, not only the small button.
+foreach ($clickable in @($script:speechTitle, $script:speechText)) {
+  $clickable.Cursor = [System.Windows.Forms.Cursors]::Hand
+  $clickable.Add_Click({ $script:speechForm.Hide(); Open-RatchetNotification $script:bubbleEventId })
+}
 $script:speechLater.Add_Click({
   $script:speechForm.Hide()
   if($script:bubbleTaskId -and $script:bubblePhase -eq 'start') {
@@ -316,7 +350,7 @@ try { Set-RatchetHitRegion }
 catch {
     $form.TopMost = $false
     $form.Hide()
-    $script:notifyIcon.ShowBalloonTip(3000,'Ratchet','Kuleczka została ukryta: nie udało się ograniczyć obszaru klikania.',[System.Windows.Forms.ToolTipIcon]::Warning)
+    $script:notifyIcon.ShowBalloonTip(3000,'Rachet','Kuleczka została ukryta: nie udało się ograniczyć obszaru klikania.',[System.Windows.Forms.ToolTipIcon]::Warning)
     throw
 }
 
@@ -454,7 +488,7 @@ function Open-RatchetPanel {
     if (([datetime]::UtcNow - $script:lastPanelSpawn).TotalSeconds -lt 2) { return }
     if ($script:panelSpawnAttempts -ge 3) {
         $script:pendingPanelOpen = $false
-        $script:notifyIcon.ShowBalloonTip(5000,'Ratchet','Nie udało się otworzyć panelu. Spróbuj ponownie z kuleczki.',[System.Windows.Forms.ToolTipIcon]::Warning)
+        $script:notifyIcon.ShowBalloonTip(5000,'Rachet','Nie udało się otworzyć panelu. Spróbuj ponownie z kuleczki.',[System.Windows.Forms.ToolTipIcon]::Warning)
         return
     }
     $script:panelSpawnAttempts++
@@ -589,9 +623,9 @@ $form.Add_MouseUp({
 
 $script:orbMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $menu = $script:orbMenu
-$openItem=$menu.Items.Add('Otwórz Ratchet')
+$openItem=$menu.Items.Add('Otwórz Rachet')
 $openItem.Add_Click({Open-RatchetPanel})
-$diagItem=$menu.Items.Add('Zdiagnozuj Ratchet')
+$diagItem=$menu.Items.Add('Zdiagnozuj Rachet')
 $diagItem.Add_Click({
     $diagnostics = Join-Path $script:ratchetBackendRoot 'Diagnostyka-Ratchet.ps1'
     $exe = Join-Path $script:ratchetBackendRoot 'Ratchet.exe'
@@ -600,7 +634,7 @@ $diagItem.Add_Click({
     } elseif (Test-Path -LiteralPath $diagnostics -PathType Leaf) {
         Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $diagnostics + '"'))
     } else {
-        $script:notifyIcon.ShowBalloonTip(3000,'Ratchet','Brakuje pliku Diagnostyka-Ratchet.ps1',[System.Windows.Forms.ToolTipIcon]::Warning)
+        $script:notifyIcon.ShowBalloonTip(3000,'Rachet','Brakuje pliku Diagnostyka-Ratchet.ps1',[System.Windows.Forms.ToolTipIcon]::Warning)
     }
 })
 $testItem=$menu.Items.Add('Test powiadomienia')
@@ -617,12 +651,12 @@ $retryItem.Add_Click({
   $script:lastBackendRecovery=[datetime]::MinValue
   $health=Start-RatchetBackend
   if($health){ $form.Show(); $form.Invalidate() }
-  else { $script:notifyIcon.ShowBalloonTip(3500,'Ratchet','Nie udało się wznowić serwera. Sprawdź dziennik Ratcheta.',[System.Windows.Forms.ToolTipIcon]::Warning) }
+  else { $script:notifyIcon.ShowBalloonTip(3500,'Rachet','Nie udało się wznowić serwera. Sprawdź dziennik Racheta.',[System.Windows.Forms.ToolTipIcon]::Warning) }
 })
 $showItem=$menu.Items.Add('Pokaż / ukryj kuleczkę')
 $showItem.Add_Click({if($form.Visible){$form.Hide()}else{$form.Show()}})
 $null=$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-$quitItem=$menu.Items.Add('Zakończ Ratchet')
+$quitItem=$menu.Items.Add('Zakończ Rachet')
 $quitItem.Add_Click({
   try { Invoke-RatchetAction 'quit' } catch {}
   Close-RatchetPanel
@@ -631,7 +665,7 @@ $quitItem.Add_Click({
 # The orb handles its own right-click menu to work independently of Edge and localhost.
 $script:notifyIcon.ContextMenuStrip=$menu
 $script:notifyIcon.Add_DoubleClick({$form.Show();Open-RatchetPanel})
-$script:notifyIcon.Add_BalloonTipClicked({Open-RatchetPanel})
+$script:notifyIcon.Add_BalloonTipClicked({ Open-RatchetNotification $script:balloonEventId })
 
 # Autostart is managed only for the installed copy, never for a test or a loose ZIP folder.
 function Sync-RatchetAutoStart {
@@ -650,7 +684,7 @@ function Sync-RatchetAutoStart {
             $lnk.TargetPath = $exe
             $lnk.WorkingDirectory = $installed
             $lnk.IconLocation = (Join-Path $installed 'assets\ratchet.ico')
-            $lnk.Description = 'Ratchet - start razem z Windows'
+            $lnk.Description = 'Rachet - start razem z Windows'
             $lnk.Save()
         } elseif (Test-Path -LiteralPath $link -PathType Leaf) {
             Remove-Item -LiteralPath $link -Force
@@ -689,7 +723,7 @@ function Invoke-RatchetOfflineTick {
         } elseif ($script:backendStartAttempts -ge 4) {
             # If recovery repeatedly fails, hide rather than blocking desktop.
             $form.Hide()
-            $script:notifyIcon.ShowBalloonTip(4000,'Ratchet',
+            $script:notifyIcon.ShowBalloonTip(4000,'Rachet',
               'Nie można wznowić serwera. Otwórz menu ikonki przy zegarze, aby spróbować ponownie lub zakończyć.',
               [System.Windows.Forms.ToolTipIcon]::Warning)
         }
@@ -698,17 +732,20 @@ function Invoke-RatchetOfflineTick {
 
 function Get-RatchetReminderTitle([string]$phase) {
     switch ($phase) {
-        'start' { return 'Ratchet - początek zadania' }
-        'end'   { return 'Ratchet - planowany koniec' }
-        'test'  { return 'Ratchet - test powiadomienia' }
-        'agent' { return 'Ratchet - zakonczono sesje Claude Code' }
-        'agent-failure' { return 'Ratchet - blad Claude Code' }
-        'coordinator' { return 'Ratchet - koordynator zadan' }
-        'chatgpt' { return 'Ratchet - ChatGPT zakonczyl zadanie' }
-        'chatgpt-failure' { return 'Ratchet - ChatGPT wymaga uwagi' }
-        'chatgpt-attention' { return 'Ratchet - ChatGPT czeka na Ciebie' }
-        'chatgpt-signal' { return 'Ratchet - ChatGPT zglosil wykonanie' }
-        'chatgpt-signal-attention' { return 'Ratchet - ChatGPT zglosil blokade' }
+        'start' { return 'Rachet - początek zadania' }
+        'end'   { return 'Rachet - planowany koniec' }
+        'test'  { return 'Rachet - test powiadomienia' }
+        'agent-done' { return 'Rachet - gotowe, zobacz' }
+        'chatgpt-done' { return 'Rachet - ChatGPT skończył' }
+        'agent-attention' { return 'Rachet - potrzebuję Cię' }
+        'agent' { return 'Rachet - agent skończył' }
+        'agent-failure' { return 'Rachet - potrzebuję Cię' }
+        'coordinator' { return 'Rachet - koordynator zadań' }
+        'chatgpt' { return 'Rachet - ChatGPT skończył' }
+        'chatgpt-failure' { return 'Rachet - potrzebuję Cię' }
+        'chatgpt-attention' { return 'Rachet - potrzebuję Cię' }
+        'chatgpt-signal' { return 'Rachet - ChatGPT zgłosił wykonanie' }
+        'chatgpt-signal-attention' { return 'Rachet - potrzebuję Cię' }
         default { return $null }
     }
 }
@@ -733,6 +770,12 @@ $timer.Add_Tick({
         if ($null -ne $info.panelRequests -and [int]$info.panelRequests -gt $script:lastPanelRequest) {
             $script:lastPanelRequest = [int]$info.panelRequests
             Open-RatchetPanel
+        }
+        if ($null -ne $info.focusRequests -and [int]$info.focusRequests -gt $script:lastFocusRequest) {
+            # The first value seen only sets the baseline: starting Rachet never pulls Claude forward.
+            $act = $script:lastFocusRequest -ge 0
+            $script:lastFocusRequest = [int]$info.focusRequests
+            if ($act) { Focus-RatchetAgent ([string]$info.focusFolder) }
         }
         if ($null -ne $info.panelHideRequests -and [int]$info.panelHideRequests -gt $script:lastPanelHideRequest) {
             $script:lastPanelHideRequest = [int]$info.panelHideRequests
@@ -782,6 +825,7 @@ $timer.Add_Tick({
                 $windowsAttempted=$false
                 $bubbleShown=$false
                 try {
+                  $script:balloonEventId=[string]$entry.id
                   $script:notifyIcon.ShowBalloonTip(7000,$title,[string]$entry.text,[System.Windows.Forms.ToolTipIcon]::Info)
                   $windowsAttempted=$true
                 } catch { Write-RatchetOrbLog ('WINDOWS_NOTIFICATION_ERROR '+$_.Exception.Message) }
@@ -795,7 +839,7 @@ $timer.Add_Tick({
                 } catch { Write-RatchetOrbLog ('DELIVERY_ACK_ERROR '+$_.Exception.Message) }
             }
         }
-        $script:notifyIcon.Text = 'Ratchet - ' + $script:status
+        $script:notifyIcon.Text = 'Rachet - ' + $script:status
     } catch {
         # A bug in the orb must be visible in a log, never disguised as "server offline".
         Write-RatchetOrbLog ('TICK_ERROR line ' + $_.InvocationInfo.ScriptLineNumber + ': ' + $_.Exception.Message)
@@ -822,6 +866,7 @@ try {
     if ($null -ne $initial.panelRequests) { $script:lastPanelRequest = [int]$initial.panelRequests }
     if ($null -ne $initial.panelHideRequests) { $script:lastPanelHideRequest = [int]$initial.panelHideRequests }
     if ($null -ne $initial.orbResetRequests) { $script:lastOrbResetRequest = [int]$initial.orbResetRequests }
+    if ($null -ne $initial.focusRequests) { $script:lastFocusRequest = [int]$initial.focusRequests }
 } catch {}
 $timer.Start()
 # Start with only the orb. Panel is opened on explicit click.

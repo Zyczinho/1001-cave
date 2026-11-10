@@ -9,7 +9,30 @@ const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, browserChatOutcome, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+// Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
+const sessions = new Map();
+function upsertRow(row, {title, tool, source, kind, target, note}) {
+  const members = [...sessions.values()].filter(s => s.row === row);
+  const index = state.agents.findIndex(x => x.id === row), prev = index >= 0 ? state.agents[index] : null;
+  const clean = normalizeItem('agents', {...prev, id: row, title, tool, status: rowStatus(members), source, kind,
+    target: target || prev?.target || '', note: note || prev?.note || '', updatedAt: new Date().toISOString()});
+  if (index >= 0) state.agents[index] = clean; else state.agents.unshift(clean);
+  state.agents = state.agents.slice(0, 100);
+}
+// Once a minute: a project row whose sessions went quiet stops saying "Pracuje".
+function sweepRows(now = Date.now()) {
+  let changed = false;
+  for (const [id, s] of sessions) if (now - Date.parse(s.updatedAt || 0) > 12 * 3600 * 1000) sessions.delete(id);
+  for (const agent of state.agents) {
+    if (!agent.id.startsWith('project:')) continue;
+    const members = [...sessions.values()].filter(s => s.row === agent.id);
+    const status = members.length ? rowStatus(members, now)
+      : agent.status === 'working' && !sessionLive(agent, now) ? 'idle' : agent.status;
+    if (status !== agent.status) { agent.status = status; changed = true; }
+  }
+  return changed;
+}
 
 const PORT = Number(process.env.RATCHET_PORT || 47823);
 const CLAUDE_PORT = Number(process.env.RATCHET_HOOK_PORT || 47822);
@@ -18,7 +41,7 @@ const UI_ROOT = path.resolve(__dirname, 'ui');
 const JSON_LIMIT = 64 * 1024;
 let state = defaults(), github = null, githubError = null, lastFetch = 0;
 let appServer, hookServer, shuttingDown = false, quitRequested = false;
-let panelRequests = 0, panelHideRequests = 0, orbResetRequests = 0, installingUpdate = false, updateAvailable = null;
+let panelRequests = 0, panelHideRequests = 0, orbResetRequests = 0, focusRequests = 0, focusFolder = '', installingUpdate = false, updateAvailable = null;
 const coordinatorRunner=new CoordinatorRunner({
   getState:()=>state.coordinator,persist:()=>save(),
   notify:(message,level,taskId,phase)=>activity(message,level,taskId,phase)
@@ -70,8 +93,8 @@ function save() {
   if(fs.existsSync(DATA)) {try {fs.copyFileSync(DATA,backup);}catch(e){console.warn('[ratchet] Backup:',e.message);} }
   fs.renameSync(tmp,DATA);
 }
-function activity(message, level='info', taskId='', phase='') {
-  const entry={id: String(Date.now()) + Math.random(),text:message,level,taskId,phase,at:new Date().toISOString()};
+function activity(message, level='info', taskId='', phase='', extra={}) {
+  const entry={id: String(Date.now()) + Math.random(),text:message,level,taskId,phase,at:new Date().toISOString(),...extra};
   state.activity.unshift(entry);state.activity=state.activity.slice(0,80);save();
   return entry;
 }
@@ -306,12 +329,27 @@ async function handleAction(key,data) {
     const entry=state.activity.find(x=>x.id===String(data.id||''));
     const task=entry?.taskId&&state.schedule.find(x=>x.id===entry.taskId);
     if(task?.target)return openTarget(task.kind,task.target);
+    // An agent alert leads to the agent: the orb brings the Claude window forward,
+    // or opens the project folder when Claude is not running.
+    if(entry?.agentId){
+      const agent=state.agents.find(x=>x.id===entry.agentId);
+      // A ChatGPT chat reopens exactly that conversation (validated chatgpt.com URL only).
+      if(agent?.source==='browser'&&parseChatUrl(agent.target))return openTarget('url',agent.target);
+      return {focus:'claude',folder:agent?.kind==='folder'?agent.target:''};
+    }
     // Notification actions may open only verified ChatGPT conversation URLs, never arbitrary links.
-    if(entry?.target && /^https:\/\/chatgpt\.com\/c\/[\w-]+\/?$/.test(entry.target))
+    if(entry?.target && (/^https:\/\/chatgpt\.com\/c\/[\w-]+\/?$/.test(entry.target)||parseChatUrl(entry.target)))
       return openTarget('url',entry.target);
     panelRequests++;return {panelRequested:true};
   }
   if(key==='open-target')return openTarget(data.kind,data.target);
+  if(key==='agent:focus'){
+    // The panel cannot raise another app's window; the orb does it on its next tick.
+    const agent=state.agents.find(x=>x.id===String(data.id||''));
+    if(!agent)throw Error('Nie ma takiego agenta');
+    focusFolder=agent.kind==='folder'?agent.target:'';focusRequests++;
+    return {focusRequested:true};
+  }
   if(key==='handoff')return handoffText(state,github);
   if(key==='panel:show'){ panelRequests++; return true; }
   if(key==='panel:hide'){ panelHideRequests++; return true; }
@@ -393,8 +431,27 @@ async function appRequest(req,res) {
   if(req.method==='GET'){
     if(url.pathname==='/api/ping') return json(res,{ok:true,version:CURRENT_VERSION,commit:BUILD.commit,root:__dirname,pid:process.pid,quitting:quitRequested});
     if(url.pathname==='/api/snapshot') return json(res,snapshot());
-    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,alwaysOnTop:state.settings.alwaysOnTop!==false,autoStart:state.settings.autoStart===true,panelSize:state.settings.panelSize||null,orbPosition:state.orbPosition||null,panelRequests,panelHideRequests,orbResetRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
+    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,alwaysOnTop:state.settings.alwaysOnTop!==false,autoStart:state.settings.autoStart===true,panelSize:state.settings.panelSize||null,orbPosition:state.orbPosition||null,panelRequests,panelHideRequests,orbResetRequests,focusRequests,focusFolder,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
     return staticResponse(url.pathname,res);
+  }
+  // Narrow door for the Rachet Edge extension: it can only report a ChatGPT chat
+  // working/done/closed. It cannot reach any other action (open, quit, settings...).
+  if(req.method==='POST'&&url.pathname==='/api/browser-signal'){
+    const origin=String(req.headers.origin||'');
+    if(!/^(?:chrome-)?extension:\/\/[a-p]{32}$/.test(origin)||req.headers['x-ratchet-local']!=='1'||!(req.headers['content-type']||'').startsWith('application/json'))
+      return fail(res,'Nieautoryzowane żądanie',403);
+    try {
+      const body=await bodyOf(req);
+      const out=browserChatOutcome(body,{agents:[...sessions.values()]});
+      const name=parseChatUrl(out.url).project||'ChatGPT',row=rowKey('chatgpt',name);
+      sessions.set(out.id,{id:out.id,source:'browser',status:out.status,target:out.url,note:out.title,updatedAt:new Date().toISOString(),row});
+      upsertRow(row,{title:name,tool:'ChatGPT',source:'browser',kind:'url',target:out.url,note:out.title});
+      save();
+      // The alert opens the conversation that finished, even if the row moves on.
+      if(out.alert)activity(out.alert.text,'reminder','',out.alert.phase,{agentId:row,target:out.url});
+      const status=state.agents.find(x=>x.id===row)?.status;
+      return json(res,{ok:true,row,status,notified:!!out.alert});
+    } catch(e) {return fail(res,e.message||'Niepoprawny sygnał');}
   }
   if(req.method==='POST'&&url.pathname==='/api/action'){
     if(!acceptPost(req)) return fail(res,'Nieautoryzowane żądanie',403);
@@ -402,6 +459,18 @@ async function appRequest(req,res) {
     catch(e) {return fail(res,e.message||'Nieznany błąd');}
   }
   return fail(res,'Nie znaleziono',404);
+}
+// Claude Code reports the folder it is in, often a subfolder. Name and open the project
+// by its git root (a worktree's root counts) so "app" never stands for "1001-cave".
+function projectRoot(cwd){
+  let dir=cwd;
+  for(let i=0;i<10&&dir;i++){
+    try{if(fs.existsSync(path.join(dir,'.git')))return dir;}catch{return cwd;}
+    const up=path.dirname(dir);
+    if(up===dir)break;
+    dir=up;
+  }
+  return cwd;
 }
 function startHookServer() {
   hookServer=http.createServer((req,res)=>{
@@ -411,23 +480,18 @@ function startHookServer() {
       const event=String(data.hook_event_name||'').slice(0,70);
       const session=String(data.session_id||'').slice(0,100);
       if(!session||!['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','Stop','StopFailure','Notification','SessionEnd'].includes(event))throw Error('Niepoprawne zdarzenie');
-      const id='claude:'+session,index=state.agents.findIndex(x=>x.id===id),prev=index>=0?state.agents[index]:null;
-      const status=event==='StopFailure'?'blocked':event==='Stop'||event==='Notification'?'needs_attention':event==='SessionEnd'?'idle':'working';
-      const clean=normalizeItem('agents',{...prev,id,title:prev?.title||'Claude · '+session.slice(0,8),tool:'Claude Code',status,source:'hook',kind:'folder',target:String(data.cwd||prev?.target||''),note:event==='Stop'?'Odpowiedź zakończona — CI i wdrożenie niezweryfikowane':'Zdarzenie: '+event,updatedAt:new Date().toISOString()});
-      if(index>=0)state.agents[index]=clean;else state.agents.unshift(clean);
-      state.agents=state.agents.slice(0,100);save();
-      // Notification and Stop may share the same needs_attention status.
-      // Compare the last hook event instead: never suppress a real Stop after Notification,
-      // but don't notify twice for a repeated Stop callback.
+      const id='claude:'+session,prev=sessions.get(id)||null;
+      const cwd=projectRoot(String(data.cwd||prev?.target||''));
+      const name=projectName(cwd)||'Claude Code',row=rowKey('claude',name);
+      const outcome=agentHookOutcome(event,{agents:[...sessions.values()],id,prev,cwd});
+      sessions.set(id,{id,source:'hook',status:outcome.status,target:cwd,note:outcome.note,updatedAt:new Date().toISOString(),row});
+      upsertRow(row,{title:name,tool:'Claude Code',source:'hook',kind:'folder',target:cwd,note:outcome.note});
+      save();
       const coordId=String(data.coordinator_job_id||'').slice(0,80);
       const coordinated=coordId&&state.coordinator.jobs.some(j=>j.id===coordId&&(j.status==='running'||j.status==='queued'));
-      // Coordinator-owned stages report through the runner, not duplicate human Stop alerts.
-      if(!coordinated&&(event==='Stop'||event==='StopFailure')&&prev?.note!==clean.note){
-        activity(event==='StopFailure'
-          ? 'Claude Code zgłosił błąd: '+clean.title+'. Sprawdź sesję.'
-          : 'Claude Code zakończył odpowiedź: '+clean.title+'. Zmiany nie są jeszcze zweryfikowane.',
-          'reminder','',event==='StopFailure'?'agent-failure':'agent');
-      }
+      // Coordinator-owned stages report through the runner, not duplicate human alerts.
+      // agentHookOutcome stays silent while other agents in the same project still work.
+      if(!coordinated&&outcome.alert)activity(outcome.alert.text,'reminder','',outcome.alert.phase,{agentId:row});
       res.writeHead(204);res.end();
     }).catch(()=>{res.writeHead(400);res.end();});
   });
@@ -435,7 +499,13 @@ function startHookServer() {
   hookServer.listen(CLAUDE_PORT,'127.0.0.1');
 }
 function main(){
-  read();coordinatorRunner.reconcile();checkSchedule();
+  read();
+  // Older versions kept one row per session or chat; the panel now groups them by project.
+  const before=state.agents.length;
+  // Session rows are recognised by their id too: 0.2.9 builds saved ChatGPT rows as "manual".
+  state.agents=state.agents.filter(a=>a.id.startsWith('project:')||!(['hook','browser'].includes(a.source)||/^(?:claude|chatgpt):/.test(a.id)));
+  if(state.agents.length!==before)save();
+  setInterval(()=>{if(sweepRows())save();},60000).unref();coordinatorRunner.reconcile();checkSchedule();
   appServer=http.createServer((req,res)=>{appRequest(req,res).catch(e=>fail(res,e.message,500));});
   appServer.on('error',e=>{console.error('[ratchet] Server:',e.message);process.exit(1);});
   appServer.listen(PORT,'127.0.0.1',()=>console.log('Ratchet '+CURRENT_VERSION+' start: http://127.0.0.1:'+PORT+' commit '+(BUILD.commit||'dev')));
@@ -449,4 +519,4 @@ function main(){
   setInterval(()=>refreshGithub().catch(()=>{}),60000);
 }
 if(require.main===module) main();
-module.exports={read,save,snapshot,health,checkSchedule,handleAction,openTarget,appRequest,main,coordinatorRunner,chatgptWatcher};
+module.exports={read,save,snapshot,health,checkSchedule,handleAction,openTarget,appRequest,main,coordinatorRunner,chatgptWatcher,sweepRows,sessions};

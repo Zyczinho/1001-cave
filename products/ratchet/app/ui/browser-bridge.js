@@ -6,12 +6,12 @@ if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.
     try {res=await fetch(url,init);}
     catch(e){
       window.dispatchEvent(new CustomEvent('ratchet:connection',{detail:{online:false}}));
-      throw Error('Ratchet utracił połączenie z serwerem. Kuleczka spróbuje je przywrócić.');
+      throw Error('Rachet utracił połączenie z serwerem. Kuleczka spróbuje je przywrócić.');
     }
     window.dispatchEvent(new CustomEvent('ratchet:connection',{detail:{online:true}}));
     let data;
-    try {data=await res.json();}catch{throw Error('Serwer Ratcheta zwrócił nieprawidłową odpowiedź');}
-    if(!res.ok)throw Error(data.error||'Błąd Ratcheta');
+    try {data=await res.json();}catch{throw Error('Serwer Racheta zwrócił nieprawidłową odpowiedź');}
+    if(!res.ok)throw Error(data.error||'Błąd Racheta');
     return data;
   }
   const action=async (name,data={})=> (await request('/api/action',{method:'POST',headers:{'Content-Type':'application/json','X-Ratchet-Local':'1'},body:JSON.stringify({action:name,data})})).result;
@@ -26,6 +26,7 @@ if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.
     saveSettings:settings=>action('settings:save',{settings}),
     scheduleAction:(id,actionName)=>action('schedule:action',{id,action:actionName}),
     open:(kind,target)=>action('open-target',{kind,target}),
+    focusAgent:id=>action('agent:focus',{id}),
     chatgptSignalRemove:id=>action('chatgpt:signal-remove',{id}),
     chatgptCreate:data=>action('chatgpt:create',data),
     chatgptRefresh:()=>action('chatgpt:refresh'),

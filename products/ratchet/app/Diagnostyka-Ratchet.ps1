@@ -1,4 +1,4 @@
-# Ratchet: independent, read-only Windows diagnostics (PowerShell 5.1).
+﻿# Ratchet: independent, read-only Windows diagnostics (PowerShell 5.1).
 # Runs without Node, localhost, Edge, the native orb, or GitHub credentials.
 # Does not start/stop services, modify installation files, or transmit data.
 param([switch]$Quiet)
@@ -66,7 +66,7 @@ try {
     try {
         $desktop = [Environment]::GetFolderPath('DesktopDirectory')
         # The installer falls back to a second name when OneDrive keeps an old name locked.
-        $shortcutFile = @('Ratchet.lnk','Ratchet (1001 CAVE).lnk') | ForEach-Object { Join-Path $desktop $_ } |
+        $shortcutFile = @('Rachet.lnk','Rachet (1001 CAVE).lnk','Ratchet.lnk','Ratchet (1001 CAVE).lnk') | ForEach-Object { Join-Path $desktop $_ } |
             Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
         if ($shortcutFile) {
             $s = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutFile)

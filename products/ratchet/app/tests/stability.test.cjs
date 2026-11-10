@@ -22,7 +22,7 @@ test('no console launcher scripts remain that could open a visible terminal',()=
   assert.doesNotMatch(read('server.cjs'),/-EncodedCommand/);
   assert.match(installer,/\$mainTarget = \$launcher; \$mainArgs = ''/);
   // A refused shortcut name (OneDrive keeps an old Ratchet.lnk locked) falls back, never rolls back.
-  assert.match(installer,/Set-DesktopShortcut \$desktop @\('Ratchet\.lnk','Ratchet \(1001 CAVE\)\.lnk'\)/);
+  assert.match(installer,/Set-DesktopShortcut \$desktop @\('Rachet\.lnk','Rachet \(1001 CAVE\)\.lnk'\)/);
   assert.match(installer,/catch \{ Trace \('Shortcut ' \+ \$name \+ ' refused: '/);
 });
 test('quit followed by an immediate relaunch never adopts the dying server',()=>{
@@ -61,7 +61,7 @@ test('server supplies target expected version to external updater',()=>{
 });
 test('panel offline state explicitly tracks request failures',()=>{
   assert.match(read('ui/browser-bridge.js'),/ratchet:connection/);
-  assert.match(read('ui/panel.js'),/BRAK POŁĄCZENIA/);
+  assert.match(read('ui/panel.js'),/Brak połączenia/);
   assert.match(read('ui/panel.html'),/id="backendStatus"/);
 });
 
@@ -109,8 +109,8 @@ test('panel opens as compact 360x520 companion anchored to the painted orb',()=>
 
 test('scheduled reminders, not the user\'s own clicks, become Windows toasts',()=>{
   const orb=read('Ratchet-Kuleczka.ps1');
-  assert.match(orb,/'start' \{ return 'Ratchet - początek zadania' \}/);
-  assert.match(orb,/'end'   \{ return 'Ratchet - planowany koniec' \}/);
+  assert.match(orb,/'start' \{ return 'Rachet - początek zadania' \}/);
+  assert.match(orb,/'end'   \{ return 'Rachet - planowany koniec' \}/);
   assert.match(orb,/shownReminders\.Contains/);
   assert.match(read('server.cjs'),/activity\('Rozpoczęto: '\+item\.title,'reminder',item\.id,'started'\)/);
 });

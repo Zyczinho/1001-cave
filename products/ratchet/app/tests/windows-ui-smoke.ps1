@@ -79,7 +79,7 @@ public static class RatchetSmokeWindows {
       uint pid; GetWindowThreadProcessId(h,out pid);
       if(!owners.Contains(pid))return true;
       StringBuilder t=new StringBuilder(256); GetWindowText(h,t,t.Capacity);
-      if(t.ToString().StartsWith("Ratchet"))result.Add(h.ToInt64());
+      if(t.ToString().StartsWith("Rachet")||t.ToString().StartsWith("Ratchet"))result.Add(h.ToInt64());
       return true;
     },IntPtr.Zero);
     return result.ToArray();

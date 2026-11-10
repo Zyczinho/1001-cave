@@ -11,7 +11,7 @@ test('left click opens native menu when localhost ping fails',()=>{
 test('right click is independently handled by orb and menu has Exit',()=>{
   const orb=read('Ratchet-Kuleczka.ps1');
   assert.match(orb,/MouseButtons\]::Right/);
-  assert.match(orb,/\$menu\.Items\.Add\('Zakończ Ratchet'\)/);
+  assert.match(orb,/\$menu\.Items\.Add\('Zakończ Rachet'\)/);
   assert.match(orb,/\$form\.Close\(\)/);
 });
 test('orb recovers backend after crash and keeps a native exit fallback',()=>{
