@@ -88,3 +88,21 @@ Nowy **read-only PowerShell smoke** potwierdził:
 **Skorygowana diagnoza:** nie jest to bieżąca awaria portu 47823. Istnieje jednoznaczna rozbieżność **lokalnej kuleczki i referencyjnego pakietu 0.2.7**. Wersja API `0.2.7` nie gwarantuje jednorodności instalacji. Przed jakąkolwiek reinstalacją/patchowaniem należy odczytać ścieżkę procesu orb oraz funkcje odpowiedzialne za kliknięcie i otwieranie panelu w *tym konkretnym lokalnym pliku*.
 
 **Kolejny test bez mutacji:** lista procesów Ratcheta z `CommandLine`, odczyt linii skryptu zawierających `Open-RatchetPanel`, `FindPanel`, `panel.html`, `Text\s*=` i sprawdzenie `/api/ping` po kliknięciu. Nie zamykać RAT-001.
+
+## Aktualizacja 10.11 — rzeczywiste Windows CI po odblokowaniu runnerów
+
+Po odblokowaniu runnerów (Issue #20) prawdziwy Windows workflow przestał kończyć się przed krokami i zaczął dostarczać przyczyn błędów. W trakcie stabilizacji kandydata 0.2.8 wykryto **trzy potwierdzone klasy błędów**:
+
+1. **PowerShell 5.1 — niepoprawna interpolacja** w `Apply-Ratchet-Update.ps1`: `"SUCCESS $ExpectedVersion: ..."` dawało `InvalidVariableReferenceWithDrive`; naprawiono przez `${ExpectedVersion}:`.
+2. **Błąd przy modyfikowaniu kodu z użyciem JavaScript `String.replace`**: ciąg replacement zawierający `$'` został potraktowany przez silnik JS jako specjalna sekwencja „sufiks dopasowanego tekstu”, co zepsuło PowerShell `Ratchet-Backend.ps1` i `Diagnostyka-Ratchet.ps1`, duplikując końcówki plików. To jest błąd procesu edycji kodu, nie Windows ani GitHuba. Poprawki polegały na rekonstrukcji plików i bezpiecznym zastępowaniu przez callback zamiast niekontrolowanego replacement string.
+3. **Test z założeniem LF**: regresja `endsWith('return $null\n}')` zawiodła na CRLF Windows; zmieniono na test dopuszczający `\r?\n`.
+
+**Anty-pętla po tym incydencie:** żadnej dalszej „poprawki z pamięci” bez logu CI, walidacji pełnego pliku i kontroli parsera. Unikać JS string replacement dla wzorców PowerShell zawierających `$`, `$'` lub `$&` — używać callback replacera albo edycji AST. Testować zarówno na Windows, jak i Ubuntu. Jeśli test nie przeszedł, najpierw odczytać konkretny log.
+
+### Weryfikacja po naprawach
+
+- [CI Ubuntu 42782617672](https://github.com/Zyczinho/1001-cave/actions/runs/42782617672) — **SUCCESS**.
+- [CI Windows 42782617828](https://github.com/Zyczinho/1001-cave/actions/runs/42782617828) — **SUCCESS**, 45/45 testów Node, parser pięciu PowerShell PASS, diagnostyka bez serwera PASS i backend `/api/ping` 0.2.8 PASS.
+- PR #19 **pozostaje draft**: brak rzeczywistego testu WinForms orb → panel i weryfikacji na komputerze użytkownika. Kanał `ratchet-updates` nie został zmieniony; 0.2.8 nie jest jeszcze stable.
+
+Status **RAT-001 nadal OPEN**. Pierwotny problem uruchamiania Ratcheta lokalnie wymaga testu z użytkownikiem po udostępnieniu kandydata.
