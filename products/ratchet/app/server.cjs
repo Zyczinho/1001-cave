@@ -5,6 +5,7 @@ const path = require('node:path');
 const http = require('node:http');
 const os = require('node:os');
 const {spawn} = require('node:child_process');
+const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
 const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText} = require('./core.cjs');
 
@@ -16,6 +17,10 @@ const JSON_LIMIT = 64 * 1024;
 let state = defaults(), github = null, githubError = null, lastFetch = 0;
 let appServer, hookServer, shuttingDown = false, quitRequested = false;
 let panelRequests = 0, panelHideRequests = 0, orbResetRequests = 0, installingUpdate = false, updateAvailable = null;
+const coordinatorRunner=new CoordinatorRunner({
+  getState:()=>state.coordinator,persist:()=>save(),
+  notify:(message,level,taskId,phase)=>activity(message,level,taskId,phase)
+});
 // Identity of the files actually running: answers "which copy and which build?" (RAT-001).
 function buildInfo() {
   try {
@@ -150,6 +155,36 @@ function openTarget(kind,target) {
   return Promise.resolve({opened:true});
 }
 async function handleAction(key,data) {
+  if(key==='coordinator:create'){
+    if(state.coordinator.jobs.length>=30)throw Error('Limit 30 zadań — najpierw usuń stare.');
+    const job=makeJob(data);
+    state.coordinator.jobs.unshift(job);save();
+    coordinatorRunner.tick();return job;
+  }
+  if(key==='coordinator:enable'){
+    if(typeof data.enabled!=='boolean')throw Error('Podaj true/false.');
+    state.coordinator.enabled=data.enabled;save();
+    if(data.enabled)coordinatorRunner.tick();
+    return {enabled:state.coordinator.enabled};
+  }
+  if(key==='coordinator:remove'){
+    const job=state.coordinator.jobs.find(j=>j.id===String(data.id||''));
+    if(!job)throw Error('Nie znaleziono zadania');
+    if(job.status==='running')throw Error('Najpierw wyłącz wykonywanie i poczekaj na koniec bieżącego etapu.');
+    state.coordinator.jobs=state.coordinator.jobs.filter(j=>j.id!==job.id);
+    save();return {removed:true};
+  }
+  if(key==='coordinator:retry'){
+    // No automatic retries. A user explicitly authorizes one single-stage retry.
+    const job=state.coordinator.jobs.find(j=>j.id===String(data.id||''));
+    if(!job||job.status!=='attention')throw Error('Ponowić można tylko zadanie wymagające uwagi');
+    const stage=job.stages[job.stepIndex];
+    if(!stage)throw Error('Brak etapu');
+    if(stage.retryUsed)throw Error('Jedna próba ponowienia została już wykorzystana');
+    stage.retryUsed=true;stage.status='queued';stage.error='';
+    job.status='queued';job.alerted=false;job.updatedAt=new Date().toISOString();
+    save();coordinatorRunner.tick();return {queued:true};
+  }
   if(key==='item:save'){
     if(!['schedule','links','agents'].includes(data.collection)) throw Error('Nieznana kolekcja');
     const clean=normalizeItem(data.collection,data.item);
@@ -273,6 +308,7 @@ async function handleAction(key,data) {
       ps.on('error',e=>console.error('Ratchet updater:',e.message));
       ps.unref();
       quitRequested=true;
+      coordinatorRunner.stop();
       setTimeout(()=>{shuttingDown=true;appServer?.close();hookServer?.close();setTimeout(()=>process.exit(0),400).unref();},3000).unref();
       return {started:true,version:candidate.version};
     } catch(e) {installingUpdate=false;throw e;}
@@ -281,6 +317,7 @@ async function handleAction(key,data) {
   if(key==='quit') {
     if(!quitRequested) {
       quitRequested=true;
+      coordinatorRunner.stop();
       // Give the Windows mascot a chance to see the quit signal and close.
       setTimeout(()=>{
         shuttingDown=true;
@@ -350,14 +387,16 @@ function startHookServer() {
   hookServer.listen(CLAUDE_PORT,'127.0.0.1');
 }
 function main(){
-  read();checkSchedule();
+  read();coordinatorRunner.reconcile();checkSchedule();
   appServer=http.createServer((req,res)=>{appRequest(req,res).catch(e=>fail(res,e.message,500));});
   appServer.on('error',e=>{console.error('[ratchet] Server:',e.message);process.exit(1);});
   appServer.listen(PORT,'127.0.0.1',()=>console.log('Ratchet '+CURRENT_VERSION+' start: http://127.0.0.1:'+PORT+' commit '+(BUILD.commit||'dev')));
   if(process.env.RATCHET_DISABLE_HOOKS!=='1')startHookServer();
   setInterval(checkSchedule,15000);
+  setInterval(()=>coordinatorRunner.tick(),4000);
+  coordinatorRunner.tick();
   refreshGithub(true).catch(e=>console.warn('GitHub:',e.message));
   setInterval(()=>refreshGithub().catch(()=>{}),60000);
 }
 if(require.main===module) main();
-module.exports={read,save,snapshot,health,checkSchedule,handleAction,openTarget,appRequest,main};
+module.exports={read,save,snapshot,health,checkSchedule,handleAction,openTarget,appRequest,main,coordinatorRunner};
