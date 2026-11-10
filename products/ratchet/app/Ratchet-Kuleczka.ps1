@@ -32,6 +32,7 @@ public static class RatchetNativeWindow {
   [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr data);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder title, int max);
   [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
   private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr data);
   public static IntPtr FindPanel() {
     IntPtr found = IntPtr.Zero;
@@ -40,7 +41,23 @@ public static class RatchetNativeWindow {
       var text = new System.Text.StringBuilder(256);
       GetWindowText(window, text, text.Capacity);
       string name = text.ToString();
-      if (name == "Ratchet" || name == "Ratchet - Microsoft Edge" || name.StartsWith("Ratchet - ") && name.EndsWith(" - Microsoft Edge")) { found = window; return false; }
+      // The terminal/Windows Terminal tab can also be titled "Ratchet".
+      // Never treat arbitrary windows as our panel or send them WM_CLOSE.
+      bool matchingTitle = name == "Ratchet" ||
+        name == "Ratchet - Microsoft Edge" ||
+        (name.StartsWith("Ratchet - ") && name.EndsWith(" - Microsoft Edge"));
+      if (!matchingTitle) return true;
+      uint ownerPid;
+      GetWindowThreadProcessId(window, out ownerPid);
+      if (ownerPid == 0) return true;
+      try {
+        using (var owner = System.Diagnostics.Process.GetProcessById((int)ownerPid)) {
+          if (!string.Equals(owner.ProcessName, "msedge", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+      } catch (ArgumentException) { return true; }
+        catch (System.ComponentModel.Win32Exception) { return true; }
+        catch (InvalidOperationException) { return true; }
+      found = window; return false;
       return true;
     }, IntPtr.Zero);
     return found;
