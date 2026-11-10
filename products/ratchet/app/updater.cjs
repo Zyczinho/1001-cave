@@ -12,7 +12,7 @@ const BASE = 'https://raw.githubusercontent.com/Zyczinho/1001-cave/ratchet-updat
 const MANIFEST = BASE + '/latest.json';
 const CURRENT_VERSION = '0.2.8';
 const INSTALLED_MANIFEST = 'ratchet-release-manifest.json';
-const ALLOWED = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(?:cmd|ps1|cjs|js|html|css|json|md|txt|png)$/;
+const ALLOWED = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(?:cmd|ps1|cjs|js|html|css|json|md|txt|png|ico)$/;
 
 function compareVersion(a,b) {
   const x=String(a).split('.').map(Number),y=String(b).split('.').map(Number);
