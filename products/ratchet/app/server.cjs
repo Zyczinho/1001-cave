@@ -283,4 +283,4 @@ function main(){
   setInterval(()=>refreshGithub().catch(()=>{}),60000);
 }
 if(require.main===module) main();
-module.exports={read,save,snapshot,health,handleAction,openTarget,appRequest,main};
+module.exports={read,save,snapshot,health,checkSchedule,handleAction,openTarget,appRequest,main};
