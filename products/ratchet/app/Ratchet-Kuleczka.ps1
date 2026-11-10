@@ -48,6 +48,9 @@ public static class RatchetNativeWindow {
 }
 '@
 $script:lastPanelSpawn = [datetime]::MinValue
+$script:lastPanelClose = [datetime]::MinValue
+$script:pendingPanelOpen = $false
+$script:panelSpawnAttempts = 0
 $script:lastBackendRecovery = [datetime]::MinValue
 $script:backendStartAttempts = 0
 $script:lastPanelRequest = -1
@@ -62,6 +65,9 @@ function Find-RatchetPanel {
 }
 
 function Close-RatchetPanel {
+    $script:pendingPanelOpen = $false
+    $script:panelSpawnAttempts = 0
+    $script:lastPanelClose = [datetime]::UtcNow
     $handle=Find-RatchetPanel
     if ($handle -eq [IntPtr]::Zero) { return }
     # WM_CLOSE (0x0010) to the exact named Ratchet window; never kill Edge process.
@@ -139,6 +145,8 @@ function Set-RatchetOrbSize {
 }
 
 function Open-RatchetPanel {
+    param([switch]$Retry)
+    if(-not $Retry) { $script:panelSpawnAttempts=0 }
     # A browser tab cannot manage the mascot when the localhost server is gone.
     # Show the mascot's native exit menu instead of opening an offline Edge window.
     $connected = $false
@@ -147,13 +155,30 @@ function Open-RatchetPanel {
         $connected = [bool]$ping.ok
     } catch {}
     if (-not $connected) {
+        $script:pendingPanelOpen = $false
         # Do not open a dead browser tab. Native menu works without localhost.
         if ($script:orbMenu) { $script:orbMenu.Show([System.Windows.Forms.Cursor]::Position) }
         return
     }
+    # An Edge window can still be closing after WM_CLOSE: do not focus that HWND.
+    if (([datetime]::UtcNow - $script:lastPanelClose).TotalSeconds -lt 2) {
+        $script:pendingPanelOpen = $true
+        return
+    }
     $existing = Find-RatchetPanel
-    if (Focus-RatchetPanel $existing) { return }
+    if (Focus-RatchetPanel $existing) {
+        $script:pendingPanelOpen = $false
+        $script:panelSpawnAttempts = 0
+        return
+    }
+    $script:pendingPanelOpen = $true
     if (([datetime]::UtcNow - $script:lastPanelSpawn).TotalSeconds -lt 2) { return }
+    if ($script:panelSpawnAttempts -ge 3) {
+        $script:pendingPanelOpen = $false
+        $script:notifyIcon.ShowBalloonTip(5000,'Ratchet','Nie udało się otworzyć panelu. Spróbuj ponownie z kuleczki.',[System.Windows.Forms.ToolTipIcon]::Warning)
+        return
+    }
+    $script:panelSpawnAttempts++
     $script:lastPanelSpawn = [datetime]::UtcNow
     $edge = @(
         "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
@@ -325,6 +350,16 @@ $timer.Add_Tick({
         if ($null -ne $info.panelHideRequests -and [int]$info.panelHideRequests -gt $script:lastPanelHideRequest) {
             $script:lastPanelHideRequest = [int]$info.panelHideRequests
             Close-RatchetPanel
+        }
+        # A successful Start-Process does not guarantee that Edge created a window.
+        # Re-check the real HWND and retry at most three times after a close/open race.
+        if ($script:pendingPanelOpen) {
+            if ((Find-RatchetPanel) -ne [IntPtr]::Zero) {
+                $script:pendingPanelOpen = $false
+                $script:panelSpawnAttempts = 0
+            } elseif (([datetime]::UtcNow - $script:lastPanelSpawn).TotalSeconds -ge 3) {
+                Open-RatchetPanel -Retry
+            }
         }
         $script:hadServer = $true
         $script:consecutiveOfflineTicks = 0
