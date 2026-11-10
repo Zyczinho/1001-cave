@@ -21,6 +21,17 @@
 - Dostęp do lokalnego folderu i jego treści jest przekazywany wybranym dostawcom modeli zgodnie z możliwościami narzędzi. Nie wpisuj sekretów do celu zadania ani nie wskazuj katalogu z poufnymi danymi.
 - NIE steruje istniejącą konwersacją ChatGPT w aplikacji ani nie przechwytuje otwartych sesji Claude. Hooki mogą jedynie dostarczać zdarzenia; sesje uruchomione przez Coordinatora są odróżnione, by nie dublować powiadomień.
 
+
+## Pierwsze uruchomienie — samouczek Agenci
+- Przy pierwszym wejściu do zakładki **Agenci** Ratchet pokazuje **trzy karty instruktażowe**:
+  1. `Obserwuj` vs `Zleć agentom`: hook Claude Code potwierdza koniec odpowiedzi, ale **ChatGPT Web nie wysyła do Ratcheta zdarzenia zakończenia**.
+  2. Jak wpisać cel, folder projektu i drugiego agenta. Samo dodanie zadania nie uruchamia modelu, jeśli Koordynator pozostaje wyłączony.
+  3. Statusy, raporty i powiadomienia końcowe lub przy blokadzie.
+- Przyciskami `Dalej`, `Wstecz`, `Pomiń` można przejść lub zakończyć instrukcję; można później ją otworzyć ponownie przez `Jak korzystać z agentów?`.
+- Stan `ratchet-agents-intro-v1` jest zapisywany w **localStorage profilu Edge Ratcheta**, nie w `ratchet.json`. Dzięki temu zamknięcie samouczka nie zmienia harmonogramu ani statusu Koordynatora i nie wysyła zapytań do modeli.
+- Testy: `tests/agents-onboarding.test.cjs` obejmują liczbę etapów, progres, pomijanie, ponowne uruchomienie, czytelny układ i brak automatycznych akcji.
+- Do sprawdzenia na Windows: wygląd w panelu 360×520, brak utraty przewijania, pamiętanie ukończenia po restarcie, brak przypadkowego włączenia Koordynatora. Zmiana nadal Draft.
+
 ## Test lokalny bez instalacji
 W osobnym checkout na gałęzi `ratchet/coordinator-v1-safe-dispatch`, nie w `%LOCALAPPDATA%\Ratchet\app`:
 ```powershell
