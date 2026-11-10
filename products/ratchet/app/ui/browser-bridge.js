@@ -29,6 +29,7 @@ if(!window.ratchet && location.hostname==='127.0.0.1' && location.port==='47823'
     hidePanel:async()=>window.close(),
     checkUpdate:()=>action('update:check'),
     installUpdate:()=>action('update:install'),
+    diagnose:()=>action('diagnostics:run'),
     quit:()=>action('quit'),
     resetOrb:async()=>true
   };
