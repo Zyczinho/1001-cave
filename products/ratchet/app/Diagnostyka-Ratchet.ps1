@@ -125,7 +125,7 @@ try {
             $mismatches = @()
             foreach ($expected in @($manifest.files)) {
                 $relative = [string]$expected.path
-                if ($relative -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(cmd|ps1|cjs|js|html|css|json|md|txt|png)$' -or
+                if ($relative -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(cmd|ps1|cjs|js|html|css|json|md|txt|png|ico)$' -or
                     $relative.Contains('..') -or $relative.Contains('\') -or
                     [string]$expected.sha256 -notmatch '^[a-fA-F0-9]{64}$') {
                     throw 'Unsafe or invalid release entry'
