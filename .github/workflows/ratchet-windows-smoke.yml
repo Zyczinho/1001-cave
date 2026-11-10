@@ -112,6 +112,8 @@ jobs:
         run: |
           $root=Join-Path $env:LOCALAPPDATA 'Ratchet'
           Write-Host "APP_DATA: $root"
+          $boot = Join-Path $root "launcher-boot.log"
+          if(Test-Path -LiteralPath $boot){Write-Host "LAUNCHER_BOOT_LOG";Get-Content -LiteralPath $boot -Tail 45 | Write-Host}
           Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue | Select-Object FullName,Length,LastWriteTime | Format-Table -AutoSize
           Get-ChildItem -LiteralPath (Join-Path $root 'logs') -Filter '*.log' -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Host "\nLOG: $($_.FullName)"; Get-Content -LiteralPath $_.FullName -Tail 70 -ErrorAction SilentlyContinue }
