@@ -145,7 +145,7 @@ try {
     Write-Host 'ORB_QUIT_OK'
 }finally {
     if($decoy){try{$decoy.Close();$decoy.Dispose()}catch{}}
-    try{Act 'quit' @{} | Out-Null}catch{
+    try{Act 'quit' @{} | Out-Null}catch{}
     if($proc) {
         $proc.Refresh()
         if(-not $proc.HasExited){try{Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}catch{}}
