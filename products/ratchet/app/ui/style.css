@@ -126,3 +126,8 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .calendar-meta{margin-top:5px}
 .calendar-meta:empty{display:none}
 @media(max-width:520px){.tabs{padding-left:5px;padding-right:5px;gap:0}.tab{font-size:9px;padding:0 2px}.calendar-shell{padding:8px}.calendar-day{min-height:35px}}
+
+/* Main navigation after moving Settings to the three-dot menu: four readable tabs. */
+.tabs{padding-left:10px;padding-right:10px;gap:3px}
+.tab{font-size:11px;padding:0 4px}
+@media(max-width:520px){.tabs{padding-left:8px;padding-right:8px;gap:2px}.tab{font-size:10px;padding:0 3px}}
