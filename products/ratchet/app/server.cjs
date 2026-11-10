@@ -15,7 +15,7 @@ const UI_ROOT = path.resolve(__dirname, 'ui');
 const JSON_LIMIT = 64 * 1024;
 let state = defaults(), github = null, githubError = null, lastFetch = 0;
 let appServer, hookServer, shuttingDown = false, quitRequested = false;
-let panelRequests = 0, installingUpdate = false, updateAvailable = null;
+let panelRequests = 0, panelHideRequests = 0, installingUpdate = false, updateAvailable = null;
 
 function read() {
   if (!fs.existsSync(DATA)) { state=defaults(); return; }
@@ -176,6 +176,7 @@ async function handleAction(key,data) {
   if(key==='open-target')return openTarget(data.kind,data.target);
   if(key==='handoff')return handoffText(state,github);
   if(key==='panel:show'){ panelRequests++; return true; }
+  if(key==='panel:hide'){ panelHideRequests++; return true; }
   if(key==='diagnostics:run'){
     // Fixed command, no user-supplied shell arguments, no data uploaded.
     if(process.platform!=='win32')throw Error('Diagnostyka natywna działa wyłącznie na Windows');
@@ -243,7 +244,7 @@ async function appRequest(req,res) {
   if(req.method==='GET'){
     if(url.pathname==='/api/ping') return json(res,{ok:true,version:'0.2.8'});
     if(url.pathname==='/api/snapshot') return json(res,snapshot());
-    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,panelRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
+    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,panelRequests,panelHideRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
     return staticResponse(url.pathname,res);
   }
   if(req.method==='POST'&&url.pathname==='/api/action'){
