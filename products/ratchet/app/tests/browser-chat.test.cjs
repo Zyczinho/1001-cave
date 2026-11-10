@@ -75,6 +75,15 @@ test('extension files: no conversation text is read, only Rachet on this compute
   for(const f of ['manifest.json','background.js','content.js','icon.png','CZYTAJ-MNIE.txt'])assert.ok(pkg.includes("'browser-extension/"+f+"'"),f+' is shipped');
 });
 
+test('old per-conversation rows are cleared on start, manual agents stay',()=>{
+  const src=fs.readFileSync(path.join(__dirname,'..','server.cjs'),'utf8');
+  const filter=new Function('a',"return "+src.match(/state\.agents=state\.agents\.filter\(a=>(.+?)\);\r?\n/)[1]);
+  assert.equal(filter({id:'chatgpt:6af397e1-4e44',source:'manual'}),false,'0.2.9 saved chats as manual');
+  assert.equal(filter({id:'claude:abc',source:'hook'}),false);
+  assert.equal(filter({id:'project:chatgpt:1001-cave',source:'browser'}),true);
+  assert.equal(filter({id:'3f2a-uuid',source:'manual'}),true,'an agent added by hand stays');
+});
+
 function freePort(){return new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p));});});}
 test('server: the extension door accepts only extension origins and only chat signals',async()=>{
   const port=await freePort(),folder=fs.mkdtempSync(path.join(os.tmpdir(),'rachet-browser-'));

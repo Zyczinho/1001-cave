@@ -502,7 +502,8 @@ function main(){
   read();
   // Older versions kept one row per session or chat; the panel now groups them by project.
   const before=state.agents.length;
-  state.agents=state.agents.filter(a=>!['hook','browser'].includes(a.source)||a.id.startsWith('project:'));
+  // Session rows are recognised by their id too: 0.2.9 builds saved ChatGPT rows as "manual".
+  state.agents=state.agents.filter(a=>a.id.startsWith('project:')||!(['hook','browser'].includes(a.source)||/^(?:claude|chatgpt):/.test(a.id)));
   if(state.agents.length!==before)save();
   setInterval(()=>{if(sweepRows())save();},60000).unref();coordinatorRunner.reconcile();checkSchedule();
   appServer=http.createServer((req,res)=>{appRequest(req,res).catch(e=>fail(res,e.message,500));});
