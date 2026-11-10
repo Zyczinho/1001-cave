@@ -34,7 +34,7 @@ test('restricted, bounded CLI arguments and no shell',()=>{
   b.stepIndex=1;
   const c=executionSpec(b);
   assert.equal(c.command,'codex');
-  assert.deepEqual(c.args.slice(0,4),['exec','--sandbox','read-only','--skip-git-repo-check']);
+  assert.deepEqual(c.args.slice(0,6),['exec','--sandbox','read-only','--ask-for-approval','never','--skip-git-repo-check']);
 });
 test('automatic handoff passes first agent output into second run; only terminal alert reaches user',async()=>{
   const c=normalizeCoordinator({enabled:true,jobs:[]});
