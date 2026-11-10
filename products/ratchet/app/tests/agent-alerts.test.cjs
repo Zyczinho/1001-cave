@@ -67,6 +67,21 @@ test('agent alerts: server uses the rule and the orb shows both kinds with plain
   assert.match(orb,/'agent-attention' \{ return 'Rachet - potrzebuję Cię' \}/);
 });
 
+test('panel: Today and Calendar add through one form; note sits under the link',()=>{
+  const js=read('ui/panel.js');
+  assert.doesNotMatch(js,/quickPlanForm/,'Today must use the same add form as Calendar');
+  assert.match(js,/data-action="calendar-add" data-date="'\+dateKey\(\)\+'"/);
+  const form=js.slice(js.indexOf("if(collection==='schedule'){"),js.indexOf("} else if(collection==='links'){"));
+  const order=['Co robimy?','Początek','Koniec','Dzień','Otwórz jednym kliknięciem','Notatka','Więcej opcji'].map(x=>form.indexOf(x));
+  assert.ok(order.every(i=>i>=0),'all fields present');
+  assert.deepEqual([...order].sort((a,b)=>a-b),order,'fields in the agreed order');
+  // The link decides its kind: a Windows path opens Explorer, anything else is a web page or chat.
+  const src=js.match(/item\.kind=(\/.+?\/)\.test/)[1];
+  const isFolder=new Function('return '+src)();
+  for(const v of ['C:\\Users\\me\\Docs','c:/work','\\\\server\\share'])assert.ok(isFolder.test(v),v);
+  for(const v of ['https://www.pracuj.pl','https://chatgpt.com/c/123',''])assert.ok(!isFolder.test(v),v);
+});
+
 test('panel: one "now" card, compact rows and folded extras in a 360 x 520 window',()=>{
   const js=read('ui/panel.js'),html=read('ui/panel.html');
   assert.match(js,/function renderNow\(\)/);

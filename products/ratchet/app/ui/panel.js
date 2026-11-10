@@ -152,10 +152,9 @@ function taskActions(t){
 function renderToday(){
   const tasks=todayTasks();
   let html=renderNow();
-  html+='<form class="quick-form" id="quickPlanForm"><input name="phrase" aria-label="Dodaj zadanie jednym zdaniem, np. o 12 spotkanie" placeholder="Dodaj: o 12 spotkanie, jutro o 9 CV" required><button class="btn" type="submit" aria-label="Dodaj">+</button></form>';
-  html+='<div class="list-head"><h3>Dziś</h3><span>'+tasks.filter(doneToday).length+' z '+tasks.length+' zrobione</span></div>';
+  html+='<div class="list-head"><h3>Dziś'+(tasks.length?' <span>· '+tasks.filter(doneToday).length+' z '+tasks.length+' zrobione</span>':'')+'</h3><button class="btn tiny secondary" data-action="calendar-add" data-date="'+dateKey()+'">+ Dodaj</button></div>';
   html+=tasks.length?'<div class="rows">'+tasks.map(t=>taskRow(t)).join('')+'</div>'
-    :'<p class="list-empty">Pusto. Wpisz wyżej, co i o której.</p>';
+    :'<p class="list-empty">Pusto. Kliknij „+ Dodaj”.</p>';
   const recent=state().activity.slice(0,5);
   if(recent.length){
     html+=more('signals','Ostatnie sygnały · '+state().activity.length,
@@ -461,12 +460,11 @@ function showModal(collection,id='',prefill={}){
     fields+=input('title','Co robimy?',item.title,'placeholder="Np. spotkanie z zespołem" required maxlength="160"');
     fields+=`<div class="form-grid">${input('time','Początek',item.time||'09:00','type="time" required')}${input('endTime','Koniec',item.endTime||plusMinutes(item.time||'09:00'),'type="time" required')}</div>`;
     fields+=`<div id="onceFields">${input('date','Dzień',item.date||dateKey(),'type="date" required')}</div>`;
-    fields+=input('target','Otwórz jednym kliknięciem (opcjonalnie)',item.target,'placeholder="https://... lub C:\\Users\\..."');
+    fields+=input('target','Otwórz jednym kliknięciem — strona, czat lub folder',item.target,'placeholder="https://... lub C:\\Users\\... (opcjonalnie)"');
+    fields+=`<div class="field"><label for="field-note">Notatka</label><textarea id="field-note" name="note" placeholder="Co dokładnie masz zrobić? (opcjonalnie)">${esc(item.note||'')}</textarea></div>`;
     let extra=select('repeat','Powtarzanie',item.date===null?'weekly':'once',[['once','Jednorazowo'],['weekly','Co tydzień']]);
     extra+=`<div class="field" id="weeklyFields"><label>Dni tygodnia (cyklicznie)</label><div class="weekday-row">${[1,2,3,4,5,6,0].map(d=>`<label class="daycheck"><input type="checkbox" name="days" value="${d}" ${days.includes(d)?'checked':''}><span>${weekdays[d]}</span></label>`).join('')}</div></div>`;
-    extra+=select('kind','Cel to',item.kind||'url',[['url','Link do strony / czatu'],['folder','Folder / plik Windows']]);
     extra+=input('project','Projekt',item.project,'placeholder="Np. City Route"');
-    extra+=`<div class="field"><label for="field-note">Notatka</label><textarea id="field-note" name="note" placeholder="Co dokładnie masz zrobić?">${esc(item.note||'')}</textarea></div>`;
     extra+=`<label class="checkbox-row"><input type="checkbox" name="enabled" ${item.enabled!==false?'checked':''}> Przypominaj o początku i końcu</label>`;
     fields+=more('task-more','Więcej opcji',extra);
   } else if(collection==='links'){
@@ -505,6 +503,7 @@ async function saveForm(form){
     if(data.get('repeat')==='once')item.date=data.get('date');else item.date=null;
     if(!item.date&&!item.days.length)throw Error('Wybierz co najmniej jeden dzień');
     item.enabled=data.get('enabled')==='on';
+    item.kind=/^(?:[a-zA-Z]:[\\/]|\\\\)/.test(String(item.target||'').trim())?'folder':'url';
     if(!item.endTime||item.endTime<=item.time)throw Error('Koniec bloku musi być później niż początek');
   }
   if(col==='agents'){
@@ -531,7 +530,12 @@ async function handleAction(el){
   if(act==='calendar-today'){
     selectedDay=dateKey();calendarMonth=new Date(now().getFullYear(),now().getMonth(),1);render();
   }
-  if(act==='calendar-add')showModal('schedule','',{date:selectedDay,time:'09:00'});
+  if(act==='calendar-add'){
+    // One add form for Today and Calendar. Today starts at the next full hour.
+    const day=/^\d{4}-\d{2}-\d{2}$/.test(el.dataset.date||'')?el.dataset.date:selectedDay;
+    const start=day===dateKey()?pad(Math.min(23,now().getHours()+1))+':00':'09:00';
+    showModal('schedule','',{date:day,time:start});
+  }
   if(act==='template')showModal('schedule','',templateMap[el.dataset.template]);
   if(act==='switch'){tab=el.dataset.tab;agentFilter=null;render();}
   if(act==='metric'){tab='agents';agentFilter=el.dataset.metric;render();}
@@ -669,7 +673,6 @@ document.addEventListener('submit',e=>{
     });
   }
   if(e.target.id==='itemForm'){e.preventDefault();safe(()=>saveForm(e.target));}
-  if(e.target.id==='quickPlanForm'){e.preventDefault();safe(async()=>{const raw=String(new FormData(e.target).get('phrase')||'');const match=raw.match(/(?:^|\s)(?:o(?:d)?\s*)?([01]?\d|2[0-3])(?:[:.]([0-5]\d))?(?=\s|$)/i);if(!match)throw Error('Dodaj godzinę, np. o 12:00 spotkanie');const hh=pad(Number(match[1])),mm=match[2]||'00';const title=raw.replace(match[0],' ').replace(/\b(dzisiaj|jutro)\b/ig,'').replace(/^\s*[-–:,]\s*/,'').trim();if(!title)throw Error('Napisz też, co masz zrobić');const d=now();if(/\bjutro\b/i.test(raw))d.setDate(d.getDate()+1);const l=title.toLowerCase();let target='';if(/city\s*route|cityroad|city\s*road/i.test(l))target='https://github.com/Zyczinho/city-route-app';else if(/box\s*2\s*box|box2box|box\s*to\s*box/i.test(l))target='https://box2box.com.pl';else if(/szuk.*prac|ofert.*prac/i.test(l))target=/portal|ogłoszen|ogloszen/i.test(l)?'https://justjoin.it/':'https://chatgpt.com/';const url=title.match(/https?:\/\/[^\s]+/i);if(url)target=url[0];await bridge.save('schedule',{title,time:`${hh}:${mm}`,endTime:plusMinutes(`${hh}:${mm}`),date:dateKey(d),days:[d.getDay()],target,kind:'url',enabled:true});if(!DEMO)snapshot=await bridge.snapshot();if(dateKey(d)!==dateKey()){selectedDay=dateKey(d);calendarMonth=new Date(d.getFullYear(),d.getMonth(),1);tab='calendar';}e.target.reset();render();toast('Dodano do planu ✓');});}
   if(e.target.id==='settingsForm'){
     e.preventDefault();safe(async()=>{
       const data=new FormData(e.target),s={repo:String(data.get('repo')||'').trim(),notifications:data.get('notifications')==='on',alwaysOnTop:data.get('alwaysOnTop')==='on',autoStart:data.get('autoStart')==='on',avatarSize:Number(data.get('avatarSize')||84)};

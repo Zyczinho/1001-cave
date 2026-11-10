@@ -317,3 +317,6 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .agent-guide{background:var(--surface);border:1px solid var(--line)}
 .agent-guide-reopen{justify-content:center;margin:14px 0 0}
 @media (prefers-reduced-motion:reduce){.more>summary:after{transition:none}}
+.modal-card .field textarea{min-height:48px}
+.modal-card .field{margin-bottom:9px}
+.modal-card .form-actions{position:sticky;bottom:-14px;background:var(--surface);margin:6px -14px -14px;padding:10px 14px 14px;border-top:1px solid var(--line)}
