@@ -68,8 +68,9 @@ const bridge=window.ratchet||{
 function updateClock(){const d=now();$('#clock').textContent=`${pad(d.getHours())}:${pad(d.getMinutes())}`;$('#dateLabel').textContent=formatDate(d);}
 function health(){
   const agents=state().agents;
-  const running=agents.filter(x=>x.status==='working').length;
-  const attention=agents.filter(x=>x.status==='needs_attention'||x.status==='blocked').length;
+  const jobs=state().coordinator?.jobs||[];
+  const running=agents.filter(x=>x.status==='working').length+jobs.filter(x=>x.status==='running').length;
+  const attention=agents.filter(x=>x.status==='needs_attention'||x.status==='blocked').length+jobs.filter(x=>x.status==='attention').length;
   const failed=(snapshot.github?.runs||[]).some(x=>x.status==='completed'&&['failure','timed_out'].includes(x.conclusion));
   const overlaps=(snapshot.github?.overlapping||[]).length;
   return {running,attention,failed,overlaps};
@@ -161,7 +162,10 @@ function renderFilteredAgents(){
   let html=sectionHeader(titles[agentFilter]||'Agenci','Widok otwarty z licznika statusów.','<button class="btn tiny secondary" data-action="filter-reset">Wszystkie</button>');
   if(agentFilter==='working'||agentFilter==='attention'){
     const selected=all.filter(a=>agentFilter==='working'?a.status==='working':a.status==='needs_attention'||a.status==='blocked');
-    html+=selected.map(renderAgent).join('')||empty('Brak agentów','Żadna sesja nie ma teraz tego statusu.','✓');
+    html+=selected.map(renderAgent).join('');
+    const tasks=(state().coordinator?.jobs||[]).filter(j=>agentFilter==='working'?j.status==='running':j.status==='attention');
+    html+=tasks.map(j=>'<article class="agent-card"><div class="task-title">Koordynator: '+esc(j.title)+'</div><p class="task-note">'+esc(j.status==='running'?'Przekazywanie między agentami trwa':'Brak dalszego wykonawcy, sprawdź zadanie')+'</p><button class="btn tiny secondary" data-action="filter-reset">Otwórz centrum agentów</button></article>').join('');
+    if(!selected.length&&!tasks.length)html+=empty('Brak agentów','Żadna sesja nie ma teraz tego statusu.','✓');
     if(agentFilter==='working'){
       const running=(gh?.runs||[]).filter(x=>x.status!=='completed');
       html+=running.map(x=>'<div class="pr-card"><div class="pr-title">'+esc(x.name||'GitHub Actions')+' · CI trwa</div><button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(x.html_url)+'">Otwórz</button></div>').join('');
