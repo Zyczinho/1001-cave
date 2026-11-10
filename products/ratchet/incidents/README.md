@@ -40,3 +40,9 @@ Każdy wpis zawiera: ID, status, skutki, dokładny objaw, oś czasu, dowody, **p
 Szablon nowego Issue znajduje się w `.github/ISSUE_TEMPLATE/ratchet-incident.md`. Ścieżka dla agentów: `products/ratchet/AGENTS.md`.
 
 **Automatyzacja:** gdy kanał CI i aplikacja będą stabilne, można dodawać zbieranie błędów do tego rejestru na podstawie zdarzeń Windows/GitHub. Aktualnie dziennik i Issue są trwałe, ale wpisy trzeba uzupełniać po incydencie; nie przedstawiamy tego jako działającego, automatycznego monitoringu.
+
+## Docelowy cel: zero kopiuj–wklej
+
+Do historii RAT-001 należy **koszt pracy człowieka**: manualne wykonywanie kolejnych krótkich komend, oczekiwanie na interpretację i ponowne przeklejanie wyników. Każdy podobny przebieg należy traktować jako antywzorzec i kandydat do automatycznej diagnostyki. Zamiast kolejek pojedynczych poleceń: jedno uruchomienie niezależnej diagnostyki i raport, a w przyszłości autoryzowany odczyt przez asystenta.
+
+Spec: [samodiagnostyka i most](../DIAGNOSTICS_BRIDGE_SPEC.md); zadania: [#17 — diagnosta P0](https://github.com/Zyczinho/1001-cave/issues/17), [#18 — most asystenta P1](https://github.com/Zyczinho/1001-cave/issues/18).
