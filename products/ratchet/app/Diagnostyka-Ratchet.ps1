@@ -125,121 +125,9 @@ try {
             $mismatches = @()
             foreach ($expected in @($manifest.files)) {
                 $relative = [string]$expected.path
-                if ($relative -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(cmd|ps1|cjs|js|html|css|json|md|txt|png)    foreach ($name in @('launcher-boot.log','launcher-error.log','update-log.txt')) {
-        $file = Join-Path $stateRoot $name
-        $report.logs[$name] = @(Read-RatchetTail $file)
-    }
-    $logsDir = Join-Path $stateRoot 'logs'
-    if (Test-Path -LiteralPath $logsDir -PathType Container) {
-        try {
-            $recent = @(Get-ChildItem -LiteralPath $logsDir -Filter '*-error.log' -File |
-                Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2)
-            foreach($item in $recent) {
-                $report.logs[$item.Name] = @(Read-RatchetTail $item.FullName)
-            }
-        } catch { [void]$issues.Add('Logs: ' + (Redact-RatchetText $_.Exception.Message)) }
-    }
-
-    $hasLauncher = @($report.processes | Where-Object {$_.role -in @('launcher_or_orb','orb')}).Count -gt 0
-    if($report.backend.status -eq 'ONLINE' -and -not $hasLauncher) {
-        $report.observations += 'BACKEND_ONLINE_NO_ORB_LAUNCHER_PROCESS'
-    }
-    if($report.backend.status -eq 'OFFLINE') { $report.observations += 'BACKEND_OFFLINE' }
-    if($report.manifest.status -eq 'MISMATCH') { $report.observations += 'LOCAL_MANIFEST_MISMATCH' }
-    $report.observations += @($issues.ToArray())
-
-    $jsonFile = Join-Path $reportDir 'report.json'
-    $summaryFile = Join-Path $reportDir 'summary.txt'
-    $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonFile -Encoding UTF8
-
-    $summary = @(
-        'RATCHET - RAPORT DIAGNOSTYCZNY',
-        'ID: ' + $reportId,
-        'Backend: ' + $report.backend.status + ' ' + [string]$report.backend.version,
-        'Procesy Ratcheta: ' + @($report.processes).Count,
-        'Launcher / kuleczka: ' + $(if($hasLauncher){'Wykryty proces launchera (orb wymaga potwierdzenia)'}else{'Brak procesu launchera/kuleczki'}),
-        'Manifest: ' + $report.manifest.status,
-        'Obserwacje: ' + $(if(@($report.observations).Count){$report.observations -join ', '}else{'Brak alarmow; stan panelu wymaga testu UI'}),
-        '',
-        'Raport JSON: ' + $jsonFile,
-        'Dane pozostaja na tym komputerze. Raport nie zostal nigdzie wyslany.',
-        'Udostepnij raport dopiero po jego przejrzeniu i wyrazeniu zgody.'
-    )
-    $summary -join [Environment]::NewLine | Set-Content -LiteralPath $summaryFile -Encoding UTF8
-    Write-Output $summaryFile
-    if(-not $Quiet) {
-        try { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $summaryFile + '"') | Out-Null }
-        catch { Write-Warning ('Raport: ' + $summaryFile) }
-    }
-} catch {
-    # Even an unexpected diagnostic failure should be persisted locally.
-    try {
-        New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
-        ('Diagnostics failed: ' + (Redact-RatchetText $_.Exception.Message)) |
-            Set-Content -LiteralPath (Join-Path $reportDir 'diagnostics-error.txt') -Encoding UTF8
-    } catch {}
-    Write-Error ('Nie udalo sie przygotowac diagnostyki Ratcheta: ' + (Redact-RatchetText $_.Exception.Message))
-    exit 1
-}
- -or
+                if ($relative -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(cmd|ps1|cjs|js|html|css|json|md|txt|png)$' -or
                     $relative.Contains('..') -or $relative.Contains('\') -or
-                    [string]$expected.sha256 -notmatch '^[a-fA-F0-9]{64}    foreach ($name in @('launcher-boot.log','launcher-error.log','update-log.txt')) {
-        $file = Join-Path $stateRoot $name
-        $report.logs[$name] = @(Read-RatchetTail $file)
-    }
-    $logsDir = Join-Path $stateRoot 'logs'
-    if (Test-Path -LiteralPath $logsDir -PathType Container) {
-        try {
-            $recent = @(Get-ChildItem -LiteralPath $logsDir -Filter '*-error.log' -File |
-                Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2)
-            foreach($item in $recent) {
-                $report.logs[$item.Name] = @(Read-RatchetTail $item.FullName)
-            }
-        } catch { [void]$issues.Add('Logs: ' + (Redact-RatchetText $_.Exception.Message)) }
-    }
-
-    $hasLauncher = @($report.processes | Where-Object {$_.role -in @('launcher_or_orb','orb')}).Count -gt 0
-    if($report.backend.status -eq 'ONLINE' -and -not $hasLauncher) {
-        $report.observations += 'BACKEND_ONLINE_NO_ORB_LAUNCHER_PROCESS'
-    }
-    if($report.backend.status -eq 'OFFLINE') { $report.observations += 'BACKEND_OFFLINE' }
-    if($report.manifest.status -eq 'MISMATCH') { $report.observations += 'LOCAL_MANIFEST_MISMATCH' }
-    $report.observations += @($issues.ToArray())
-
-    $jsonFile = Join-Path $reportDir 'report.json'
-    $summaryFile = Join-Path $reportDir 'summary.txt'
-    $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonFile -Encoding UTF8
-
-    $summary = @(
-        'RATCHET - RAPORT DIAGNOSTYCZNY',
-        'ID: ' + $reportId,
-        'Backend: ' + $report.backend.status + ' ' + [string]$report.backend.version,
-        'Procesy Ratcheta: ' + @($report.processes).Count,
-        'Launcher / kuleczka: ' + $(if($hasLauncher){'Wykryty proces launchera (orb wymaga potwierdzenia)'}else{'Brak procesu launchera/kuleczki'}),
-        'Manifest: ' + $report.manifest.status,
-        'Obserwacje: ' + $(if(@($report.observations).Count){$report.observations -join ', '}else{'Brak alarmow; stan panelu wymaga testu UI'}),
-        '',
-        'Raport JSON: ' + $jsonFile,
-        'Dane pozostaja na tym komputerze. Raport nie zostal nigdzie wyslany.',
-        'Udostepnij raport dopiero po jego przejrzeniu i wyrazeniu zgody.'
-    )
-    $summary -join [Environment]::NewLine | Set-Content -LiteralPath $summaryFile -Encoding UTF8
-    Write-Output $summaryFile
-    if(-not $Quiet) {
-        try { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $summaryFile + '"') | Out-Null }
-        catch { Write-Warning ('Raport: ' + $summaryFile) }
-    }
-} catch {
-    # Even an unexpected diagnostic failure should be persisted locally.
-    try {
-        New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
-        ('Diagnostics failed: ' + (Redact-RatchetText $_.Exception.Message)) |
-            Set-Content -LiteralPath (Join-Path $reportDir 'diagnostics-error.txt') -Encoding UTF8
-    } catch {}
-    Write-Error ('Nie udalo sie przygotowac diagnostyki Ratcheta: ' + (Redact-RatchetText $_.Exception.Message))
-    exit 1
-}
-) {
+                    [string]$expected.sha256 -notmatch '^[a-fA-F0-9]{64}$') {
                     throw 'Unsafe or invalid release entry'
                 }
                 $candidate = Join-Path $appRoot $relative
@@ -260,7 +148,6 @@ try {
             [void]$issues.Add('Manifest: ' + (Redact-RatchetText $_.Exception.Message))
         }
     }
-
     foreach ($name in @('launcher-boot.log','launcher-error.log','update-log.txt')) {
         $file = Join-Path $stateRoot $name
         $report.logs[$name] = @(Read-RatchetTail $file)
