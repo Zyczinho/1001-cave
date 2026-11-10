@@ -23,7 +23,7 @@ const demoInitial={
 };
 const loadDemo=()=>{try{return JSON.parse(localStorage.getItem('ratchet-demo'))||demoInitial;}catch{return demoInitial;}};
 const persistDemo=()=>{try{localStorage.setItem('ratchet-demo',JSON.stringify(snapshot));}catch{/* Podgląd osadzony może blokować storage — wtedy działa w pamięci. */}};
-let snapshot=DEMO?loadDemo():demoInitial,tab='today',toastTimer,updateInfo=null;
+let snapshot=DEMO?loadDemo():demoInitial,tab='today',agentFilter=null,toastTimer,updateInfo=null;
 const state=()=>snapshot.state;
 const $=sel=>document.querySelector(sel);
 const I=(name)=>`<span class="icon-slot" data-icon="${name}"></span>`;
@@ -44,6 +44,8 @@ const bridge=window.ratchet||{
   onSnapshot:()=>()=>{},
   save:async(type,item)=>{const clean={...item,id:item.id||(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function'?crypto.randomUUID():`preview-${Date.now()}-${Math.random().toString(36).slice(2)}`),updatedAt:new Date().toISOString()};const a=state()[type];const i=a.findIndex(x=>x.id===clean.id);if(i>=0)a[i]=clean;else a.push(clean);persistDemo();return clean;},
   remove:async(type,id)=>{state()[type]=state()[type].filter(x=>x.id!==id);persistDemo();},
+  clearActivity:async()=>{const removed=state().activity.length;state().activity=[];persistDemo();return {removed};},
+  removeActivity:async id=>{state().activity=state().activity.filter(x=>x.id!==id);persistDemo();return {removed:1};},
   saveSettings:async data=>{state().settings={...state().settings,...data};persistDemo();},
   scheduleAction:async(id,action)=>{const t=state().schedule.find(x=>x.id===id);if(action==='snooze')t.snoozeUntil=new Date(Date.now()+600000).toISOString();if(action==='start'&&t.target)window.open(t.target,'_blank','noopener,noreferrer');persistDemo();},
   open:async(kind,target)=>{if(kind==='folder')throw Error('Otwieranie folderów działa w aplikacji Windows');if(!/^https?:\/\//.test(target))throw Error('Niepoprawny link');window.open(target,'_blank','noopener,noreferrer');},
@@ -51,7 +53,8 @@ const bridge=window.ratchet||{
   refreshGithub:async()=>({github:null,githubError:'GitHub jest obsługiwany w aplikacji Windows.'}),
   checkUpdate:async()=>({available:false,version:'0.2.9',current:'0.2.9'}),
   installUpdate:async()=>toast('Aktualizator działa w aplikacji Windows'),
-  testNotification:async()=>toast('Powiadomienia Windows działają wyłącznie w aplikacji desktopowej'),
+  testNotification:async()=>({queued:false,notificationsEnabled:false}),
+  notificationStatus:async()=>({found:false,delivery:null}),
   diagnose:async()=>{throw Error('Diagnostyka działa w aplikacji Windows');},
   hidePanel:async()=>toast('Podgląd: ukrywanie działa w aplikacji Windows'),
   quit:async()=>toast('Podgląd: wyłączanie działa w aplikacji Windows'),
@@ -66,7 +69,13 @@ function health(){
   const overlaps=(snapshot.github?.overlapping||[]).length;
   return {running,attention,failed,overlaps};
 }
-function renderStrip(){const h=health();$('#statusStrip').innerHTML=`<div class="status-box"><span class="s-dot blue"></span><strong>${h.running}</strong> pracuje</div><div class="status-box"><span class="s-dot ${h.attention?'amber':'green'}"></span><strong>${h.attention}</strong> uwagi</div><div class="status-box"><span class="s-dot ${h.failed?'red':h.overlaps?'amber':'violet'}"></span><strong>${h.failed?'Błąd CI':h.overlaps?`${h.overlaps} ryzyk`:'GitHub'}</strong></div>`;}
+function renderStrip(){
+  const h=health();
+  const box=(metric,dot,content,label)=>'<button type="button" class="status-box" data-action="metric" data-metric="'+metric+'" aria-label="'+label+'"><span class="s-dot '+dot+'"></span>'+content+'</button>';
+  $('#statusStrip').innerHTML=box('working','blue','<strong>'+h.running+'</strong> pracuje','Pokaż pracujących agentów')
+    +box('attention',h.attention?'amber':'green','<strong>'+h.attention+'</strong> uwagi','Pokaż sprawy wymagające uwagi')
+    +box('risk',h.failed?'red':h.overlaps?'amber':'violet','<strong>'+(h.failed?'Błąd CI':h.overlaps?h.overlaps+' ryzyk':'GitHub')+'</strong>','Pokaż ryzyka GitHub i CI');
+}
 function sectionHeader(title,subtitle,button=''){return `<div class="section-header"><div><h1>${title}</h1>${subtitle?`<p class="sub">${subtitle}</p>`:''}</div>${button}</div>`;}
 function empty(title,desc,emoji='✦'){return `<div class="empty"><div class="empty-emoji">${emoji}</div><strong>${title}</strong><p>${desc}</p></div>`;}
 function taskActions(t){return `<div class="task-actions"><button class="btn small" data-action="schedule-start" data-id="${esc(t.id)}">${I('play')} Działam${t.target?' · otwórz':''}</button><button class="btn secondary small" data-action="schedule-finish" data-id="${esc(t.id)}">${I('check')} Zakończ</button><button class="btn ghost small" data-action="schedule-snooze" data-id="${esc(t.id)}">+10 min</button><button class="plain-icon" aria-label="Edytuj" title="Edytuj" data-action="edit" data-collection="schedule" data-id="${esc(t.id)}">${I('edit')}</button><button class="plain-icon" aria-label="Usuń" title="Usuń" data-action="remove" data-collection="schedule" data-id="${esc(t.id)}">${I('trash')}</button></div>`;}
@@ -78,8 +87,10 @@ function renderToday(){
   let html=hero+`<form class="quick-form" id="quickPlanForm"><input name="phrase" aria-label="Dodaj zadanie jednym zdaniem" placeholder="Np. o 12:00 spotkanie z zespołem" required><button class="btn" type="submit">+ Zapisz</button></form><p class="quick-hint">Wpisz jedno zdanie z godziną. Ratchet doda blok na dziś.</p>`+sectionHeader('Twój plan dnia',`${tasks.length} bloków na dziś`,`<button class="btn small secondary" data-action="new" data-collection="schedule">+ Dodaj</button>`);
   html += tasks.length?`<div class="timeline">${tasks.map(t=>`<article class="task-card" style="opacity:${t.enabled?1:.48}"><div class="time">${esc(t.time)}${t.endTime?`<div class="task-note">do ${esc(t.endTime)}</div>`:''}</div><div class="task-body"><div class="task-title">${esc(t.title)} ${t.project?`<span class="pill">${esc(t.project)}</span>`:''}</div><div class="task-note">${esc(t.note|| (t.target?short(t.target):'Brak przypiętego linku'))}</div>${taskActions(t)}</div></article>`).join('')}</div>`:
   `<div class="empty"><div class="empty-emoji">${I('calendar')}</div><strong>Żadnych bloków na dziś</strong><p>Wybierz przykład — otworzysz formularz z gotowymi danymi.</p><div class="templates"><button class="template" data-action="template" data-template="job">09:00 Praca</button><button class="template" data-action="template" data-template="city">10:00 City Route</button><button class="template" data-action="template" data-template="box">14:00 Box2Box</button></div></div>`;
+
   const recent=state().activity.slice(0,3);
-  if(recent.length)html+=`<div class="group-title"><h3>Ostatnie sygnały</h3></div>${recent.map(a=>`<article class="task-card"><span class="s-dot ${a.level==='reminder'?'amber':'green'}" style="margin-top:5px"></span><div class="task-body"><div class="task-title">${esc(a.text)}</div><div class="task-note">${formatTime(a.at)}</div>${a.taskId?`<div class="inline-actions"><button class="btn small" data-action="schedule-start" data-id="${esc(a.taskId)}">Działam</button><button class="btn small ghost" data-action="schedule-snooze" data-id="${esc(a.taskId)}">+10 min</button></div>`:''}</div></article>`).join('')}`;
+  html+=`<div class="group-title"><h3>Ostatnie sygnały</h3>${state().activity.length?'<button class="btn tiny ghost" data-action="activity-clear">Wyczyść</button>':''}</div>`;
+  html+=recent.length?recent.map(a=>`<article class="task-card"><span class="s-dot ${a.level==='reminder'?'amber':'green'}" style="margin-top:5px"></span><div class="task-body"><div class="task-title">${esc(a.text)}</div><div class="task-note">${formatTime(a.at)}</div>${a.taskId?`<div class="inline-actions"><button class="btn small" data-action="schedule-start" data-id="${esc(a.taskId)}">Działam</button><button class="btn small ghost" data-action="schedule-snooze" data-id="${esc(a.taskId)}">+10 min</button></div>`:''}</div><button class="plain-icon" data-action="activity-remove" data-id="${esc(a.id)}" title="Usuń sygnał" aria-label="Usuń sygnał">${I('trash')}</button></article>`).join(''):'<p class="hint">Brak ostatnich sygnałów.</p>';
   html+=`<div class="group-title"><h3>Jeden klik do projektu</h3><button class="plain-icon" data-action="switch" data-tab="links" aria-label="Wszystkie skróty" title="Wszystkie skróty">${I('link')}</button></div>${renderQuickLinks(4)}`;
   if(h.attention||h.failed||h.overlaps)html+=`<div class="alert">${I('alert')} ${h.attention?'Masz agenta wymagającego uwagi. ':''}${h.failed?'Test CI na GitHubie zakończył się błędem. ':''}${h.overlaps?'PR-y mogą edytować te same pliki. ':''}<button class="btn tiny ghost" data-action="switch" data-tab="agents">Sprawdź agentów</button></div>`;
   return html;
@@ -87,7 +98,31 @@ function renderToday(){
 function renderQuickLinks(limit){const items=state().links.slice(0,limit||100);return `<div class="link-grid">${items.map(x=>`<div class="link-card"><div class="link-top"><div class="link-symbol">${I(x.kind==='folder'?'folder':'link')}</div><button class="plain-icon" data-action="edit" data-collection="links" data-id="${esc(x.id)}" title="Edytuj">${I('edit')}</button><button class="plain-icon" data-action="remove" data-collection="links" data-id="${esc(x.id)}" title="Usuń">${I('trash')}</button></div><button class="plain-icon link-name" style="text-align:left;color:#e9f5ff;font-weight:700;font-size:12px;padding:0" data-action="open" data-kind="${esc(x.kind)}" data-target="${esc(x.target)}">${esc(x.title)}</button><span class="link-type">${esc(x.group||'Inne')}</span></div>`).join('')}</div>`;}
 const labels={working:['Pracuje','blue'],needs_attention:['Czeka na Ciebie','amber'],ready:['Zgłoszone jako gotowe','green'],blocked:['Blokada','red'],idle:['Spoczynek','violet']};
 function renderAgent(a){const [label,color]=labels[a.status]||labels.idle;return `<article class="agent-card"><div class="agent-head"><span class="agent-dot ${color}" style="color:var(--${color==='blue'?'blue':color==='green'?'green':color==='amber'?'amber':color==='red'?'red':'blue'})"></span><div class="agent-main"><strong>${esc(a.title)}</strong><div class="agent-meta"><span class="tag">${esc(a.tool||'AI')}</span><span class="tag">${a.source==='hook'?'Hook · automatycznie':'Ręcznie'}</span><span>${esc(label)}</span></div></div><button class="plain-icon" data-action="edit" data-collection="agents" data-id="${esc(a.id)}" title="Edytuj">${I('edit')}</button></div><div class="agent-note">${esc(a.note||'Brak notatki o postępie')}${a.branch?`<br><span class="quiet">Gałąź: ${esc(a.branch)}</span>`:''}</div><div class="inline-actions">${a.target?`<button class="btn tiny" data-action="open" data-kind="${esc(a.kind||'url')}" data-target="${esc(a.target)}">${I('external')} Przejdź do sesji</button>`:''}<button class="btn tiny ghost" data-action="remove" data-collection="agents" data-id="${esc(a.id)}">Usuń</button><span class="progress">${a.updatedAt?formatTime(a.updatedAt):''}</span></div></article>`;}
+function renderFilteredAgents(){
+  const all=state().agents, gh=snapshot.github;
+  const titles={working:'Agenci w pracy',attention:'Wymaga uwagi',risk:'Ryzyka i błędy'};
+  let html=sectionHeader(titles[agentFilter]||'Agenci','Widok otwarty z licznika statusów.','<button class="btn tiny secondary" data-action="filter-reset">Wszystkie</button>');
+  if(agentFilter==='working'||agentFilter==='attention'){
+    const selected=all.filter(a=>agentFilter==='working'?a.status==='working':a.status==='needs_attention'||a.status==='blocked');
+    html+=selected.map(renderAgent).join('')||empty('Brak agentów','Żadna sesja nie ma teraz tego statusu.','✓');
+    if(agentFilter==='working'){
+      const running=(gh?.runs||[]).filter(x=>x.status!=='completed');
+      html+=running.map(x=>'<div class="pr-card"><div class="pr-title">'+esc(x.name||'GitHub Actions')+' · CI trwa</div><button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(x.html_url)+'">Otwórz</button></div>').join('');
+    }
+    return html;
+  }
+  const failed=(gh?.runs||[]).filter(x=>['failure','timed_out','action_required'].includes(x.conclusion));
+  const overlaps=gh?.overlapping||[];
+  const blocked=all.filter(x=>x.status==='blocked');
+  html+=failed.map(x=>'<div class="alert danger">'+I('alert')+' <div>'+esc(x.name||'GitHub Actions')+' — '+esc(x.conclusion)+' <button class="btn tiny" data-action="open" data-kind="url" data-target="'+esc(x.html_url)+'">Sprawdź CI</button></div></div>').join('');
+  html+=overlaps.map(x=>'<div class="alert">'+I('alert')+' Możliwe nakładanie plików: PR #'+esc(x.a)+' i #'+esc(x.b)+'. '+esc(x.files.join(', '))+'</div>').join('');
+  html+=blocked.map(renderAgent).join('');
+  if(!failed.length&&!overlaps.length&&!blocked.length)html+=empty('Brak wykrytych ryzyk','Na podstawie ostatniego odczytu GitHuba i sesji agentów.','✓');
+  if(snapshot.githubError)html+='<div class="alert danger">'+esc(snapshot.githubError)+'</div>';
+  return html;
+}
 function renderAgents(){
+  if(agentFilter)return renderFilteredAgents();
   const a=state().agents,gh=snapshot.github,err=snapshot.githubError;
   let html=sectionHeader('Centrum agentów','Model zakończył odpowiedź ≠ kod jest sprawdzony.',`<button class="btn small secondary" data-action="new" data-collection="agents">+ Agent</button>`);
   html+=`<div class="github-summary"><div class="github-top"><div><strong>GitHub · ${esc(state().settings.repo)}</strong><br><small>${gh?.checkedAt?`Odczyt: ${formatTime(gh.checkedAt)}`:'Bez ostatniego odczytu'}</small></div><button class="btn small secondary" data-action="github-refresh">${I('refresh')} Odśwież</button></div>`;
@@ -113,6 +148,24 @@ function renderUpdates(){
   <p class="hint">Kanał GitHub jest prywatny. Działa przez GitHub CLI po jednorazowym zalogowaniu (gh auth login). Nowe pliki są weryfikowane SHA-256. Brak zalogowania nie wpływa na pozostałe funkcje Ratcheta.</p></div>`;
 }
 function renderSettings(){const s=state().settings;return sectionHeader('Ustawienia','Ratchet mieszka na Twoim komputerze.')+`<form id="settingsForm"><div class="settings-group"><h3>Monitorowany projekt GitHub</h3><div class="field"><label for="repo">Repozytorium (właściciel/nazwa)</label><input id="repo" name="repo" value="${esc(s.repo)}" placeholder="Zyczinho/city-route-app" required></div><p class="hint">Publiczne repozytorium. Odświeżanie co 10 minut; ręczne również dostępne.</p></div><div class="settings-group"><h3>Wygląd Ratcheta</h3><div class="field"><label for="avatarSize">Rozmiar kuleczki na ekranie</label><select id="avatarSize" name="avatarSize"><option value="48" ${Number(s.avatarSize||84)===48?'selected':''}>Mini — 48 px</option><option value="56" ${Number(s.avatarSize||84)===56?'selected':''}>Mały — 56 px</option><option value="64" ${Number(s.avatarSize||84)===64?'selected':''}>Średni — 64 px</option><option value="72" ${Number(s.avatarSize||84)===72?'selected':''}>Mały — 72 px</option><option value="84" ${Number(s.avatarSize||84)===84?'selected':''}>Kompaktowy — 84 px (domyślny)</option><option value="100" ${Number(s.avatarSize||84)===100?'selected':''}>Większy — 100 px</option><option value="112" ${Number(s.avatarSize||84)===112?'selected':''}>Klasyczny — 112 px</option></select></div><p class="hint">Po zapisaniu kuleczka zmieni rozmiar w ciągu kilku sekund, bez ponownego uruchamiania Ratcheta. W kolejnych wersjach pojawią się różne buźki, kolory i animacje.</p></div><div class="settings-group"><h3>Zachowanie</h3><label class="checkbox-row"><input type="checkbox" name="notifications" ${s.notifications?'checked':''}> Powiadomienia systemowe</label><button type="button" class="btn secondary small" data-action="notification-test">${I('bell')} Wyślij test powiadomienia Windows</button><label class="checkbox-row"><input type="checkbox" name="alwaysOnTop" ${s.alwaysOnTop?'checked':''}> Kuleczka zawsze na wierzchu</label><label class="checkbox-row"><input type="checkbox" name="autoStart" ${s.autoStart?'checked':''}> Uruchamiaj Ratchet wraz z Windows</label><div class="inline-actions"><button type="button" class="btn secondary small" data-action="reset-orb">Przenieś kuleczkę na ekran główny</button><button type="button" class="btn secondary small" data-action="reset-panel-size">Przywróć mały panel</button></div><p class="hint">Rozmiar panelu możesz zmienić, przeciągając jego krawędź — Ratchet go zapamięta.</p></div><button class="btn full" type="submit">Zapisz ustawienia</button></form>${renderUpdates()}<div class="group-title"><h3>O integracjach</h3></div><div class="settings-group"><div class="keyvalue"><strong>GitHub</strong><span>API · odczyt</span></div><div class="keyvalue"><strong>Claude Code</strong><span>Hook na 127.0.0.1:47822</span></div><div class="keyvalue"><strong>ChatGPT / Claude Web</strong><span>Skróty + ręczne statusy</span></div><div class="keyvalue"><strong>Zadania</strong><span>Plik lokalny JSON</span></div><div class="separator"></div><p class="hint">Dane zapisują się w profilu Windows użytkownika Ratchet. Bez synchronizacji chmurowej. Ratchet nie wysyła automatycznie promptów i nie scala kodu.</p></div><div class="settings-exit"><h3>Zamknij aplikację</h3><p>Wyłącza kuleczkę i lokalny serwer. Twoje zadania oraz skróty pozostaną zapisane.</p><button class="btn danger" type="button" data-action="quit">${I('power')} Zakończ Ratchet</button></div>${DEMO?`<div class="alert">Tryb podglądu przeglądarkowego. Aby używać kuleczki, powiadomień systemowych i folderów, uruchom aplikację Windows.</div>`:''}`;}
+function compactConfirm(message){
+  return new Promise(resolve=>{
+    const modal=$('#confirmModal'),text=$('#confirmText'),yes=$('#confirmAccept'),no=$('#confirmCancel');
+    const previous=document.activeElement;
+    text.textContent=message;modal.hidden=false;
+    const finish=value=>{
+      modal.hidden=true;yes.removeEventListener('click',accept);no.removeEventListener('click',cancel);
+      modal.removeEventListener('keydown',keys);previous?.focus?.();resolve(value);
+    };
+    const accept=()=>finish(true),cancel=()=>finish(false);
+    const keys=e=>{
+      if(e.key==='Escape'){e.preventDefault();cancel();}
+      if(e.key==='Tab'){e.preventDefault();(document.activeElement===yes?no:yes).focus();}
+    };
+    yes.addEventListener('click',accept);no.addEventListener('click',cancel);
+    modal.addEventListener('keydown',keys);no.focus();
+  });
+}
 function render(){updateClock();renderStrip();document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));$('#view').innerHTML=tab==='today'?renderToday():tab==='agents'?renderAgents():tab==='links'?renderLinks():renderSettings();window.ratchetHydrateIcons?.(document);}
 const templateMap={job:{title:'Szukanie pracy',time:'09:00',project:'Kariera',target:'https://chatgpt.com/'},city:{title:'Praca nad City Route',time:'10:00',project:'City Route',target:'https://github.com/Zyczinho/city-route-app'},box:{title:'Promocje Box2Box',time:'14:00',project:'Box2Box',target:'https://box2box.com.pl'}};
 const input=(name,label,value='',opts='')=>`<div class="field"><label for="field-${name}">${label}</label><input id="field-${name}" name="${name}" value="${esc(value)}" ${opts}></div>`;
@@ -179,12 +232,21 @@ async function handleAction(el){
   const act=el.dataset.action,id=el.dataset.id,col=el.dataset.collection;
   if(act==='new')showModal(col);
   if(act==='template')showModal('schedule','',templateMap[el.dataset.template]);
-  if(act==='switch'){tab=el.dataset.tab;render();}
+  if(act==='switch'){tab=el.dataset.tab;agentFilter=null;render();}
+  if(act==='metric'){tab='agents';agentFilter=el.dataset.metric;render();}
+  if(act==='filter-reset'){agentFilter=null;render();}
+  if(act==='activity-remove'){
+    await bridge.removeActivity(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Sygnał usunięty');
+  }
+  if(act==='activity-clear'){
+    if(!await compactConfirm('Wyczyścić historię sygnałów? Zadania i przypomnienia pozostaną bez zmian.'))return;
+    await bridge.clearActivity();if(!DEMO)snapshot=await bridge.snapshot();render();toast('Sygnały wyczyszczone');
+  }
   if(act==='edit')showModal(col,id);
   if(act==='modal-close')$('#modal').hidden=true;
   if(act==='remove') {
     const item=state()[col].find(x=>x.id===id);
-    if(!confirm(`Usunąć: ${item?.title||'element'}?`))return;
+    if(!await compactConfirm(`Usunąć: ${item?.title||'element'}?`))return;
     await bridge.remove(col,id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Usunięto');
   }
   if(act==='schedule-start'||act==='schedule-snooze'||act==='schedule-finish'){
@@ -201,18 +263,26 @@ async function handleAction(el){
     render();toast(updateInfo.available?'Dostępna aktualizacja '+updateInfo.version:'Masz aktualną wersję ✓');
   }
   if(act==='update-install'){
-    if(!confirm('Zainstalować Ratchet '+updateInfo.version+'? Aplikacja uruchomi się ponownie, a Twoje zadania pozostaną zapisane.'))return;
+    if(!await compactConfirm('Zainstalować Ratchet '+updateInfo.version+'? Aplikacja uruchomi się ponownie, a Twoje zadania pozostaną zapisane.'))return;
     toast('Pobieram i weryfikuję aktualizację…');
     await bridge.installUpdate();
     toast('Ratchet uruchomi się ponownie.');
   }
   if(act==='reset-orb'){await bridge.resetOrb();toast('Kuleczka wróciła na ekran główny');}
   if(act==='reset-panel-size'){await bridge.saveSettings({panelSize:null});toast('Następnym razem panel otworzy się w rozmiarze 360 × 520');}
-  if(act==='notification-test'){const result=await bridge.testNotification();toast(result?.notificationsEnabled===false?'Najpierw włącz powiadomienia w ustawieniach':'Wysłano próbne powiadomienie do kuleczki');}
+  if(act==='notification-test'){
+    const result=await bridge.testNotification();
+    if(!result?.queued){toast(DEMO?'Test działa tylko w aplikacji Windows':'Włącz powiadomienia i zapisz ustawienia');return;}
+    toast('Test w kolejce. Sprawdź dymek przy kuleczce…');
+    setTimeout(()=>safe(async()=>{
+      const status=await bridge.notificationStatus(result.id);
+      toast(status.delivery?.bubbleShown?'Kuleczka potwierdziła wyświetlenie dymku ✓':'Brak potwierdzenia dymku — uruchom diagnostykę');
+    }),3200);
+  }
   if(act==='show-settings'){tab='settings';render();$('#appMenu').hidden=true;$('#appMenuToggle').setAttribute('aria-expanded','false');}
   if(act==='hide-panel'){$('#appMenu').hidden=true;await bridge.hidePanel();}
   if(act==='quit'){
-    if(!confirm('Zakończyć Ratchet? Kuleczka i przypomnienia przestaną działać do ponownego uruchomienia.'))return;
+    if(!await compactConfirm('Zakończyć Ratchet? Kuleczka i przypomnienia przestaną działać do ponownego uruchomienia.'))return;
     await bridge.quit();
     $('#appMenu').hidden=true;
     if(!DEMO){
@@ -233,7 +303,7 @@ document.addEventListener('click',e=>{
     $('#appMenuToggle').setAttribute('aria-expanded','false');
   }
   const tabButton=e.target.closest('[data-tab].tab');
-  if(tabButton){tab=tabButton.dataset.tab;render();return;}
+  if(tabButton){tab=tabButton.dataset.tab;agentFilter=null;render();return;}
   const a=e.target.closest('[data-action]');if(a)safe(()=>handleAction(a));
 });
 document.addEventListener('submit',e=>{
