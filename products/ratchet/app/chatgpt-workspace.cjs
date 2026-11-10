@@ -92,6 +92,7 @@ class ChatGPTWorkspaceWatcher{
     }
     let payload;
     try{payload=await response.json();}catch{payload={};}
+    if(!payload||typeof payload!=='object')payload={};
     job.conversationUrl=chatUrl(payload.conversation_url);
     if(!validRun(safe(payload.agent_trigger_run_id))){
       this.setAttention(job,'API przyjęło zlecenie, ale nie zwróciło ID uruchomienia beta. Nie można śledzić zakończenia.');
