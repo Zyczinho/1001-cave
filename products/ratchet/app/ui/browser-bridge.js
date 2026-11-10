@@ -1,6 +1,6 @@
 'use strict';
 // Only in the local Node companion, not in Electron and not in file:// preview.
-if(!window.ratchet && location.hostname==='127.0.0.1' && location.port==='47823') {
+if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.0.1' && /^\d+$/.test(location.port)) {
   async function request(url,init) {
     let res;
     try {res=await fetch(url,init);}
@@ -21,6 +21,8 @@ if(!window.ratchet && location.hostname==='127.0.0.1' && location.port==='47823'
     onSnapshot:cb=>{let mounted=true;const poll=async()=>{if(!mounted)return;try{const snap=await request('/api/snapshot');const json=JSON.stringify(snap);if(json!==lastSnapshot){lastSnapshot=json;cb(snap);}}catch{}};const id=setInterval(poll,3500);return()=>{mounted=false;clearInterval(id);};},
     save:(collection,item)=>action('item:save',{collection,item}),
     remove:(collection,id)=>action('item:remove',{collection,id}),
+    clearActivity:()=>action('activity:clear'),
+    removeActivity:id=>action('activity:remove',{id}),
     saveSettings:settings=>action('settings:save',{settings}),
     scheduleAction:(id,actionName)=>action('schedule:action',{id,action:actionName}),
     open:(kind,target)=>action('open-target',{kind,target}),
@@ -31,6 +33,7 @@ if(!window.ratchet && location.hostname==='127.0.0.1' && location.port==='47823'
     installUpdate:()=>action('update:install'),
     diagnose:()=>action('diagnostics:run'),
     testNotification:()=>action('notification:test'),
+    notificationStatus:id=>action('notification:status',{id}),
     quit:()=>action('quit'),
     resetOrb:()=>action('orb:reset')
   };

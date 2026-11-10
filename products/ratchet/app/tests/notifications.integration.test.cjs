@@ -35,6 +35,36 @@ test('manual completion and test notification appear in native reminder feed',as
   assert.equal(ack.queued,true);
   const reminders=snapshot().state.activity.filter(x=>x.level==='reminder');
   assert.ok(reminders.some(x=>x.phase==='finished'&&/Zakończono/.test(x.text)));
-  assert.ok(reminders.some(x=>x.phase==='test'&&/test powiadomienia Windows/.test(x.text)));
+  assert.ok(reminders.some(x=>x.phase==='test'&&/próbny dymek/.test(x.text)));
+});
+test('notification receipts distinguish queueing, bubble display and Windows attempt',async()=>{
+  const event=await handleAction('notification:test',{});
+  assert.equal(event.queued,true);
+  assert.ok(event.id);
+  const pending=await handleAction('notification:status',{id:event.id});
+  assert.equal(pending.found,true);
+  assert.equal(pending.delivery,null,'queuing is not display evidence');
+  const delivery=await handleAction('notification:delivery',{id:event.id,bubbleShown:true,windowsAttempted:true});
+  assert.equal(delivery.bubbleShown,true);
+  assert.equal(delivery.windowsAttempted,true);
+  const ack=await handleAction('notification:status',{id:event.id});
+  assert.equal(ack.delivery.bubbleShown,true);
+  assert.equal(ack.delivery.windowsAttempted,true);
+  await assert.rejects(handleAction('notification:delivery',{id:'unknown',bubbleShown:true}),/Nie znaleziono/);
+});
+test('clearing recent signals does not delete tasks or reset reminders',async()=>{
+  const event=await handleAction('notification:test',{});
+  const before=snapshot().state;
+  const scheduled=before.schedule.length;
+  const reminderKeys=Object.keys(before.reminded).sort();
+  await handleAction('activity:remove',{id:event.id});
+  assert.equal(snapshot().state.activity.some(x=>x.id===event.id),false);
+  const result=await handleAction('activity:clear',{});
+  assert.ok(result.removed>0);
+  assert.equal(snapshot().state.activity.length,0);
+  assert.equal(snapshot().state.schedule.length,scheduled);
+  assert.deepEqual(Object.keys(snapshot().state.reminded).sort(),reminderKeys);
+  const disk=JSON.parse(fs.readFileSync(path.join(dir,'Ratchet','ratchet.json'),'utf8'));
+  assert.deepEqual(disk.activity,[]);
 });
 test.after(()=>{fs.rmSync(dir,{force:true,recursive:true});});

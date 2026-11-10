@@ -6,6 +6,11 @@ $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $port=47823
 if($env:RATCHET_PORT -match '^[1-9][0-9]{3,4}$'){$port=[int]$env:RATCHET_PORT}
+# Fail closed on a real user machine. The default port is the live Ratchet.
+# GitHub Actions runs on a disposable runner and may use the default for CI.
+if($port -eq 47823 -and $env:GITHUB_ACTIONS -ne 'true') {
+    throw 'Test Windows nie moze dzialac na produkcyjnym porcie 47823. Uzyj TESTUJ-P0-BEZPIECZNIE.ps1.'
+}
 $base='http://127.0.0.1:'+$port
 $profileSuffix=''
 if($port -ne 47823){$profileSuffix='-'+$port}
@@ -168,11 +173,19 @@ try {
     for($i=0;$i -lt 20;$i++){Start-Sleep -Milliseconds 300;if(([RatchetSmokeWindows]::OrbRect())[3] -eq 48){$small=$true;break}}
     if(-not $small){throw ('Orb did not resize to 48px, current '+(([RatchetSmokeWindows]::OrbRect()) -join ','))}
     Write-Host 'ORB_RESIZE_48_OK'
-    Act 'notification:test' @{} | Out-Null
-    Start-Sleep -Milliseconds 1600
-    $status=Invoke-RestMethod -Uri "$base/api/status" -TimeoutSec 3
-    if(-not @($status.activity | Where-Object {$_.phase -eq 'test'}).Count){throw 'Notification was not queued for native orb'}
-    Write-Host 'NATIVE_NOTIFICATION_QUEUED_OK'
+    $testEvent=Act 'notification:test' @{}
+    if(-not $testEvent.result.queued -or -not $testEvent.result.id){throw 'Test event was not queued with an ID'}
+    $bubbleReceipt=$null
+    for($i=0;$i -lt 20;$i++){
+        Start-Sleep -Milliseconds 300
+        $delivery=(Act 'notification:status' @{id=$testEvent.result.id}).result
+        if($delivery.delivery -and $delivery.delivery.bubbleShown){$bubbleReceipt=$delivery.delivery;break}
+    }
+    if(-not $bubbleReceipt){throw 'Native orb did not confirm showing its own speech bubble'}
+    if(-not @([RatchetSmokeWindows]::Titles() | Where-Object {$_ -eq 'Ratchet - wiadomosc'}).Count){throw 'Speech bubble window is not visible'}
+    Write-Host 'NATIVE_SPEECH_BUBBLE_VISIBLE_OK'
+    if(-not $bubbleReceipt.windowsAttempted){Write-Host 'WINDOWS_BALLOON_ATTEMPT_NOT_CONFIRMED (not proof of user visibility)'}
+    else{Write-Host 'WINDOWS_BALLOON_ATTEMPTED (Windows may suppress display)'}
     # Regression for RAT-001: another process has a window titled "Ratchet".
     Add-Type -AssemblyName System.Windows.Forms
     $decoy=New-Object System.Windows.Forms.Form

@@ -65,7 +65,12 @@ function normalizeItem(collection, raw) {
     const endTime = cleanText(raw.endTime,5);
     if (endTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime)) throw Error('Koniec bloku musi mieć format HH:MM');
     if (endTime && endTime <= time) throw Error('Koniec bloku musi być później niż początek (tego samego dnia)');
-    return {id,title,time,endTime:endTime||null,date,days,project:cleanText(raw.project,70),target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url', note:cleanText(raw.note,500), enabled:raw.enabled !== false, snoozeUntil:raw.snoozeUntil || null};
+    // Store completion per calendar day, especially for weekly repeating blocks.
+    // Kept independently of the short activity feed, so "Wyczyść sygnały" cannot erase history.
+    const completedDates=Array.isArray(raw.completedDates)
+      ? [...new Set(raw.completedDates.filter(x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x)&&!Number.isNaN(Date.parse(x+'T12:00:00'))))].sort().slice(-365)
+      : [];
+    return {id,title,time,endTime:endTime||null,date,days,project:cleanText(raw.project,70),target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url', note:cleanText(raw.note,500), enabled:raw.enabled !== false, snoozeUntil:raw.snoozeUntil || null,completedDates};
   }
   return {id,title,tool:cleanText(raw.tool,70)||'Inny model',status:STATUS.includes(raw.status)?raw.status:'idle',target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url',branch:cleanText(raw.branch,120),note:cleanText(raw.note,500),source:raw.source === 'hook' ? 'hook' : 'manual',updatedAt:cleanText(raw.updatedAt,50)||new Date().toISOString()};
 }

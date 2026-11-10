@@ -84,3 +84,50 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
   .modal-card form { padding: 10px; }
   .form-grid { gap: 6px; }
 }
+
+/* P0: status tiles are real focusable buttons. No browser-sized confirm prompts. */
+.status-box{appearance:none;cursor:pointer;font-family:inherit}
+.status-box:hover,.status-box:focus-visible{border-color:#73b9ff;background:#29425d;outline:2px solid transparent}
+.confirm-card{width:min(306px,calc(100% - 22px));margin:auto;background:#1c293a;border:1px solid #476281;border-radius:15px;padding:17px;box-shadow:0 12px 45px #0009}
+.confirm-card h2{font-size:14px;margin:0 0 8px}
+.confirm-card p{font-size:12px;color:#c4d5e9;line-height:1.55;margin:0 0 15px;overflow-wrap:anywhere}
+.confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+#confirmModal[hidden]{display:none}
+
+
+/* Calendar P0: five compact tabs fit the 360px Ratchet panel. */
+.tabs{gap:0;padding-left:7px;padding-right:7px}
+.tab{gap:3px;min-width:0;padding:0 3px;font-size:10px;white-space:nowrap}
+.tab .icon-slot{margin-right:0}
+.tab .icon-slot .ui-icon{width:13px;height:13px}
+.calendar-shell{background:#1b293a;border:1px solid #334c66;border-radius:14px;padding:10px;margin-bottom:15px}
+.calendar-nav{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;color:#eef6ff;text-transform:capitalize}
+.calendar-nav strong{font-size:12px;font-weight:750}
+.calendar-nav-btn{border:1px solid #405a77;border-radius:8px;color:#c8dfff;background:#243a52;width:28px;height:28px;font-size:21px;display:grid;place-items:center;line-height:1}
+.calendar-nav-btn:hover{background:#315479}
+.calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.calendar-weekdays{margin-bottom:4px}
+.calendar-weekdays span{text-align:center;color:#829bb5;font-size:10px;padding:5px 0;font-weight:750}
+.calendar-day{position:relative;min-width:0;min-height:39px;border:1px solid transparent;border-radius:9px;background:#1f3145;color:#b8cce0;padding:3px 1px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.calendar-day:hover{background:#345273;border-color:#6586a8}
+.calendar-day.is-today{border-color:#628dc6;color:#e7f4ff}
+.calendar-day.is-selected{background:#365c83;box-shadow:inset 0 0 0 1px #81b7ee;color:#fff}
+.day-number{font-size:11px;font-weight:700;line-height:1.1}
+.calendar-indicators{height:6px;display:flex;gap:3px;justify-content:center;align-items:center}
+.calendar-dot{width:5px;height:5px;border-radius:50%;background:#80b4fa}
+.calendar-dot.is-done{background:#5de0ae}
+.calendar-count{font-size:8px;color:#b7d4ee}
+.calendar-selected{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:10px 2px 9px}
+.calendar-selected div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.calendar-selected strong{font-size:12px;font-weight:730;text-transform:capitalize;line-height:1.35}
+.calendar-selected span{font-size:10px;color:#809bb7}
+.calendar-agenda{display:grid;gap:7px}
+.calendar-task .task-actions{margin-top:7px}
+.calendar-meta{margin-top:5px}
+.calendar-meta:empty{display:none}
+@media(max-width:520px){.tabs{padding-left:5px;padding-right:5px;gap:0}.tab{font-size:9px;padding:0 2px}.calendar-shell{padding:8px}.calendar-day{min-height:35px}}
+
+/* Main navigation after moving Settings to the three-dot menu: four readable tabs. */
+.tabs{padding-left:10px;padding-right:10px;gap:3px}
+.tab{font-size:11px;padding:0 4px}
+@media(max-width:520px){.tabs{padding-left:8px;padding-right:8px;gap:2px}.tab{font-size:10px;padding:0 3px}}
