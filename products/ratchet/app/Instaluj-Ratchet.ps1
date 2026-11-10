@@ -178,6 +178,15 @@ function Set-Shortcut([string]$path, [string]$target, [string]$arguments, [strin
     $link.WindowStyle = 7   # minimized, only matters for the PowerShell fallback
     $link.Save()
 }
+# Tries each name in turn; returns the path that was written, or $null. Never throws.
+function Set-DesktopShortcut([string]$desktop, [string[]]$names, [string]$target, [string]$arguments, [string]$workDir, [string]$icon, [string]$description) {
+    foreach ($name in $names) {
+        $path = Join-Path $desktop $name
+        try { Set-Shortcut $path $target $arguments $workDir $icon $description; return $path }
+        catch { Trace ('Shortcut ' + $name + ' refused: ' + $_.Exception.Message) }
+    }
+    return $null
+}
 function Start-Installed([string]$launcher) {
     if ($launcher) {
         Start-Process -FilePath $launcher -WorkingDirectory $appRoot | Out-Null
@@ -320,19 +329,26 @@ try {
     $desktop = [Environment]::GetFolderPath('DesktopDirectory')
     $icon = Join-Path $appRoot 'assets\ratchet.ico'
     if ($launcher) {
-        Set-Shortcut (Join-Path $desktop 'Ratchet.lnk') $launcher '' $appRoot $icon 'Ratchet - kuleczka i mały panel'
-        Set-Shortcut (Join-Path $desktop 'Ratchet - Diagnostyka.lnk') $launcher '--diagnostics' $appRoot $icon 'Ratchet - diagnoza jednym kliknięciem, raport tylko lokalnie'
+        $mainTarget = $launcher; $mainArgs = ''
+        $diagTarget = $launcher; $diagArgs = '--diagnostics'
     } else {
         $shell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        Set-Shortcut (Join-Path $desktop 'Ratchet.lnk') $shell ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + (Join-Path $appRoot 'Uruchom-Ratchet-Bez-Electron.ps1') + '"') $appRoot $icon 'Ratchet - kuleczka i mały panel'
-        Set-Shortcut (Join-Path $desktop 'Ratchet - Diagnostyka.lnk') $shell ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + (Join-Path $appRoot 'Diagnostyka-Ratchet.ps1') + '"') $appRoot $icon 'Ratchet - diagnoza jednym kliknięciem'
+        $mainTarget = $shell; $mainArgs = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + (Join-Path $appRoot 'Uruchom-Ratchet-Bez-Electron.ps1') + '"'
+        $diagTarget = $shell; $diagArgs = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + (Join-Path $appRoot 'Diagnostyka-Ratchet.ps1') + '"'
     }
-    Say 'Pulpit: skróty "Ratchet" i "Ratchet - Diagnostyka".'
+    # Shortcuts never decide whether the install succeeded. On a OneDrive Desktop an old,
+    # deleted name can stay locked ("access denied" for exactly Ratchet.lnk); then a
+    # second name is used and the installed program keeps working.
+    $mainLink = Set-DesktopShortcut $desktop @('Ratchet.lnk','Ratchet (1001 CAVE).lnk') $mainTarget $mainArgs $appRoot $icon 'Ratchet - kuleczka i mały panel'
+    $diagLink = Set-DesktopShortcut $desktop @('Ratchet - Diagnostyka.lnk','Ratchet (1001 CAVE) - Diagnostyka.lnk') $diagTarget $diagArgs $appRoot $icon 'Ratchet - diagnoza jednym kliknięciem, raport tylko lokalnie'
+    if ($mainLink) { Say ('Pulpit: skróty "' + [IO.Path]::GetFileNameWithoutExtension($mainLink) + '" i "' + $(if ($diagLink) { [IO.Path]::GetFileNameWithoutExtension($diagLink) } else { 'brak diagnostyki' }) + '".') }
+    else { Say 'UWAGA: nie udało się utworzyć skrótu na Pulpicie. Ratchet jest zainstalowany; uruchom go z %LOCALAPPDATA%\Ratchet\app\Ratchet.exe.' 'Yellow' }
 
     $receipt = [ordered]@{
         product = 'Ratchet'; version = $version; commit = $(if ($commit) { $commit } else { $null })
         installedAt = (Get-Date).ToString('o'); appRoot = $appRoot
         launcher = $(if ($launcher) { 'Ratchet.exe' } else { 'powershell-hidden' })
+        shortcuts = @(@($mainLink, $diagLink) | Where-Object { $_ })
         previousApp = $(if ($movedOld) { $previous } else { $null })
         files = @($manifest.files | ForEach-Object { [ordered]@{ path = [string]$_.path; sha256 = ([string]$_.sha256).ToLowerInvariant() } })
     }
@@ -366,7 +382,7 @@ try {
 
     if (-not $Unattended -and -not $NoDesktopCleanup) { Invoke-DesktopCleanup $packageRoot }
     Trace '==== SUCCESS'
-    [void](Show-Box ('Ratchet ' + $version + ' jest zainstalowany i działa.' + "`n`nKliknij kuleczkę, aby otworzyć panel. Na Pulpicie są tylko dwa skróty: Ratchet i Ratchet - Diagnostyka.`n`nFolder z rozpakowanym ZIP-em możesz teraz usunąć.") 'Ratchet')
+    [void](Show-Box ('Ratchet ' + $version + ' jest zainstalowany i działa.' + "`n`nKliknij kuleczkę, aby otworzyć panel. Na Pulpicie są tylko dwa skróty Ratcheta: start i diagnostyka.`n`nFolder z rozpakowanym ZIP-em możesz teraz usunąć.") 'Ratchet')
     exit 0
 } catch {
     $failure = $_.Exception.Message

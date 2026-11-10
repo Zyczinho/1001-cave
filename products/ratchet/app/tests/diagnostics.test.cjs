@@ -24,7 +24,8 @@ test('diagnostics can launch with Node and backend offline',()=>{
 test('diagnostics shortcut runs without console, prompt or Node prerequisite',()=>{
   const s=read('Instaluj-Ratchet.ps1');
   assert.match(s,/"--diagnostics"/);
-  assert.match(s,/Set-Shortcut \(Join-Path \$desktop 'Ratchet - Diagnostyka\.lnk'\) \$launcher '--diagnostics'/);
+  assert.match(s,/\$diagTarget = \$launcher; \$diagArgs = '--diagnostics'/);
+  assert.match(s,/Set-DesktopShortcut \$desktop @\('Ratchet - Diagnostyka\.lnk'/);
   const d=read('Diagnostyka-Ratchet.ps1');
   assert.doesNotMatch(d,/Read-Host|pause/i);
   // Reports which copy and which build is running, and whether Windows can show toasts.

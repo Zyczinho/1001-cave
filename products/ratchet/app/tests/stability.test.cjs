@@ -13,7 +13,10 @@ test('no console launcher scripts remain that could open a visible terminal',()=
   assert.match(installer,/info\.CreateNoWindow = true;/);
   assert.match(installer,/info\.UseShellExecute = false;/);
   assert.match(installer,/\/target:winexe/);
-  assert.match(installer,/Set-Shortcut \(Join-Path \$desktop 'Ratchet\.lnk'\) \$launcher/);
+  assert.match(installer,/\$mainTarget = \$launcher; \$mainArgs = ''/);
+  // A refused shortcut name (OneDrive keeps an old Ratchet.lnk locked) falls back, never rolls back.
+  assert.match(installer,/Set-DesktopShortcut \$desktop @\('Ratchet\.lnk','Ratchet \(1001 CAVE\)\.lnk'\)/);
+  assert.match(installer,/catch \{ Trace \('Shortcut ' \+ \$name \+ ' refused: '/);
 });
 test('quit followed by an immediate relaunch never adopts the dying server',()=>{
   assert.match(read('server.cjs'),/quitting:quitRequested/);

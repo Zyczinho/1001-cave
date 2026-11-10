@@ -65,8 +65,10 @@ try {
     # A shortcut check is read-only; COM errors should not abort the whole diagnostic.
     try {
         $desktop = [Environment]::GetFolderPath('DesktopDirectory')
-        $shortcutFile = Join-Path $desktop 'Ratchet.lnk'
-        if (Test-Path -LiteralPath $shortcutFile) {
+        # The installer falls back to a second name when OneDrive keeps an old name locked.
+        $shortcutFile = @('Ratchet.lnk','Ratchet (1001 CAVE).lnk') | ForEach-Object { Join-Path $desktop $_ } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        if ($shortcutFile) {
             $s = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutFile)
             $report.shortcut.exists = $true
             $report.shortcut.target = Redact-RatchetText ([string]$s.TargetPath)

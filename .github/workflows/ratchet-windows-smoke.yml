@@ -102,6 +102,10 @@ jobs:
           '{"version":1,"settings":{"repo":"Zyczinho/city-route-app","notifications":true,"autoStart":false,"alwaysOnTop":true,"avatarSize":56},"schedule":[{"id":"ci-task","title":"Zadanie CI","time":"23:58","endTime":"23:59","date":null,"days":[0,1,2,3,4,5,6],"project":"","target":"","kind":"url","note":"","enabled":true,"snoozeUntil":null}],"links":[],"agents":[],"reminded":{},"activity":[]}' | Set-Content -LiteralPath (Join-Path $profileDir 'ratchet.json') -Encoding UTF8
           $profileHash = (Get-FileHash (Join-Path $profileDir 'ratchet.json')).Hash
           $installer = Join-Path $env:RUNNER_TEMP "FakeDesktop\Ratchet-$($env:RATCHET_VERSION)-RC\app\Instaluj-Ratchet.ps1"
+          # Field condition from the user's OneDrive Desktop: the name Ratchet.lnk is locked
+          # ("access denied"). A folder with that name reproduces it; install must still succeed.
+          $desktop = [Environment]::GetFolderPath('DesktopDirectory')
+          New-Item -ItemType Directory -Path (Join-Path $desktop 'Ratchet.lnk') -Force | Out-Null
           # -Wait would wait for the long-lived orb descendant too: poll only installer PID.
           $install = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$installer+'"'),'-Unattended') -PassThru
           for($i=0;$i -lt 200;$i++){ Start-Sleep -Milliseconds 300; $install.Refresh(); if($install.HasExited){break} }
@@ -122,16 +126,16 @@ jobs:
           $extra = @($actual | Where-Object { $expected -notcontains $_ })
           if($extra.Count){throw ('Unexpected files in app folder: '+($extra -join ', '))}
           foreach($f in $manifest.files){ if((Get-FileHash (Join-Path $appRoot $f.path)).Hash -ine $f.sha256){throw ('Installed hash mismatch '+$f.path)} }
-          $desktop = [Environment]::GetFolderPath('DesktopDirectory')
           $ws = New-Object -ComObject WScript.Shell
-          foreach($name in @('Ratchet.lnk','Ratchet - Diagnostyka.lnk')){
+          foreach($name in @('Ratchet (1001 CAVE).lnk','Ratchet - Diagnostyka.lnk')){
             $lnk = $ws.CreateShortcut((Join-Path $desktop $name))
             if($lnk.TargetPath -ine (Join-Path $appRoot 'Ratchet.exe')){throw ($name+' does not start Ratchet.exe: '+$lnk.TargetPath)}
           }
           $receipt = Get-Content (Join-Path $env:LOCALAPPDATA 'Ratchet\install-receipt.json') -Raw | ConvertFrom-Json
           if($receipt.commit -ne $env:GITHUB_SHA -or -not $receipt.verifiedAt -or $receipt.launcher -ne 'Ratchet.exe'){throw 'Install receipt incomplete'}
           if((Get-FileHash (Join-Path $profileDir 'ratchet.json')).Hash -ne $profileHash){throw 'Installer modified the user profile'}
-          Write-Host 'RC_INSTALL_FROM_ZIP_OK: app folder = manifest + Ratchet.exe; 2 shortcuts; profile untouched'
+          Remove-Item -LiteralPath (Join-Path $desktop 'Ratchet.lnk') -Force
+          Write-Host 'RC_INSTALL_FROM_ZIP_OK: app folder = manifest + Ratchet.exe; 2 shortcuts (fallback name when Ratchet.lnk is locked); profile untouched'
       - name: Ratchet.exe starts the orb without any console window
         run: |
           $ErrorActionPreference = 'Stop'
