@@ -21,15 +21,15 @@ function normalizeCoordinator(raw){
     const stages=Array.isArray(j.stages)?j.stages.slice(0,2).map((s,i)=>({
       role:ROLES[i],provider:'claude',status:safeStatus.has(s?.status)?s.status:'queued',
       startedAt:trim(s?.startedAt,60),finishedAt:trim(s?.finishedAt,60),
-      summary:trim(s?.summary,MAX_OUTPUT),error:trim(s?.error,400)
+      summary:trim(s?.summary,MAX_OUTPUT),error:trim(s?.error,400),retryUsed:s?.retryUsed===true
     })):[];
     return {id:trim(j.id,80),title:trim(j.title,120),goal:trim(j.goal,MAX_GOAL),
       projectRoot:trim(j.projectRoot,1000),createdAt:trim(j.createdAt,60),
       updatedAt:trim(j.updatedAt,60),status:safeStatus.has(j.status)?j.status:'queued',
       stepIndex:Math.max(0,Math.min(2,Math.floor(Number(j.stepIndex)||0))),
       alerted:j.alerted===true,stages:stages.length===2?stages:[
-        {role:'analysis',provider:'claude',status:'queued',startedAt:'',finishedAt:'',summary:'',error:''},
-        {role:'review',provider:'claude',status:'queued',startedAt:'',finishedAt:'',summary:'',error:''}
+        {role:'analysis',provider:'claude',status:'queued',startedAt:'',finishedAt:'',summary:'',error:'',retryUsed:false},
+        {role:'review',provider:'claude',status:'queued',startedAt:'',finishedAt:'',summary:'',error:'',retryUsed:false}
       ]};
   }).filter(j=>j.id&&j.title&&j.goal&&j.projectRoot):[];
   return {enabled:r.enabled===true,jobs};
@@ -46,7 +46,7 @@ function makeJob(data){
   const at=iso();
   return {id:randomUUID(),title,goal,projectRoot:location,createdAt:at,updatedAt:at,
     status:'queued',stepIndex:0,alerted:false,stages:ROLES.map(role=>({
-      role,provider:'claude',status:'queued',startedAt:'',finishedAt:'',summary:'',error:''
+      role,provider:'claude',status:'queued',startedAt:'',finishedAt:'',summary:'',error:'',retryUsed:false
     }))};
 }
 function promptFor(job){
