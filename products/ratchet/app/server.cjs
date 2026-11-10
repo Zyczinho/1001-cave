@@ -6,7 +6,7 @@ const http = require('node:http');
 const os = require('node:os');
 const {spawn} = require('node:child_process');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizeItem, dueTasks, dayKey, validateTarget, mergeRepoData, handoffText} = require('./core.cjs');
+const {defaults, normalizeStore, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText} = require('./core.cjs');
 
 const PORT = Number(process.env.RATCHET_PORT || 47823);
 const CLAUDE_PORT = Number(process.env.RATCHET_HOOK_PORT || 47822);
@@ -40,15 +40,31 @@ function save() {
   if(fs.existsSync(DATA)) {try {fs.copyFileSync(DATA,backup);}catch(e){console.warn('[ratchet] Backup:',e.message);} }
   fs.renameSync(tmp,DATA);
 }
-function activity(message, level='info', taskId='') { state.activity.unshift({id: String(Date.now()) + Math.random(),text:message,level,taskId,at:new Date().toISOString()}); state.activity = state.activity.slice(0,80); save(); }
-function checkSchedule() {
-  const now = new Date(); let updated = false;
-  for(const task of dueTasks(state, now)) {
-    state.reminded[`${dayKey(now)}:${task.id}:${task.snoozeUntil||'base'}`] = true;
-    state.activity.unshift({id:String(Date.now())+task.id,text:`Czas na: ${task.title} (${task.time}). Działasz?`,at:now.toISOString(),level:'reminder',taskId:task.id});
-    updated = true;
+function activity(message, level='info', taskId='', phase='') { state.activity.unshift({id: String(Date.now()) + Math.random(),text:message,level,taskId,phase,at:new Date().toISOString()}); state.activity = state.activity.slice(0,80); save(); }
+function notification(task,phase,at){
+  const start=phase==='start';
+  return {
+    id:`${Date.now()}-${task.id}-${phase}-${Math.random()}`,
+    text:start
+      ? `Początek: ${task.title} (${task.time}).`
+      : `Planowany koniec: ${task.title} (${task.endTime}). Zakończ zadanie, gdy będzie gotowe.`,
+    at:at.toISOString(),level:'reminder',phase,taskId:task.id
+  };
+}
+function checkSchedule(now = new Date()) {
+  let updated=false;
+  const today=dayKey(now);
+  for(const task of dueTasks(state,now)){
+    state.reminded[`${today}:${task.id}:${task.snoozeUntil||'base'}`]=true;
+    state.activity.unshift(notification(task,'start',now));
+    updated=true;
   }
-  if(updated) {state.activity=state.activity.slice(0,80); save();}
+  for(const task of dueEndTasks(state,now)){
+    state.reminded[`${today}:${task.id}:end`]=true;
+    state.activity.unshift(notification(task,'end',now));
+    updated=true;
+  }
+  if(updated){state.activity=state.activity.slice(0,80);save();}
 }
 function health() {
   const a=state.agents;
@@ -129,16 +145,33 @@ async function handleAction(key,data) {
     const s={...state.settings};
     if(typeof data.settings?.repo==='string'&&/^[-\w.]+\/[-\w.]+$/.test(data.settings.repo.trim())){s.repo=data.settings.repo.trim();lastFetch=0;github=null;}
     for(const k of ['notifications','autoStart','alwaysOnTop']) if(typeof data.settings?.[k]==='boolean')s[k]=data.settings[k];
-    if([72,84,100,112].includes(Number(data.settings?.avatarSize)))s.avatarSize=Number(data.settings.avatarSize);
+    if([48,56,64,72,84,100,112].includes(Number(data.settings?.avatarSize)))s.avatarSize=Number(data.settings.avatarSize);
     state.settings=s;save();if(data.settings?.repo)refreshGithub(true).catch(()=>{});return s;
   }
   if(key==='schedule:action'){
     const item=state.schedule.find(x=>x.id===data.id);
     if(!item)throw Error('Zadanie nie istnieje');
-    if(data.action==='snooze'){item.snoozeUntil=new Date(Date.now()+600_000).toISOString();activity('Przełożono: '+item.title+' (+10 min)');}
-    else if(data.action==='dismiss'){item.snoozeUntil=null;activity('Pominięto: '+item.title);}
-    else if(data.action==='start'){item.snoozeUntil=null;activity('Rozpoczęto: '+item.title,'success');if(item.target)await openTarget(item.kind,item.target);}
-    else throw Error('Nieznana akcja');save();return true;
+    const today=dayKey(new Date());
+    if(data.action==='snooze'){
+      item.snoozeUntil=new Date(Date.now()+600_000).toISOString();
+      activity('Przełożono: '+item.title+' (+10 min)');
+    }else if(data.action==='dismiss'){
+      item.snoozeUntil=null;
+      activity('Pominięto: '+item.title);
+    }else if(data.action==='start'){
+      item.snoozeUntil=null;
+      state.reminded[`${today}:${item.id}:base`]=true;
+      activity('Rozpoczęto: '+item.title,'reminder',item.id,'start');
+      if(item.target)await openTarget(item.kind,item.target);
+    }else if(data.action==='finish'){
+      state.reminded[`${today}:${item.id}:end`]=true;
+      activity('Zakończono: '+item.title,'reminder',item.id,'finished');
+    }else throw Error('Nieznana akcja');
+    save();return true;
+  }
+  if(key==='notification:test'){
+    activity('To jest test powiadomienia Windows. Ratchet działa.','reminder','','test');
+    return {queued:true,method:'Windows NotifyIcon',notificationsEnabled:state.settings.notifications};
   }
   if(key==='open-target')return openTarget(data.kind,data.target);
   if(key==='handoff')return handoffText(state,github);
@@ -210,7 +243,7 @@ async function appRequest(req,res) {
   if(req.method==='GET'){
     if(url.pathname==='/api/ping') return json(res,{ok:true,version:'0.2.8'});
     if(url.pathname==='/api/snapshot') return json(res,snapshot());
-    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,panelRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,12),notifications:state.settings.notifications});
+    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,panelRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
     return staticResponse(url.pathname,res);
   }
   if(req.method==='POST'&&url.pathname==='/api/action'){
