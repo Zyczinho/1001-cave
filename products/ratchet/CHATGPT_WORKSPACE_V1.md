@@ -8,7 +8,7 @@ Uruchomienie opublikowanego ChatGPT Workspace Agent przez Ratcheta zwraca identy
 
 - `queued`: w kolejce
 - `in_progress`: praca trwa
-- `suspended`: czeka na działanie/zgodę (nieukończone)
+- `suspended`: czeka na działanie/zgodę (nieukończone); Ratchet wysyła pojedynczy dymek „ChatGPT czeka na Ciebie”, ale po późniejszym ukończeniu również wyśle oddzielne potwierdzenie.
 - `completed`: API potwierdziło koniec uruchomienia — dymek + powiadomienie Windows + link do rozmowy
 - `failed`: API potwierdziło błąd — dymek o blokadzie
 - `attention`: nie można potwierdzić statusu, **nie wolno twierdzić, że zadanie jest ukończone**
