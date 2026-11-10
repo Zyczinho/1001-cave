@@ -22,6 +22,8 @@ Instalator (`app/Instaluj-Ratchet.ps1`):
 
 Wynik: `%LOCALAPPDATA%\Ratchet\install-receipt.json` (wersja, commit, lista plików), dziennik: `%LOCALAPPDATA%\Ratchet\install.log`.
 
+**Avast / AVG:** ochrona zachowań (`IDP.Generic`) poddała kwarantannie skrypty Ratcheta (`Diagnostyka-Ratchet.ps1`, `Instaluj-Ratchet-Test.ps1`) i przerwała instalator 0.2.9 tuż po zbudowaniu `Ratchet.exe`. Przed instalacją dodaj wyjątek `%LOCALAPPDATA%\Ratchet\*` (Avast → Ustawienia → Ogólne → Wyjątki) i rozpakuj ZIP do `%LOCALAPPDATA%\Ratchet\instalator`.
+
 ## Co zmienia 0.2.9
 
 - **Mały panel naprawdę mały.** Panel działa w osobnym profilu Edge (`%LOCALAPPDATA%\Ratchet\panel-edge`). Wcześniej otwarty zwykły Edge przejmował okno i przywracał zapamiętane ~1050×800 px, ignorując `--window-size`. Teraz 360×520 px obok kuleczki; rozmiar ustawiony ręcznie (przeciągnięcie krawędzi) jest zapamiętywany, „Przywróć mały panel” w Ustawieniach wraca do 360×520.
