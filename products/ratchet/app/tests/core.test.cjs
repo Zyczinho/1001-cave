@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {defaults,normalizeStore,normalizeItem,validateTarget,dayKey,dueTasks,mergeRepoData,handoffText}=require('../core.cjs');
+const {defaults,normalizeStore,normalizeItem,validateTarget,dayKey,dueTasks,dueEndTasks,mergeRepoData,handoffText}=require('../core.cjs');
 test('default settings and links exist, no fake schedule',()=>{const s=defaults();assert.equal(s.settings.repo,'Zyczinho/city-route-app');assert.equal(s.schedule.length,0);assert.equal(s.agents.length,0);assert(s.links.length>0);});
 test('normalize schedule and validate date',()=>{const t=normalizeItem('schedule',{title:'Spotkanie',time:'12:00',days:[1,1,2,8],kind:'url',target:'https://meet.google.com/abc'});assert.deepEqual(t.days,[1,2]);assert.throws(()=>normalizeItem('schedule',{title:'X',time:'25:99'}));});
 test('reject unsafe URLs',()=>{assert.throws(()=>validateTarget('url','file:///etc/passwd'));assert.throws(()=>validateTarget('url','javascript:alert(1)'));assert.equal(validateTarget('url','https://example.com'),'https://example.com/');});
@@ -22,4 +22,39 @@ test('avatar size defaults to 84 and migrates older data',()=>{
   assert.equal(normalizeStore({settings:{avatarSize:72}}).settings.avatarSize,72);
   assert.equal(normalizeStore({settings:{avatarSize:100}}).settings.avatarSize,100);
   assert.equal(normalizeStore({settings:{avatarSize:999}}).settings.avatarSize,84);
+});
+
+
+test('planned task end fires once, not before the end',()=>{
+  const s=defaults();
+  const task=normalizeItem('schedule',{title:'Blok',time:'12:00',endTime:'13:00',days:[1]});
+  s.schedule=[task];
+  assert.equal(dueEndTasks(s,new Date('2026-11-09T12:59:00')).length,0);
+  const end=new Date('2026-11-09T13:00:00');
+  assert.equal(dueEndTasks(s,end).length,1);
+  s.reminded[`${dayKey(end)}:${task.id}:end`]=true;
+  assert.equal(dueEndTasks(s,end).length,0);
+  assert.equal(dueTasks(s,new Date('2026-11-09T12:01:00')).length,1);
+});
+test('one-off, weekday and legacy task end semantics',()=>{
+  const s=defaults();
+  const task=normalizeItem('schedule',{title:'Jednorazowy',time:'12:00',endTime:'12:30',date:'2026-11-09',days:[1]});
+  s.schedule=[task];
+  assert.equal(dueEndTasks(s,new Date('2026-11-10T12:31:00')).length,0);
+  assert.equal(dueEndTasks(s,new Date('2026-11-09T12:31:00')).length,1);
+  const legacy=normalizeItem('schedule',{title:'Stary blok',time:'12:00',days:[1]});
+  assert.equal(legacy.endTime,null);
+  s.schedule=[legacy];
+  assert.equal(dueEndTasks(s,new Date('2026-11-09T13:00:00')).length,0);
+});
+test('end time cannot be earlier or equal to start',()=>{
+  for(const endTime of ['10:00','09:00','25:00','abcde']){
+    assert.throws(()=>normalizeItem('schedule',{title:'Test',time:'10:00',endTime,days:[1]}));
+  }
+});
+test('orb supports 48px mini size as well as existing sizes',()=>{
+  assert.equal(normalizeStore({settings:{avatarSize:48}}).settings.avatarSize,48);
+  assert.equal(normalizeStore({settings:{avatarSize:56}}).settings.avatarSize,56);
+  assert.equal(normalizeStore({settings:{avatarSize:64}}).settings.avatarSize,64);
+  assert.equal(normalizeStore({settings:{avatarSize:99}}).settings.avatarSize,84);
 });
