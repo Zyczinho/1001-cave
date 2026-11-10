@@ -33,6 +33,7 @@ const now=()=>new Date();
 const dateKey=(d=now())=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const weekdays=['Nd','Pn','Wt','Śr','Cz','Pt','Sb'];
 const pad=n=>String(n).padStart(2,'0');
+let selectedDay=dateKey(),calendarMonth=new Date(now().getFullYear(),now().getMonth(),1);
 const plusMinutes=(time,minutes=60)=>{const [h,m]=String(time).split(':').map(Number);const v=Math.min(23*60+59,h*60+m+minutes);return `${pad(Math.floor(v/60))}:${pad(v%60)}`;};
 const formatTime=t=>new Date(t).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
 const formatDate=t=>new Date(t).toLocaleDateString('pl-PL',{day:'numeric',month:'long',weekday:'long'});
@@ -84,7 +85,7 @@ function renderToday(){
   const h=health();
   const hero=upcoming?`<section class="hero"><div class="eyebrow">${upcoming.time===`${pad(now().getHours())}:${pad(now().getMinutes())}`?'TERAZ TWOJA KOLEJ':'NASTĘPNY BLOK'}</div><h2>${esc(upcoming.title)} <span style="color:#9bc7ff">· ${esc(upcoming.time)}</span></h2><p>${esc(upcoming.note||`Ratchet przypomni Ci i pomoże od razu przejść do właściwego miejsca.`)}</p><div class="hero-actions"><button class="btn" data-action="schedule-start" data-id="${esc(upcoming.id)}">${I('play')} Działam${upcoming.target?' · otwórz':''}</button><button class="btn secondary" data-action="schedule-snooze" data-id="${esc(upcoming.id)}">Później</button></div></section>`:
   `<section class="hero"><div class="eyebrow">DZIŚ MASZ KONTROLĘ</div><h2>Mniej przełączania.<br>Więcej działania.</h2><p>Dodaj bloki dnia, przypisz im link lub folder. Ratchet przypomni Ci, gdzie masz być.</p><div class="hero-actions"><button class="btn" data-action="new" data-collection="schedule">+ Zaplanuj pierwszy blok</button></div></section>`;
-  let html=hero+`<form class="quick-form" id="quickPlanForm"><input name="phrase" aria-label="Dodaj zadanie jednym zdaniem" placeholder="Np. o 12:00 spotkanie z zespołem" required><button class="btn" type="submit">+ Zapisz</button></form><p class="quick-hint">Wpisz jedno zdanie z godziną. Ratchet doda blok na dziś.</p>`+sectionHeader('Twój plan dnia',`${tasks.length} bloków na dziś`,`<button class="btn small secondary" data-action="new" data-collection="schedule">+ Dodaj</button>`);
+  let html=hero+`<form class="quick-form" id="quickPlanForm"><input name="phrase" aria-label="Dodaj zadanie jednym zdaniem" placeholder="Np. o 12:00 spotkanie z zespołem" required><button class="btn" type="submit">+ Zapisz</button></form><p class="quick-hint">Wpisz godzinę i opcjonalnie „jutro”. Ratchet zapisze blok w kalendarzu.</p>`+sectionHeader('Twój plan dnia',`${tasks.length} bloków na dziś`,`<button class="btn small secondary" data-action="new" data-collection="schedule">+ Dodaj</button>`);
   html += tasks.length?`<div class="timeline">${tasks.map(t=>`<article class="task-card" style="opacity:${t.enabled?1:.48}"><div class="time">${esc(t.time)}${t.endTime?`<div class="task-note">do ${esc(t.endTime)}</div>`:''}</div><div class="task-body"><div class="task-title">${esc(t.title)} ${t.project?`<span class="pill">${esc(t.project)}</span>`:''}</div><div class="task-note">${esc(t.note|| (t.target?short(t.target):'Brak przypiętego linku'))}</div>${taskActions(t)}</div></article>`).join('')}</div>`:
   `<div class="empty"><div class="empty-emoji">${I('calendar')}</div><strong>Żadnych bloków na dziś</strong><p>Wybierz przykład — otworzysz formularz z gotowymi danymi.</p><div class="templates"><button class="template" data-action="template" data-template="job">09:00 Praca</button><button class="template" data-action="template" data-template="city">10:00 City Route</button><button class="template" data-action="template" data-template="box">14:00 Box2Box</button></div></div>`;
 
@@ -95,6 +96,55 @@ function renderToday(){
   if(h.attention||h.failed||h.overlaps)html+=`<div class="alert">${I('alert')} ${h.attention?'Masz agenta wymagającego uwagi. ':''}${h.failed?'Test CI na GitHubie zakończył się błędem. ':''}${h.overlaps?'PR-y mogą edytować te same pliki. ':''}<button class="btn tiny ghost" data-action="switch" data-tab="agents">Sprawdź agentów</button></div>`;
   return html;
 }
+
+function tasksOnCalendarDay(key){
+  // Work in local calendar days so recurring schedules don't shift due to UTC offsets.
+  const [year,month,day]=key.split('-').map(Number);
+  const weekday=new Date(year,month-1,day).getDay();
+  return state().schedule.filter(t=>t.date?t.date===key:(Array.isArray(t.days)&&t.days.includes(weekday)))
+    .sort((a,b)=>a.time.localeCompare(b.time));
+}
+function calendarDayName(key){
+  const [y,m,d]=key.split('-').map(Number);
+  return new Date(y,m-1,d).toLocaleDateString('pl-PL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+}
+function renderCalendar(){
+  const today=dateKey(),monthName=calendarMonth.toLocaleDateString('pl-PL',{month:'long',year:'numeric'});
+  const first=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth(),1);
+  const count=new Date(first.getFullYear(),first.getMonth()+1,0).getDate();
+  const leading=(first.getDay()+6)%7;
+  const names=['Pn','Wt','Śr','Cz','Pt','So','Nd'];
+  let grid='<div class="calendar-weekdays">'+names.map(x=>'<span>'+x+'</span>').join('')+'</div><div class="calendar-grid">';
+  for(let i=0;i<leading;i++)grid+='<span class="calendar-blank" aria-hidden="true"></span>';
+  for(let n=1;n<=count;n++){
+    const key=dateKey(new Date(first.getFullYear(),first.getMonth(),n));
+    const tasks=tasksOnCalendarDay(key);
+    const done=tasks.filter(t=>Array.isArray(t.completedDates)&&t.completedDates.includes(key)).length;
+    const classes=['calendar-day',key===today?'is-today':'',key===selectedDay?'is-selected':''].filter(Boolean).join(' ');
+    grid+='<button type="button" class="'+classes+'" data-action="calendar-day" data-date="'+key+'" aria-pressed="'+String(key===selectedDay)+'" aria-label="'+esc(calendarDayName(key))+', '+tasks.length+' zadań">'
+      +'<span class="day-number">'+n+'</span><span class="calendar-indicators">'
+      +(tasks.length?'<span class="calendar-dot'+(done===tasks.length?' is-done':'')+'"></span>':'')
+      +(tasks.length>1?'<span class="calendar-count">'+tasks.length+'</span>':'')
+      +'</span></button>';
+  }
+  grid+='</div>';
+  const tasks=tasksOnCalendarDay(selectedDay);
+  let html=sectionHeader('Kalendarz','Twoje bloki, terminy i ukończone zadania.', '<button class="btn small secondary" data-action="calendar-today">Dziś</button>');
+  html+='<section class="calendar-shell"><div class="calendar-nav"><button class="calendar-nav-btn" type="button" data-action="calendar-prev" aria-label="Poprzedni miesiąc">‹</button><strong>'+esc(monthName)+'</strong><button class="calendar-nav-btn" type="button" data-action="calendar-next" aria-label="Następny miesiąc">›</button></div>'+grid+'</section>';
+  html+='<div class="calendar-selected"><div><strong>'+esc(calendarDayName(selectedDay))+'</strong><span>'+tasks.length+' '+(tasks.length===1?'blok':'bloków')+'</span></div><button class="btn small" data-action="calendar-add">+ Dodaj</button></div>';
+  if(!tasks.length)return html+empty('Ten dzień jest wolny','Dodaj blok lub wybierz inną datę.', '✦');
+  html+='<div class="calendar-agenda">';
+  for(const t of tasks){
+    const done=Array.isArray(t.completedDates)&&t.completedDates.includes(selectedDay);
+    const stateLabel=done?'<span class="pill good">✓ Ukończone</span>':!t.enabled?'<span class="pill">Wyłączone</span>':t.date===null?'<span class="pill">Co tydzień</span>':'';
+    const actions=selectedDay===today&&!done?taskActions(t):'<div class="task-actions">'
+      +'<button class="btn small secondary" data-action="edit" data-collection="schedule" data-id="'+esc(t.id)+'">'+I('edit')+' Edytuj</button>'
+      +'<button class="plain-icon" data-action="remove" data-collection="schedule" data-id="'+esc(t.id)+'" title="Usuń zadanie" aria-label="Usuń zadanie">'+I('trash')+'</button></div>';
+    html+='<article class="task-card calendar-task" style="opacity:'+(t.enabled?1:'.55')+'"><div class="time">'+esc(t.time)+(t.endTime?'<div class="task-note">do '+esc(t.endTime)+'</div>':'')+'</div><div class="task-body"><div class="task-title">'+esc(t.title)+'</div><div class="calendar-meta">'+stateLabel+'</div><div class="task-note">'+esc(t.note||t.project||'')+'</div>'+actions+'</div></article>';
+  }
+  return html+'</div>';
+}
+
 function renderQuickLinks(limit){const items=state().links.slice(0,limit||100);return `<div class="link-grid">${items.map(x=>`<div class="link-card"><div class="link-top"><div class="link-symbol">${I(x.kind==='folder'?'folder':'link')}</div><button class="plain-icon" data-action="edit" data-collection="links" data-id="${esc(x.id)}" title="Edytuj">${I('edit')}</button><button class="plain-icon" data-action="remove" data-collection="links" data-id="${esc(x.id)}" title="Usuń">${I('trash')}</button></div><button class="plain-icon link-name" style="text-align:left;color:#e9f5ff;font-weight:700;font-size:12px;padding:0" data-action="open" data-kind="${esc(x.kind)}" data-target="${esc(x.target)}">${esc(x.title)}</button><span class="link-type">${esc(x.group||'Inne')}</span></div>`).join('')}</div>`;}
 const labels={working:['Pracuje','blue'],needs_attention:['Czeka na Ciebie','amber'],ready:['Zgłoszone jako gotowe','green'],blocked:['Blokada','red'],idle:['Spoczynek','violet']};
 function renderAgent(a){const [label,color]=labels[a.status]||labels.idle;return `<article class="agent-card"><div class="agent-head"><span class="agent-dot ${color}" style="color:var(--${color==='blue'?'blue':color==='green'?'green':color==='amber'?'amber':color==='red'?'red':'blue'})"></span><div class="agent-main"><strong>${esc(a.title)}</strong><div class="agent-meta"><span class="tag">${esc(a.tool||'AI')}</span><span class="tag">${a.source==='hook'?'Hook · automatycznie':'Ręcznie'}</span><span>${esc(label)}</span></div></div><button class="plain-icon" data-action="edit" data-collection="agents" data-id="${esc(a.id)}" title="Edytuj">${I('edit')}</button></div><div class="agent-note">${esc(a.note||'Brak notatki o postępie')}${a.branch?`<br><span class="quiet">Gałąź: ${esc(a.branch)}</span>`:''}</div><div class="inline-actions">${a.target?`<button class="btn tiny" data-action="open" data-kind="${esc(a.kind||'url')}" data-target="${esc(a.target)}">${I('external')} Przejdź do sesji</button>`:''}<button class="btn tiny ghost" data-action="remove" data-collection="agents" data-id="${esc(a.id)}">Usuń</button><span class="progress">${a.updatedAt?formatTime(a.updatedAt):''}</span></div></article>`;}
@@ -169,7 +219,7 @@ function compactConfirm(message){
     modal.addEventListener('keydown',keys);no.focus();
   });
 }
-function render(){updateClock();renderStrip();document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));$('#view').innerHTML=tab==='today'?renderToday():tab==='agents'?renderAgents():tab==='links'?renderLinks():renderSettings();window.ratchetHydrateIcons?.(document);}
+function render(){updateClock();renderStrip();document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));$('#view').innerHTML=tab==='today'?renderToday():tab==='calendar'?renderCalendar():tab==='agents'?renderAgents():tab==='links'?renderLinks():renderSettings();window.ratchetHydrateIcons?.(document);}
 const templateMap={job:{title:'Szukanie pracy',time:'09:00',project:'Kariera',target:'https://chatgpt.com/'},city:{title:'Praca nad City Route',time:'10:00',project:'City Route',target:'https://github.com/Zyczinho/city-route-app'},box:{title:'Promocje Box2Box',time:'14:00',project:'Box2Box',target:'https://box2box.com.pl'}};
 const input=(name,label,value='',opts='')=>`<div class="field"><label for="field-${name}">${label}</label><input id="field-${name}" name="${name}" value="${esc(value)}" ${opts}></div>`;
 const select=(name,label,value,options)=>`<div class="field"><label for="field-${name}">${label}</label><select id="field-${name}" name="${name}">${options.map(([v,l])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${l}</option>`).join('')}</select></div>`;
@@ -216,6 +266,10 @@ async function saveForm(form){
   const col=form.dataset.collection,id=form.dataset.id;
   const data=new FormData(form);const item={id:id||undefined};
   for(const [key,val] of data.entries())if(key!=='days')item[key]=val;
+  if(col==='schedule'&&id){
+    const previous=state().schedule.find(x=>x.id===id);
+    if(previous?.completedDates)item.completedDates=previous.completedDates;
+  }
   if(col==='schedule'){
     item.days=data.getAll('days').map(Number);
     if(data.get('repeat')==='once')item.date=data.get('date');else item.date=null;
@@ -234,6 +288,20 @@ async function saveForm(form){
 async function handleAction(el){
   const act=el.dataset.action,id=el.dataset.id,col=el.dataset.collection;
   if(act==='new')showModal(col);
+  if(act==='calendar-prev'||act==='calendar-next'){
+    const shift=act==='calendar-next'?1:-1;
+    calendarMonth=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()+shift,1);
+    selectedDay=dateKey(calendarMonth);
+    render();
+  }
+  if(act==='calendar-day'){
+    const key=el.dataset.date;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(key)){selectedDay=key;render();}
+  }
+  if(act==='calendar-today'){
+    selectedDay=dateKey();calendarMonth=new Date(now().getFullYear(),now().getMonth(),1);render();
+  }
+  if(act==='calendar-add')showModal('schedule','',{date:selectedDay,time:'09:00'});
   if(act==='template')showModal('schedule','',templateMap[el.dataset.template]);
   if(act==='switch'){tab=el.dataset.tab;agentFilter=null;render();}
   if(act==='metric'){tab='agents';agentFilter=el.dataset.metric;render();}
