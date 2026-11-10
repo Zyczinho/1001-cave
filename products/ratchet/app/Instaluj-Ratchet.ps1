@@ -224,8 +224,15 @@ function Find-DesktopLeftovers([string]$desktop, [string]$packageRoot) {
         if ($foreign.Count -eq 0) { $found.Add($path) }
     }
     # Earlier unpacked Ratchet packages (e.g. Ratchet-0.2.8-RC-KOMPAKT), never the current one.
+    # Normalise first: the package path may arrive as an 8.3 short name (C:\Users\RUNNER~1\...).
+    $current = $null
+    if ($packageRoot) {
+        try { $current = (Get-Item -LiteralPath $packageRoot -ErrorAction Stop).FullName } catch { $current = $packageRoot }
+        $current = [IO.Path]::GetFullPath($current).TrimEnd('\')
+    }
     foreach ($folder in @(Get-ChildItem -LiteralPath $desktop -Directory -Force | Where-Object { $_.Name -match '^(?i)ratchet' })) {
-        if ($packageRoot -and ($packageRoot.StartsWith($folder.FullName.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) -or (Same-Path $packageRoot $folder.FullName))) { continue }
+        $candidate = [IO.Path]::GetFullPath($folder.FullName).TrimEnd('\')
+        if ($current -and ($current.StartsWith($candidate + '\', [StringComparison]::OrdinalIgnoreCase) -or ($current -ieq $candidate))) { continue }
         $isRatchet = (Test-Path -LiteralPath (Join-Path $folder.FullName 'Ratchet-Kuleczka.ps1')) -or
                      (Test-Path -LiteralPath (Join-Path $folder.FullName 'app\Ratchet-Kuleczka.ps1')) -or
                      ((Test-Path -LiteralPath (Join-Path $folder.FullName 'server.cjs')) -and (Test-Path -LiteralPath (Join-Path $folder.FullName 'core.cjs')))

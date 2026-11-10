@@ -39,7 +39,11 @@ try {
     Put 'Ratchet-notatki\plan.txt' 'moje notatki o Ratchecie'         # Ratchet-named folder without program files
     Put 'MojProjekt\server.cjs' 'Ratchet'                             # nested, not top level
 
-    $found = @(Find-DesktopLeftovers $desk (Join-Path $desk 'Ratchet-0.2.9-RC\app'))
+    # Pass the package path in 8.3 short form when available (as on CI runners).
+    $pkgApp = Join-Path $desk 'Ratchet-0.2.9-RC\app'
+    $shortPkg = (cmd /c ('for %I in ("' + $pkgApp + '") do @echo %~sI')).Trim()
+    if ($shortPkg -and $shortPkg -ne $pkgApp) { Write-Host ('Using short package path: ' + $shortPkg) }
+    $found = @(Find-DesktopLeftovers $desk $shortPkg)
     $names = @($found | ForEach-Object { Split-Path $_ -Leaf } | Sort-Object)
     Write-Host ('FOUND: ' + ($names -join ', '))
     $expected = @('assets','PODGLAD-OFFLINE.cmd','Ratchet-0.2.8-RC-KOMPAKT','Ratchet-Kuleczka.ps1','ratchet-v0.2.4','README.md','server.cjs','ui') | Sort-Object
