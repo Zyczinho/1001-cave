@@ -57,6 +57,29 @@ test('Workspace adapter: real API 202 -> queued -> in_progress -> completed, one
   assert.ok(!disk.includes('test-secret-never-log'));
   assert.ok(!disk.includes(input.input),'Prompt text should not be persisted to local profile');
 });
+
+test('Workspace adapter: suspended prompts user once and later completed still sends final signal',async()=>{
+  const jobs=[],notices=[];
+  let status='suspended';
+  const watcher=new ChatGPTWorkspaceWatcher({
+    getJobs:()=>jobs,persist:()=>{},notify:(...n)=>notices.push(n),token:'token',
+    fetchImpl:async(url,o)=>o.method==='POST'
+      ?response(202,{agent_trigger_run_id:'apirun_abc123',conversation_url:'https://chatgpt.com/c/abcdef123'})
+      :response(200,docRun('apirun_abc123',status))
+  });
+  const job=await watcher.create(input);
+  await watcher.poll();await watcher.poll();
+  assert.equal(job.status,'suspended');
+  assert.equal(notices.length,1);
+  assert.equal(notices[0][3],'chatgpt-attention');
+  status='completed';
+  await watcher.poll();
+  assert.equal(job.status,'completed');
+  assert.equal(notices.length,2);
+  assert.equal(notices[1][3],'chatgpt');
+  assert.equal(normalizeChatGPTRuns(jobs)[0].suspendedNotified,true);
+});
+
 test('Workspace adapter: failed is not reported as completed',async()=>{
   const jobs=[],notices=[];
   const watcher=new ChatGPTWorkspaceWatcher({
