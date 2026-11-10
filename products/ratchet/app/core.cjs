@@ -1,5 +1,6 @@
 'use strict';
 const { randomUUID } = require('crypto');
+const {normalizeCoordinator}=require('./coordinator.cjs');
 const COLLECTIONS = ['schedule', 'links', 'agents'];
 const STATUS = ['working', 'needs_attention', 'ready', 'blocked', 'idle'];
 const VALID_WEEKDAYS = [0,1,2,3,4,5,6];
@@ -16,6 +17,7 @@ const INIT = {
     {id:'claude',title:'Claude',kind:'url',target:'https://claude.ai/',group:'AI'}
   ],
   agents: [],
+  coordinator: {enabled:false,jobs:[]},
   reminded: {},
   activity: [],
   orbPosition: null
@@ -33,6 +35,7 @@ function normalizeStore(obj) {
   def.settings.panelSize = normalizePanelSize(def.settings.panelSize);
   if (obj.reminded && typeof obj.reminded === 'object') def.reminded = obj.reminded;
   if (Array.isArray(obj.activity)) def.activity = obj.activity.slice(0, 100);
+  def.coordinator=normalizeCoordinator(obj.coordinator);
   if (obj.orbPosition && Number.isFinite(obj.orbPosition.x) && Number.isFinite(obj.orbPosition.y)) def.orbPosition = obj.orbPosition;
   return def;
 }
