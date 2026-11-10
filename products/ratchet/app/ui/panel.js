@@ -63,6 +63,7 @@ const bridge=window.ratchet||{
   removeActivity:async id=>{state().activity=state().activity.filter(x=>x.id!==id);persistDemo();return {removed:1};},
   saveSettings:async data=>{state().settings={...state().settings,...data};persistDemo();},
   scheduleAction:async(id,action)=>{const t=state().schedule.find(x=>x.id===id);if(action==='snooze')t.snoozeUntil=new Date(Date.now()+600000).toISOString();if(action==='start'&&t.target)window.open(t.target,'_blank','noopener,noreferrer');persistDemo();},
+  focusAgent:async()=>toast('Przejście do Claude działa w aplikacji Windows'),
   open:async(kind,target)=>{if(kind==='folder')throw Error('Otwieranie folderów działa w aplikacji Windows');if(!/^https?:\/\//.test(target))throw Error('Niepoprawny link');window.open(target,'_blank','noopener,noreferrer');},
   chatgptSignalRemove:async id=>{state().chatgptSignals=(state().chatgptSignals||[]).filter(x=>x.id!==id);persistDemo();return true;},
   chatgptCreate:async()=>{throw Error('Funkcja wymaga tokenu Workspace Agents w aplikacji Windows.');},
@@ -109,7 +110,9 @@ function renderNow(){
     const a=waiting[0];
     const title=a?esc(a.title):h.failed?'Test CI na GitHubie nie przeszedł':'Agent czeka na Ciebie';
     const why=a?esc(a.note||'Czeka na Twoją decyzję'):h.failed?'Zobacz, co się zepsuło.':'Sprawdź listę agentów.';
-    const go=a&&a.target&&h.attention===1&&!h.failed
+    const go=a&&a.source==='hook'&&h.attention===1&&!h.failed
+      ?'<button class="btn" data-action="agent-focus" data-id="'+esc(a.id)+'">'+I('external')+' Przejdź do Claude</button>'
+      :a&&a.target&&h.attention===1&&!h.failed
       ?'<button class="btn" data-action="open" data-kind="'+esc(a.kind||'url')+'" data-target="'+esc(a.target)+'">'+I('external')+' Otwórz</button>'
       :'<button class="btn" data-action="metric" data-metric="'+(h.attention?'attention':'risk')+'">Zobacz</button>';
     return '<section class="now is-alert"><div class="now-label">Potrzebuję Cię'+((h.attention+(h.failed?1:0))>1?' · '+(h.attention+(h.failed?1:0)):'')+'</div><h2>'+title+'</h2><p>'+why+'</p><div class="now-actions">'+go+'</div></section>';
@@ -215,7 +218,10 @@ function renderQuickLinks(limit){
 const labels={working:['Pracuje','blue'],needs_attention:['Potrzebuje Cię','amber'],ready:['Gotowe — zobacz','green'],blocked:['Potrzebuje Cię','red'],idle:['Spoczynek','idle']};
 function renderAgent(a){
   const [label,color]=labels[a.status]||labels.idle;
-  const open=a.target?' data-action="open" data-kind="'+esc(a.kind||'url')+'" data-target="'+esc(a.target)+'" title="Otwórz"':' data-action="edit" data-collection="agents" data-id="'+esc(a.id)+'" title="Edytuj"';
+  // A Claude Code session leads to the Claude window; a manual entry to its link.
+  const open=a.source==='hook'?' data-action="agent-focus" data-id="'+esc(a.id)+'" title="Przejdź do Claude"'
+    :a.target?' data-action="open" data-kind="'+esc(a.kind||'url')+'" data-target="'+esc(a.target)+'" title="Otwórz"'
+    :' data-action="edit" data-collection="agents" data-id="'+esc(a.id)+'" title="Edytuj"';
   return '<article class="row agent-row"><span class="s-dot '+color+'" aria-hidden="true"></span>'
     +'<button class="row-main"'+open+'><span class="row-title">'+esc(a.title)+'</span><span class="row-meta">'+esc(label)+(a.updatedAt?' · '+formatTime(a.updatedAt):'')+'</span></button>'
     +'<button class="row-act quiet-act" data-action="edit" data-collection="agents" data-id="'+esc(a.id)+'" title="Edytuj" aria-label="Edytuj: '+esc(a.title)+'">'+I('edit')+'</button></article>';
@@ -595,6 +601,7 @@ async function handleAction(el){
     if(!DEMO)snapshot=await bridge.snapshot();render();toast(act==='schedule-start'?'Działamy! ✦':act==='schedule-finish'?'Zakończono ✓':'Przypomnę za 10 minut');
   }
   if(act==='open'){await bridge.open(el.dataset.kind,el.dataset.target);toast('Otwieram ↗');}
+  if(act==='agent-focus'){await bridge.focusAgent(id);toast('Przechodzę do Claude ↗');}
   if(act==='github-refresh'){toast('Sprawdzam GitHub…');const result=await bridge.refreshGithub();snapshot={...snapshot,...result};render();if(result.githubError)toast(result.githubError);else toast('GitHub zaktualizowany');}
   if(act==='handoff'){await bridge.handoff();toast('Handoff skopiowany do schowka ✓');}
   if(act==='diagnose'){await bridge.diagnose();$('#appMenu').hidden=true;toast('Zlecono lokalną diagnostykę. Raport otworzy się na komputerze.');}

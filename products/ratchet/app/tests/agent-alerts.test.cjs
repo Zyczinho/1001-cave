@@ -78,6 +78,22 @@ test('agent alerts: server uses the rule and the orb shows both kinds with plain
   assert.match(orb,/'agent-attention' \{ return 'Rachet - potrzebuję Cię' \}/);
 });
 
+test('clicking an agent alert leads to Claude, not just the panel',()=>{
+  const server=read('server.cjs'),orb=read('Ratchet-Kuleczka.ps1'),js=read('ui/panel.js');
+  // The alert remembers its agent, and opening it asks the orb to focus Claude.
+  assert.match(server,/activity\(outcome\.alert\.text,'reminder','',outcome\.alert\.phase,\{agentId:id\}\)/);
+  assert.match(server,/if\(entry\?\.agentId\)\{[\s\S]*?focus:'claude'/);
+  assert.match(server,/if\(key==='agent:focus'\)\{[\s\S]*?focusRequests\+\+/);
+  // Bubble button, bubble text and the Windows notification all use the same path.
+  assert.match(orb,/\$script:speechOpen\.Add_Click\(\{[\s\S]*?Open-RatchetNotification \$script:bubbleEventId/);
+  assert.match(orb,/Add_BalloonTipClicked\(\{ Open-RatchetNotification \$script:balloonEventId \}\)/);
+  assert.match(orb,/Get-Process -Name 'claude'[\s\S]*?BringToFront/);
+  assert.match(orb,/\$info\.focusRequests[\s\S]*?Focus-RatchetAgent/);
+  // In the panel, a Claude Code session row and the "needs you" card go to Claude.
+  assert.match(js,/a\.source==='hook'\?' data-action="agent-focus"/);
+  assert.match(js,/data-action="agent-focus" data-id="'\+esc\(a\.id\)\+'">'\+I\('external'\)\+' Przejdź do Claude/);
+});
+
 test('panel: Today and Calendar add through one form; note sits under the link',()=>{
   const js=read('ui/panel.js');
   assert.doesNotMatch(js,/quickPlanForm/,'Today must use the same add form as Calendar');

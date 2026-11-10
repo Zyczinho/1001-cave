@@ -18,7 +18,7 @@ const UI_ROOT = path.resolve(__dirname, 'ui');
 const JSON_LIMIT = 64 * 1024;
 let state = defaults(), github = null, githubError = null, lastFetch = 0;
 let appServer, hookServer, shuttingDown = false, quitRequested = false;
-let panelRequests = 0, panelHideRequests = 0, orbResetRequests = 0, installingUpdate = false, updateAvailable = null;
+let panelRequests = 0, panelHideRequests = 0, orbResetRequests = 0, focusRequests = 0, focusFolder = '', installingUpdate = false, updateAvailable = null;
 const coordinatorRunner=new CoordinatorRunner({
   getState:()=>state.coordinator,persist:()=>save(),
   notify:(message,level,taskId,phase)=>activity(message,level,taskId,phase)
@@ -70,8 +70,8 @@ function save() {
   if(fs.existsSync(DATA)) {try {fs.copyFileSync(DATA,backup);}catch(e){console.warn('[ratchet] Backup:',e.message);} }
   fs.renameSync(tmp,DATA);
 }
-function activity(message, level='info', taskId='', phase='') {
-  const entry={id: String(Date.now()) + Math.random(),text:message,level,taskId,phase,at:new Date().toISOString()};
+function activity(message, level='info', taskId='', phase='', extra={}) {
+  const entry={id: String(Date.now()) + Math.random(),text:message,level,taskId,phase,at:new Date().toISOString(),...extra};
   state.activity.unshift(entry);state.activity=state.activity.slice(0,80);save();
   return entry;
 }
@@ -306,12 +306,25 @@ async function handleAction(key,data) {
     const entry=state.activity.find(x=>x.id===String(data.id||''));
     const task=entry?.taskId&&state.schedule.find(x=>x.id===entry.taskId);
     if(task?.target)return openTarget(task.kind,task.target);
+    // An agent alert leads to the agent: the orb brings the Claude window forward,
+    // or opens the project folder when Claude is not running.
+    if(entry?.agentId){
+      const agent=state.agents.find(x=>x.id===entry.agentId);
+      return {focus:'claude',folder:agent?.kind==='folder'?agent.target:''};
+    }
     // Notification actions may open only verified ChatGPT conversation URLs, never arbitrary links.
     if(entry?.target && /^https:\/\/chatgpt\.com\/c\/[\w-]+\/?$/.test(entry.target))
       return openTarget('url',entry.target);
     panelRequests++;return {panelRequested:true};
   }
   if(key==='open-target')return openTarget(data.kind,data.target);
+  if(key==='agent:focus'){
+    // The panel cannot raise another app's window; the orb does it on its next tick.
+    const agent=state.agents.find(x=>x.id===String(data.id||''));
+    if(!agent)throw Error('Nie ma takiego agenta');
+    focusFolder=agent.kind==='folder'?agent.target:'';focusRequests++;
+    return {focusRequested:true};
+  }
   if(key==='handoff')return handoffText(state,github);
   if(key==='panel:show'){ panelRequests++; return true; }
   if(key==='panel:hide'){ panelHideRequests++; return true; }
@@ -393,7 +406,7 @@ async function appRequest(req,res) {
   if(req.method==='GET'){
     if(url.pathname==='/api/ping') return json(res,{ok:true,version:CURRENT_VERSION,commit:BUILD.commit,root:__dirname,pid:process.pid,quitting:quitRequested});
     if(url.pathname==='/api/snapshot') return json(res,snapshot());
-    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,alwaysOnTop:state.settings.alwaysOnTop!==false,autoStart:state.settings.autoStart===true,panelSize:state.settings.panelSize||null,orbPosition:state.orbPosition||null,panelRequests,panelHideRequests,orbResetRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
+    if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,alwaysOnTop:state.settings.alwaysOnTop!==false,autoStart:state.settings.autoStart===true,panelSize:state.settings.panelSize||null,orbPosition:state.orbPosition||null,panelRequests,panelHideRequests,orbResetRequests,focusRequests,focusFolder,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
     return staticResponse(url.pathname,res);
   }
   if(req.method==='POST'&&url.pathname==='/api/action'){
@@ -433,7 +446,7 @@ function startHookServer() {
       const coordinated=coordId&&state.coordinator.jobs.some(j=>j.id===coordId&&(j.status==='running'||j.status==='queued'));
       // Coordinator-owned stages report through the runner, not duplicate human alerts.
       // agentHookOutcome stays silent while other agents in the same project still work.
-      if(!coordinated&&outcome.alert)activity(outcome.alert.text,'reminder','',outcome.alert.phase);
+      if(!coordinated&&outcome.alert)activity(outcome.alert.text,'reminder','',outcome.alert.phase,{agentId:id});
       res.writeHead(204);res.end();
     }).catch(()=>{res.writeHead(400);res.end();});
   });

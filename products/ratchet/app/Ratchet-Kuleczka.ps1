@@ -72,6 +72,16 @@ public static class RatchetNativeWindow {
     if (window == IntPtr.Zero || !GetWindowRect(window, out r)) return new int[0];
     return new int[] { r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top };
   }
+  [DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+  // Windows lets only the foreground app hand over focus. A synthetic Alt tap lifts
+  // that lock for this call, so a click in Rachet can bring Claude to the front.
+  public static bool BringToFront(IntPtr window) {
+    if (window == IntPtr.Zero || !IsWindow(window)) return false;
+    if (IsIconic(window)) ShowWindow(window, 9);
+    keybd_event(0x12, 0, 0, UIntPtr.Zero);
+    keybd_event(0x12, 0, 2, UIntPtr.Zero);
+    return SetForegroundWindow(window);
+  }
   public static bool Place(IntPtr window, int x, int y, int width, int height) {
     // SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER
     return SetWindowPos(window, IntPtr.Zero, x, y, width, height, 0x0004 | 0x0010 | 0x0200);
@@ -87,6 +97,8 @@ $script:backendStartAttempts = 0
 $script:lastPanelRequest = -1
 $script:lastPanelHideRequest = -1
 $script:lastOrbResetRequest = -1
+$script:lastFocusRequest = -1
+$script:balloonEventId = ''
 $script:hadServer = $false
 $script:consecutiveOfflineTicks = 0
 # Compact companion by default; a size the user sets by dragging the edge is remembered.
@@ -268,16 +280,38 @@ function Show-RatchetSpeech {
   $script:speechForm.Invalidate()
   return $script:speechForm.Visible
 }
-$script:speechOpen.Add_Click({
-  $id=$script:bubbleEventId
-  $script:speechForm.Hide()
-  if($id) {
+# "Take me there": the Claude window for an agent alert (its project folder when Claude
+# is closed), the task's link for a reminder, otherwise the panel.
+function Focus-RatchetAgent([string]$folder) {
+  $claude = Get-Process -Name 'claude' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+  if ($claude -and [RatchetNativeWindow]::BringToFront($claude.MainWindowHandle)) { Write-RatchetOrbLog 'AGENT_FOCUS claude'; return }
+  if ($folder) {
     try {
-      $body=@{action='notification:open';data=@{id=$id}} | ConvertTo-Json -Compress
+      $body=@{action='open-target';data=@{kind='folder';target=$folder}} | ConvertTo-Json -Compress
       Invoke-RestMethod -Uri ($script:baseUrl+'/api/action') -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body $body -TimeoutSec 2 | Out-Null
-    } catch { Open-RatchetPanel }
-  } else { Open-RatchetPanel }
+      Write-RatchetOrbLog 'AGENT_FOCUS folder'
+      return
+    } catch { Write-RatchetOrbLog ('AGENT_FOCUS_ERROR '+$_.Exception.Message) }
+  }
+  Open-RatchetPanel
+}
+function Open-RatchetNotification([string]$id) {
+  if (-not $id) { Open-RatchetPanel; return }
+  try {
+    $body=@{action='notification:open';data=@{id=$id}} | ConvertTo-Json -Compress
+    $reply=Invoke-RestMethod -Uri ($script:baseUrl+'/api/action') -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body $body -TimeoutSec 2
+    if ($reply -and $reply.result -and [string]$reply.result.focus -eq 'claude') { Focus-RatchetAgent ([string]$reply.result.folder) }
+  } catch { Open-RatchetPanel }
+}
+$script:speechOpen.Add_Click({
+  $script:speechForm.Hide()
+  Open-RatchetNotification $script:bubbleEventId
 })
+# The whole bubble is clickable, not only the small button.
+foreach ($clickable in @($script:speechTitle, $script:speechText)) {
+  $clickable.Cursor = [System.Windows.Forms.Cursors]::Hand
+  $clickable.Add_Click({ $script:speechForm.Hide(); Open-RatchetNotification $script:bubbleEventId })
+}
 $script:speechLater.Add_Click({
   $script:speechForm.Hide()
   if($script:bubbleTaskId -and $script:bubblePhase -eq 'start') {
@@ -631,7 +665,7 @@ $quitItem.Add_Click({
 # The orb handles its own right-click menu to work independently of Edge and localhost.
 $script:notifyIcon.ContextMenuStrip=$menu
 $script:notifyIcon.Add_DoubleClick({$form.Show();Open-RatchetPanel})
-$script:notifyIcon.Add_BalloonTipClicked({Open-RatchetPanel})
+$script:notifyIcon.Add_BalloonTipClicked({ Open-RatchetNotification $script:balloonEventId })
 
 # Autostart is managed only for the installed copy, never for a test or a loose ZIP folder.
 function Sync-RatchetAutoStart {
@@ -736,6 +770,12 @@ $timer.Add_Tick({
             $script:lastPanelRequest = [int]$info.panelRequests
             Open-RatchetPanel
         }
+        if ($null -ne $info.focusRequests -and [int]$info.focusRequests -gt $script:lastFocusRequest) {
+            # The first value seen only sets the baseline: starting Rachet never pulls Claude forward.
+            $act = $script:lastFocusRequest -ge 0
+            $script:lastFocusRequest = [int]$info.focusRequests
+            if ($act) { Focus-RatchetAgent ([string]$info.focusFolder) }
+        }
         if ($null -ne $info.panelHideRequests -and [int]$info.panelHideRequests -gt $script:lastPanelHideRequest) {
             $script:lastPanelHideRequest = [int]$info.panelHideRequests
             Close-RatchetPanel
@@ -784,6 +824,7 @@ $timer.Add_Tick({
                 $windowsAttempted=$false
                 $bubbleShown=$false
                 try {
+                  $script:balloonEventId=[string]$entry.id
                   $script:notifyIcon.ShowBalloonTip(7000,$title,[string]$entry.text,[System.Windows.Forms.ToolTipIcon]::Info)
                   $windowsAttempted=$true
                 } catch { Write-RatchetOrbLog ('WINDOWS_NOTIFICATION_ERROR '+$_.Exception.Message) }
@@ -824,6 +865,7 @@ try {
     if ($null -ne $initial.panelRequests) { $script:lastPanelRequest = [int]$initial.panelRequests }
     if ($null -ne $initial.panelHideRequests) { $script:lastPanelHideRequest = [int]$initial.panelHideRequests }
     if ($null -ne $initial.orbResetRequests) { $script:lastOrbResetRequest = [int]$initial.orbResetRequests }
+    if ($null -ne $initial.focusRequests) { $script:lastFocusRequest = [int]$initial.focusRequests }
 } catch {}
 $timer.Start()
 # Start with only the orb. Panel is opened on explicit click.
