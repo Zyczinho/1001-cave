@@ -85,7 +85,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $installer = Join-Path $env:RUNNER_TEMP 'ratchet-unpacked-verify\Instaluj-Ratchet-Test.ps1'
           if(-not (Test-Path -LiteralPath $installer)){throw 'RC installer missing after unzip'}
-          $install = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$installer+'"')) -PassThru -Wait
+          # -Wait would wait for the long-lived orb descendant too: poll only installer PID.
+          $install = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$installer+'"')) -PassThru
+          for($i=0;$i -lt 100;$i++){ Start-Sleep -Milliseconds 300; $install.Refresh(); if($install.HasExited){break} }
+          if(-not $install.HasExited){throw 'Installer did not exit within 30s'}
           if($install.ExitCode -ne 0){
             $log = Join-Path $env:LOCALAPPDATA 'Ratchet\installer-test.log'
             if(Test-Path -LiteralPath $log){Get-Content -LiteralPath $log -Tail 30 | Write-Host}
