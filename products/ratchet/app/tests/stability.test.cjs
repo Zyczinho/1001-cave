@@ -45,7 +45,7 @@ test('backend startup accepts old versions 0.2.0 through 0.2.7 without corrupt P
   assert.ok(src.includes(String.raw`-match '^0\.2\.[0-7]$'`),'version-regex must retain closing quote and anchor');
   assert.ok(src.includes("$existing.version -eq '0.2.8'"));
   assert.equal((src.match(/function Start-RatchetBackend/g)||[]).length,1);
-  assert.ok(src.trimEnd().endsWith('return $null\n}'),'backend script must not have extra tokens after its single function');
+  assert.match(src.trimEnd(),/return \$null\r?\n\}$/,'backend script must not have extra tokens after its single function');
 });
 test('PowerShell updater message does not interpolate an invalid drive-style variable',()=>{
   const src=read('Apply-Ratchet-Update.ps1');
