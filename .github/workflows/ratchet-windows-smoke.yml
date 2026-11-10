@@ -50,7 +50,7 @@ jobs:
           try {
             $h = Start-RatchetBackend
             if (-not $h) { throw "Start-RatchetBackend returned null" }
-            if (-not $h.ok -or $h.version -ne '0.2.7') { throw "Wrong health response: $($h|ConvertTo-Json -Compress)" }
+            if (-not $h.ok -or $h.version -ne '0.2.8') { throw "Wrong health response: $($h|ConvertTo-Json -Compress)" }
             Write-Host "BACKEND_OK: $($h|ConvertTo-Json -Compress)"
           } finally {
             try {
