@@ -37,3 +37,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\\products\\ratchet\\app\\t
 ```
 
 NIE uruchamiać instalatora `ZAINSTALUJ RATCHET.cmd` ani `Instaluj-Ratchet.ps1` podczas testów z tej gałęzi.
+
+## Kalendarz — rozszerzenie z 10.11.2026
+- Zakładka `Kalendarz` obok `Dziś`: poprzedni/następny miesiąc, wskaźnik zajętości dnia, kliknięcie dnia pokazuje agendę.
+- Jednorazowe terminy i cykliczne dni tygodnia działają wspólnie; edycja bloku nie kasuje `completedDates`. Wykonanie cyklicznego zadania oznacza tylko bieżącą datę.
+- Wyczyść sygnały NIE czyści historii zakończeń w kalendarzu.
+- `+ Dodaj` z kalendarza wstawia wybrany dzień do formularza; `jutro od 8 szukanie pracy na portalach` w polu szybkiego planowania tworzy blok i automatycznie przełącza widok na jutro. Docelowy portal domyślny: Just Join IT; link można zmienić edycją zadania.
+- Test na małym panelu 360×520: sprawdzić, czy pięć zakładek nie nachodzi na siebie, czy kratki 7×N mają czytelne daty i czy agenda jest przewijalna.
+- **Nie jest to autonomiczny agent szukający ofert.** Rutyna uruchamia przypomnienie, a kliknięcie bloku otwiera zapisany link. Ratchet musi działać, aby wyemitować przypomnienie; uśpiony komputer nie daje gwarancji dostarczenia o czasie.
+- Po zmianach kodu zamknąć tylko TESTOWĄ kuleczkę i zaktualizować kopię testową. Oryginalny Ratchet nie jest nadpisywany.
