@@ -206,7 +206,7 @@ const agentGuideSteps=[
     icon:'glasses',
     title:'Poznaj dwa tryby pracy',
     body:'Obserwowanie pokazuje status istniejącej sesji AI. Koordynator uruchamia osobne, lokalne etapy analizy i recenzji. To dwie różne funkcje.',
-    note:'Claude Code może zgłaszać zakończenie przez hooki. Zwykły ChatGPT w przeglądarce nie wysyła Ratchetowi informacji, że skończył odpowiedź.'
+    note:'Claude Code wysyła hooki, a Workspace Agent ChatGPT ma oficjalne statusy API. Zwykła rozmowa ChatGPT nie udostępnia takiego sygnału.'
   },
   {
     icon:'edit',
