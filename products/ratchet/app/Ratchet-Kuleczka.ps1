@@ -260,7 +260,7 @@ function Show-RatchetSpeech {
   $script:bubbleEventId=$eventId
   $script:bubbleTaskId=$taskId
   $script:bubblePhase=$phase
-  $script:speechTitle.Text = if($phase -eq 'coordinator'){'Ratchet - koordynator'} elseif($phase -eq 'agent'){'Ratchet - agent'} elseif($phase -eq 'test'){'Ratchet - test'} else {'Ratchet - przypomnienie'}
+  $script:speechTitle.Text = if($phase -eq 'chatgpt' -or $phase -eq 'chatgpt-failure'){'Ratchet - ChatGPT'} elseif($phase -eq 'coordinator'){'Ratchet - koordynator'} elseif($phase -eq 'agent'){'Ratchet - agent'} elseif($phase -eq 'test'){'Ratchet - test'} else {'Ratchet - przypomnienie'}
   $script:speechText.Text = if($message.Length -gt 136){$message.Substring(0,133)+'...'}else{$message}
   Place-RatchetSpeech
   $script:bubbleUntil=[datetime]::UtcNow.AddSeconds(9)
@@ -704,6 +704,8 @@ function Get-RatchetReminderTitle([string]$phase) {
         'agent' { return 'Ratchet - zakonczono sesje Claude Code' }
         'agent-failure' { return 'Ratchet - blad Claude Code' }
         'coordinator' { return 'Ratchet - koordynator zadan' }
+        'chatgpt' { return 'Ratchet - ChatGPT zakonczyl zadanie' }
+        'chatgpt-failure' { return 'Ratchet - ChatGPT wymaga uwagi' }
         default { return $null }
     }
 }
