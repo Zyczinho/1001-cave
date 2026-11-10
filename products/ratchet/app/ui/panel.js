@@ -189,6 +189,7 @@ async function handleAction(el){
   if(act==='open'){await bridge.open(el.dataset.kind,el.dataset.target);toast('Otwieram ↗');}
   if(act==='github-refresh'){toast('Sprawdzam GitHub…');const result=await bridge.refreshGithub();snapshot={...snapshot,...result};render();if(result.githubError)toast(result.githubError);else toast('GitHub zaktualizowany');}
   if(act==='handoff'){await bridge.handoff();toast('Handoff skopiowany do schowka ✓');}
+  if(act==='diagnose'){await bridge.diagnose();$('#appMenu').hidden=true;toast('Zlecono lokalną diagnostykę. Raport otworzy się na komputerze.');}
   if(act==='update-check'){
     tab='settings';render();toast('Sprawdzam kanał aktualizacji…');
     updateInfo=await bridge.checkUpdate();
