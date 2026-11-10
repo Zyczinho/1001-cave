@@ -15,12 +15,12 @@ function normalizeSignals(input){
   }));
 }
 function startSignal(signals,raw){
-  if(signals.length>=MAX)throw Error('Limit 60 sygnałów. Usuń stare wpisy.');
   const title=trim(raw?.title,160),clientKey=trim(raw?.clientKey,100);
   if(title.length<3)throw Error('Podaj nazwę zadania.');
   if(clientKey.length<8)throw Error('Podaj niepowtarzalny identyfikator zadania.');
   const existing=signals.find(x=>x.clientKey===clientKey);
   if(existing)return {signal:existing,created:false};
+  if(signals.length>=MAX)throw Error('Limit 60 sygnałów. Usuń stare wpisy.');
   const at=new Date().toISOString();
   const signal={id:randomUUID(),title,clientKey,status:'working',note:'',
     conversationUrl:chatUrl(raw?.conversationUrl),startedAt:at,updatedAt:at};
