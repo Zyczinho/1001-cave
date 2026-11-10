@@ -66,7 +66,7 @@ async function refreshGithub(force=false) {
   if(!/^[-\w.]+\/[-\w.]+$/.test(repo)) {githubError='Repo powinno mieć format właściciel/nazwa';return {github,githubError};}
   lastFetch=Date.now();
   try {
-    const headers={'Accept':'application/vnd.github+json','User-Agent':'Ratchet/0.2.7','X-GitHub-Api-Version':'2022-11-28'};
+    const headers={'Accept':'application/vnd.github+json','User-Agent':'Ratchet/0.2.8','X-GitHub-Api-Version':'2022-11-28'};
     async function gh(endpoint) {
       const res=await fetch('https://api.github.com'+endpoint,{headers,signal:AbortSignal.timeout(12000)});
       if(!res.ok) throw Error('GitHub HTTP '+res.status);
@@ -208,7 +208,7 @@ async function appRequest(req,res) {
   if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) return fail(res,'Tylko localhost',403);
   const url=new URL(req.url,`http://127.0.0.1:${PORT}`);
   if(req.method==='GET'){
-    if(url.pathname==='/api/ping') return json(res,{ok:true,version:'0.2.7'});
+    if(url.pathname==='/api/ping') return json(res,{ok:true,version:'0.2.8'});
     if(url.pathname==='/api/snapshot') return json(res,snapshot());
     if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,panelRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,12),notifications:state.settings.notifications});
     return staticResponse(url.pathname,res);
@@ -242,7 +242,7 @@ function main(){
   read();checkSchedule();
   appServer=http.createServer((req,res)=>{appRequest(req,res).catch(e=>fail(res,e.message,500));});
   appServer.on('error',e=>{console.error('[ratchet] Server:',e.message);process.exit(1);});
-  appServer.listen(PORT,'127.0.0.1',()=>console.log('Ratchet 0.2.7 start: http://127.0.0.1:'+PORT));
+  appServer.listen(PORT,'127.0.0.1',()=>console.log('Ratchet 0.2.8 start: http://127.0.0.1:'+PORT));
   if(process.env.RATCHET_DISABLE_HOOKS!=='1')startHookServer();
   setInterval(checkSchedule,15000);
   refreshGithub(true).catch(e=>console.warn('GitHub:',e.message));
