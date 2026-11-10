@@ -1,10 +1,12 @@
-# Ratchet 0.2.7 — sprint stabilności (1001 CAVE)
+# Ratchet 0.2.8 RC — stabilność i samodiagnostyka (1001 CAVE)
+
+**Status: kandydat do wydania. Niepublikowany w kanale stable; wymaga zielonego Windows CI i rzeczywistego testu na komputerze.**
 
 Ratchet jest małym asystentem Windows: plan dnia, skróty do stron i folderów, monitoring sesji agentów oraz wybrane informacje z GitHuba. Ta wersja koncentruje się na stabilności; bez Electron i bez `npm install`. Wymagany jest lokalnie Node.js.
 
-## Aktualizacja z wersji 0.2.4–0.2.5 (zalecana)
+## Aktualizacja z wersji 0.2.4–0.2.7 (po zatwierdzeniu wydania)
 
-Jeśli Ratchet jest zainstalowany w `%LOCALAPPDATA%\Ratchet\app`, uruchom jego zwykły skrót, wybierz **Ustawienia → Sprawdź aktualizacje → Zainstaluj 0.2.7**. Kanał jest w prywatnym repozytorium `Zyczinho/1001-cave`, gałąź `ratchet-updates`. Obecna wersja aktualizatora korzysta z jednorazowego logowania do GitHub CLI (`gh auth login`) w przypadku prywatnego repo. Nie trzeba zmieniać widoczności repo ani ponownie rozpakowywać ZIP-ów.
+Jeśli Ratchet jest zainstalowany w `%LOCALAPPDATA%\Ratchet\app`, uruchom jego zwykły skrót, wybierz **Ustawienia → Sprawdź aktualizacje → Zainstaluj 0.2.8**, dopiero gdy 0.2.8 zostanie opublikowana po testach. Kanał jest w prywatnym repozytorium `Zyczinho/1001-cave`, gałąź `ratchet-updates`. Obecna wersja aktualizatora korzysta z jednorazowego logowania do GitHub CLI (`gh auth login`) w przypadku prywatnego repo. Nie trzeba zmieniać widoczności repo ani ponownie rozpakowywać ZIP-ów.
 
 **Ważne przy pierwszym przejściu:** stara wersja aktualizatora (0.2.4) uruchamia aktualizację według swoich dotychczasowych zasad. Test po restarcie i automatyczny rollback są częścią nowego aktualizatora 0.2.7 i działają dla kolejnych wersji. Nie zamykaj Ratcheta podczas podmiany plików. W przypadku pierwszej awarii sprawdź `%LOCALAPPDATA%\Ratchet\update-log.txt`.
 
@@ -27,7 +29,7 @@ Automatycznie: `node --test tests/*.test.cjs` — 34 testy (logika, serwer HTTP,
 
 **Testy manualne Windows są obowiązkowe przed uznaniem wydania za w pełni stabilne:**
 
-1. Uruchom Ratcheta ze skrótu, zamknij każdy otwarty Terminal. `/api/ping` nadal zwraca `ok:true` oraz `version:0.2.7`.
+1. Uruchom Ratcheta ze skrótu, zamknij każdy otwarty Terminal. `/api/ping` nadal zwraca `ok:true` oraz `version:0.2.8`.
 2. Kliknij kuleczkę szybko pięć razy: pozostaje jedno okno panelu.
 3. Klikaj w pulpit, linki i przyciski tuż poza obrysem kuleczki: żadne kliknięcie nie jest przechwytywane.
 4. Zamknij wyłącznie proces `node.exe` uruchamiający `server.cjs` Ratcheta: kuleczka powinna automatycznie odtworzyć serwer.
@@ -57,4 +59,4 @@ To jest P0: **jeden raport zamiast serii kopiowanych komend**. Drugi etap — au
 
 Nie usuwaj folderu profilu, nawet jeśli chcesz odinstalować starą aplikację. W razie awarii ustawień autostartu/Windows użyj zwykłego skrótu lub pliku `URUCHOM-RATCHET.cmd` z katalogu instalacji.
 
-**Status wydania:** automatyczne testy zaliczone; kod opublikowany do ręcznego testu na Windowsie. Natywnego testu PowerShell/WinForms nie można uznać za zakończony na podstawie testów Node.
+**Status wydania:** kod przygotowany, ale kontrola CI dla tego repozytorium jest zablokowana przed przydziałem runnera. Nie uznawać tego wydania za dostępne ani przetestowane. Natywnego testu PowerShell/WinForms nie można uznać za zakończony na podstawie testów Node.
