@@ -52,3 +52,14 @@ test('PowerShell updater message does not interpolate an invalid drive-style var
   assert.ok(src.includes('SUCCESS ${ExpectedVersion}: /api/ping confirmed'));
   assert.doesNotMatch(src,/SUCCESS \$ExpectedVersion:/);
 });
+
+test('orb never mistakes Windows Terminal or PowerShell with title Ratchet for Edge panel',()=>{
+  const src=read('Ratchet-Kuleczka.ps1');
+  assert.match(src,/GetWindowThreadProcessId/);
+  assert.match(src,/Process\.GetProcessById/);
+  assert.match(src,/owner\.ProcessName, "msedge"/);
+  assert.match(src,/return true;\s*}\s*catch/);
+  const smoke=read('tests/windows-ui-smoke.ps1');
+  assert.match(smoke,/RATCHET_TERMINAL_DECOY_READY/);
+  assert.match(smoke,/RatchetSmokeWindows\]::PanelTitles/);
+});
