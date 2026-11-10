@@ -17,7 +17,7 @@ const iso=()=>new Date().toISOString();
 const safeStatus=new Set(['queued','running','attention','done','cancelled']);
 function normalizeCoordinator(raw){
   const r=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};
-  const jobs=Array.isArray(r.jobs)?r.jobs.slice(-MAX_JOBS).map(j=>{
+  const jobs=Array.isArray(r.jobs)?r.jobs.slice(-MAX_JOBS).filter(j=>j&&typeof j==='object'&&!Array.isArray(j)).map(j=>{
     const stages=Array.isArray(j.stages)?j.stages.slice(0,2).map((s,i)=>({
       role:ROLES[i],provider:i===1&&s?.provider==='codex'?'codex':'claude',status:safeStatus.has(s?.status)?s.status:'queued',
       startedAt:trim(s?.startedAt,60),finishedAt:trim(s?.finishedAt,60),
@@ -77,7 +77,7 @@ function executionSpec(job){
   if(stage?.role==='review'&&stage.provider==='codex'){
     // Codex is an OPTIONAL, separate CLI process, never an existing ChatGPT private chat.
     // Fail closed on machines where --sandbox read-only is unavailable.
-    return {command:'codex',args:['exec','--sandbox','read-only','--skip-git-repo-check',promptFor(job)]};
+    return {command:'codex',args:['exec','--sandbox','read-only','--ask-for-approval','never','--skip-git-repo-check',promptFor(job)]};
   }
   if(stage?.provider!=='claude')throw Error('Nieobsługiwany wykonawca');
   return {command:'claude',args:claudeArgs(job)};
