@@ -199,16 +199,21 @@ $knownDirs = @{
     'scripts' = @('claude-hook.cjs','install-claude-hooks.cjs','remove-claude-hooks.cjs','build-candidate.cjs')
     'assets' = @('ratchet.ico','ratchet.png')
 }
+# Names other programs also use: moved only if the file content mentions Ratchet.
+$genericNames = @('README.md','CZYTAJ-MNIE.txt','server.cjs','core.cjs','updater.cjs','ratchet-release-manifest.json')
+# Returns a plain list (one entry per path); callers wrap it in @(...).
 function Find-DesktopLeftovers([string]$desktop, [string]$packageRoot) {
-    $found = @()
-    if (-not (Test-Path -LiteralPath $desktop -PathType Container)) { return ,$found }
+    $found = New-Object System.Collections.Generic.List[string]
+    if (-not (Test-Path -LiteralPath $desktop -PathType Container)) { return }
     foreach ($name in $knownFiles) {
         $path = Join-Path $desktop $name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
-        # A file with a common name (README.md) is moved only if it is really Ratchet's.
-        $text = ''
-        try { $text = [IO.File]::ReadAllText($path) } catch {}
-        if ($text -match '(?i)ratchet') { $found += $path }
+        if ($genericNames -contains $name) {
+            $text = ''
+            try { $text = [IO.File]::ReadAllText($path) } catch {}
+            if ($text -notmatch '(?i)ratchet') { continue }
+        }
+        $found.Add($path)
     }
     foreach ($dir in $knownDirs.Keys) {
         $path = Join-Path $desktop $dir
@@ -216,7 +221,7 @@ function Find-DesktopLeftovers([string]$desktop, [string]$packageRoot) {
         $items = @(Get-ChildItem -LiteralPath $path -Force -Recurse)
         if ($items.Count -eq 0) { continue }
         $foreign = @($items | Where-Object { $_.PSIsContainer -or ($knownDirs[$dir] -notcontains $_.Name) })
-        if ($foreign.Count -eq 0) { $found += $path }
+        if ($foreign.Count -eq 0) { $found.Add($path) }
     }
     # Earlier unpacked Ratchet packages (e.g. Ratchet-0.2.8-RC-KOMPAKT), never the current one.
     foreach ($folder in @(Get-ChildItem -LiteralPath $desktop -Directory -Force | Where-Object { $_.Name -match '^(?i)ratchet' })) {
@@ -224,9 +229,9 @@ function Find-DesktopLeftovers([string]$desktop, [string]$packageRoot) {
         $isRatchet = (Test-Path -LiteralPath (Join-Path $folder.FullName 'Ratchet-Kuleczka.ps1')) -or
                      (Test-Path -LiteralPath (Join-Path $folder.FullName 'app\Ratchet-Kuleczka.ps1')) -or
                      ((Test-Path -LiteralPath (Join-Path $folder.FullName 'server.cjs')) -and (Test-Path -LiteralPath (Join-Path $folder.FullName 'core.cjs')))
-        if ($isRatchet) { $found += $folder.FullName }
+        if ($isRatchet) { $found.Add($folder.FullName) }
     }
-    return ,$found
+    foreach ($item in $found) { Write-Output $item }
 }
 function Invoke-DesktopCleanup([string]$packageRoot) {
     $desktop = [Environment]::GetFolderPath('DesktopDirectory')

@@ -40,6 +40,14 @@ test('installer creates a separate shortcut which works without orb',()=>{
   assert.match(s,/Diagnostyka-Ratchet\.ps1/);
 });
 
+test('Desktop leftover finder returns one path per entry (no wrapped array)',()=>{
+  const s=read('Instaluj-Ratchet.ps1');
+  assert.doesNotMatch(s,/return ,\$found/);
+  assert.match(s,/\$leftovers = @\(Find-DesktopLeftovers \$desktop \$packageRoot\)/);
+  assert.match(s,/\$genericNames = @\('README\.md'/);
+  assert.ok(fs.existsSync(path.join(__dirname,'desktop-cleanup.ps1')));
+});
+
 test('launcher captures failed startup independently of UI',()=>{
   const s=read('Uruchom-Ratchet-Bez-Electron.ps1');
   assert.match(s,/catch\s*\{[\s\S]*Diagnostyka-Ratchet\.ps1[\s\S]*-Quiet/);

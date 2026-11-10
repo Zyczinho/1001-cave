@@ -40,6 +40,10 @@ jobs:
             if (@($errors).Count -gt 0) { throw "Parser error $f : $($errors | Out-String)" }
             Write-Host "PARSE_OK: $f"
           }
+      - name: Installer Desktop cleanup selects only Ratchet leftovers
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tests\desktop-cleanup.ps1
       - name: One-click diagnostics run when backend is offline
         run: |
           $ErrorActionPreference = 'Stop'
