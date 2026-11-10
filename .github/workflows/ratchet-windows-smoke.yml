@@ -28,7 +28,7 @@ jobs:
           node --test tests/*.test.cjs
       - name: Parse PowerShell scripts
         run: |
-          $files = @('Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1','Uruchom-Ratchet-Bez-Electron.ps1','Apply-Ratchet-Update.ps1','Diagnostyka-Ratchet.ps1')
+          $files = @('Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1','Uruchom-Ratchet-Bez-Electron.ps1','Apply-Ratchet-Update.ps1','Diagnostyka-Ratchet.ps1','Instaluj-Ratchet.ps1','Instaluj-Ratchet-Test.ps1','tests/windows-ui-smoke.ps1')
           foreach ($f in $files) {
             $tokens = $null
             $errors = $null
@@ -62,6 +62,31 @@ jobs:
               Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 3 | Out-Null
             } catch { Write-Host "Stop error: $($_.Exception.Message)" }
           }
+      - name: Native orb and Edge panel lifecycle
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tests\windows-ui-smoke.ps1
+      - name: Build verified Windows RC installation ZIP
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:RATCHET_RC_DIR = Join-Path $env:RUNNER_TEMP 'ratchet-rc-0.2.8'
+          node -e "const x=require('./scripts/build-candidate.cjs'); const b=x.buildCandidate({outputDir:process.env.RATCHET_RC_DIR}); console.log('RC verified files:',b.files)"
+          $source = Join-Path $env:RATCHET_RC_DIR 'ratchet-updates\releases\v0.2.8'
+          $zip = Join-Path $env:RUNNER_TEMP 'Ratchet-0.2.8-RC-Windows.zip'
+          Compress-Archive -Path (Join-Path $source '*') -DestinationPath $zip -CompressionLevel Optimal
+          $unpacked = Join-Path $env:RUNNER_TEMP 'ratchet-unpacked-verify'
+          Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
+          foreach ($required in @('ZAINSTALUJ-TEST.cmd','Instaluj-Ratchet-Test.ps1','ratchet-release-manifest.json','Ratchet-Kuleczka.ps1')) {
+            if(-not (Test-Path -LiteralPath (Join-Path $unpacked $required))) {throw ('RC ZIP missing '+$required)}
+          }
+          Write-Host ('RC_ZIP_OK: '+$zip)
+      - name: Publish downloadable TEST artifact (not stable channel)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ratchet-0.2.8-RC-Windows
+          path: ${{ runner.temp }}\Ratchet-0.2.8-RC-Windows.zip
+          retention-days: 30
+          if-no-files-found: error
       - name: Diagnostics on failure
         if: failure()
         run: |
