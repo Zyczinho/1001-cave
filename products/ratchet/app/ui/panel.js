@@ -198,7 +198,7 @@ function renderCoordinator(){
     +'<input name="projectRoot" aria-label="Folder projektu Windows" placeholder="C:\\Users\\...\\city-route-app" required>'
     +'<select name="reviewer" aria-label="Drugi wykonawca"><option value="claude">Recenzja: drugi Claude Code</option><option value="codex">Recenzja: Codex CLI (jeśli zainstalowany)</option></select>'
     +'<button class="btn small full" type="submit">+ Zleć analizę i recenzję</button></form>'
-    +'<p class="hint">Tryb wykonawczy domyślnie wyłączony. Włączenie uruchamia lokalne procesy CLI z limitem ok. $0.35 na etap (szacunek może zostać przekroczony). Maks. 2 równoczesne zadania. Nie steruje otwartymi rozmowami ChatGPT.</p></div>';
+    +'<p class="hint">Tryb wykonawczy domyślnie wyłączony. Claude ma szacowany limit $0.35 na etap (może zostać przekroczony). Codex zużywa limity swojego konta i nie ma limitu USD w Ratchecie. Maks. 2 zadania równolegle. Nie steruje otwartymi rozmowami ChatGPT.</p></div>';
   for(const job of (c.jobs||[]).slice(0,8)){
     const names={queued:'Oczekuje',running:'Agent analizuje',attention:'Wymaga uwagi',done:'Analizy gotowe',cancelled:'Anulowano'};
     const steps=job.stages||[];
