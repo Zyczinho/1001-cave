@@ -155,4 +155,6 @@ test('Workspace adapter: UI does not request credentials in form or assert ordin
   assert.match(server,/chatgptWatcher\.poll/);
   assert.match(native,/'chatgpt' \{ return/);
   assert.match(native,/'chatgpt-failure' \{ return/);
+  const coordinator=fs.readFileSync(path.resolve(__dirname,'../coordinator.cjs'),'utf8');
+  assert.match(coordinator,/key!=='RATCHET_WORKSPACE_AGENT_TOKEN'/);
 });
