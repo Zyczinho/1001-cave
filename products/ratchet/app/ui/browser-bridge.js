@@ -1,6 +1,6 @@
 'use strict';
 // Only in the local Node companion, not in Electron and not in file:// preview.
-if(!window.ratchet && location.hostname==='127.0.0.1' && location.port==='47823') {
+if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.0.1' && /^\d+$/.test(location.port)) {
   async function request(url,init) {
     let res;
     try {res=await fetch(url,init);}
