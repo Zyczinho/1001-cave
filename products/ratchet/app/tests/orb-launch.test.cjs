@@ -3,10 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const text = fs.readFileSync(path.join(__dirname,'..','Ratchet-Kuleczka.ps1'),'utf8');
-test('edge receives final position at creation', () => {
-  assert.match(text, /--window-position=\$x,\$y/);
-  assert.match(text, /--window-size=\$width,\$height/);
-  assert.doesNotMatch(text, /MoveWindow/);
+test('edge receives final geometry at creation in its own profile', () => {
+  assert.match(text, /'--window-size=' \+ \$g\[2\] \+ ',' \+ \$g\[3\]/);
+  assert.match(text, /'--window-position=' \+ \$g\[0\] \+ ',' \+ \$g\[1\]/);
+  assert.match(text, /'--user-data-dir="' \+ \$script:panelProfile \+ '"'/);
+  assert.match(text, /'--no-first-run'/);
 });
 test('no forced opening on mascot startup', () => {
   const tail=text.slice(text.lastIndexOf('$timer.Start()'));

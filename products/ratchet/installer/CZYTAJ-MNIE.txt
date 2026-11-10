@@ -1,0 +1,22 @@
+RATCHET - instalacja (wersja testowa)
+
+1. Kliknij dwukrotnie "ZAINSTALUJ RATCHET.cmd".
+2. Poczekaj kilkanaście sekund. Na końcu zobaczysz okno "Ratchet ... jest zainstalowany".
+3. Kuleczka pojawi się na pulpicie. Kliknij ją, aby otworzyć mały panel.
+
+Co robi instalator:
+- kopiuje program do %LOCALAPPDATA%\Ratchet\app (tylko pliki z listy, sprawdzone SHA-256),
+- tworzy na Pulpicie dwa skróty: "Ratchet" i "Ratchet - Diagnostyka",
+- robi kopię Twoich danych (%APPDATA%\Ratchet) i poprzedniej wersji programu,
+- jeśli nowa wersja się nie uruchomi, sam przywraca poprzednią.
+
+Twoje zadania i skróty zostają nietknięte.
+Po instalacji ten folder możesz usunąć.
+
+Wymagane: Windows 10/11, Microsoft Edge, Node.js LTS.
+
+Avast / AVG: ich ochrona zachowań (IDP.Generic) potrafi przerwać instalator
+i usunąć skrypty Ratcheta. Przed instalacją dodaj wyjątek:
+  Avast -> Menu -> Ustawienia -> Ogólne -> Wyjątki -> Dodaj wyjątek
+  %LOCALAPPDATA%\Ratchet\*
+Rozpakuj ZIP do %LOCALAPPDATA%\Ratchet\instalator, aby ten sam wyjątek go obejmował.

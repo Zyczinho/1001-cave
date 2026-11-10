@@ -32,6 +32,6 @@ if(!window.ratchet && location.hostname==='127.0.0.1' && location.port==='47823'
     diagnose:()=>action('diagnostics:run'),
     testNotification:()=>action('notification:test'),
     quit:()=>action('quit'),
-    resetOrb:async()=>true
+    resetOrb:()=>action('orb:reset')
   };
 }

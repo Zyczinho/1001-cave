@@ -5,7 +5,7 @@ const STATUS = ['working', 'needs_attention', 'ready', 'blocked', 'idle'];
 const VALID_WEEKDAYS = [0,1,2,3,4,5,6];
 const INIT = {
   version: 1,
-  settings: { repo: 'Zyczinho/city-route-app', notifications: true, autoStart: false, alwaysOnTop: true, avatarSize: 84 },
+  settings: { repo: 'Zyczinho/city-route-app', notifications: true, autoStart: false, alwaysOnTop: true, avatarSize: 84, panelSize: null },
   schedule: [],
   links: [
     {id:'cityroute',title:'City Route',kind:'url',target:'https://city-route-app.jakublojek.workers.dev',group:'Projekt'},
@@ -30,10 +30,18 @@ function normalizeStore(obj) {
     for (const key of Object.keys(def.settings)) if (key in obj.settings) def.settings[key] = obj.settings[key];
   }
   if (![48,56,64,72,84,100,112].includes(def.settings.avatarSize)) def.settings.avatarSize = 84;
+  def.settings.panelSize = normalizePanelSize(def.settings.panelSize);
   if (obj.reminded && typeof obj.reminded === 'object') def.reminded = obj.reminded;
   if (Array.isArray(obj.activity)) def.activity = obj.activity.slice(0, 100);
   if (obj.orbPosition && Number.isFinite(obj.orbPosition.x) && Number.isFinite(obj.orbPosition.y)) def.orbPosition = obj.orbPosition;
   return def;
+}
+// A remembered panel size must stay a small companion, never a desktop-sized window.
+function normalizePanelSize(size) {
+  if (!size || typeof size !== 'object') return null;
+  const w = Math.round(Number(size.w)), h = Math.round(Number(size.h));
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 280 || w > 900 || h < 340 || h > 1100) return null;
+  return { w, h };
 }
 function cleanText(input, max = 300) { return String(input ?? '').trim().slice(0, max); }
 function normalizeItem(collection, raw) {
@@ -135,4 +143,4 @@ function handoffText(state, github) {
   lines.push('', 'POLECENIE:', 'Przed zmianą kodu sprawdź aktualny main, PR-y, zmieniane pliki i testy. Nie zakładaj, że odpowiedź agenta oznacza wdrożenie. Pracuj na osobnej gałęzi/worktree. Przy nakładaniu się plików uzgodnij kolejność merge. Po zmianie podaj commit, testy i status PR.');
   return lines.join('\n');
 }
-module.exports = {defaults,normalizeStore,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText};
+module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText};

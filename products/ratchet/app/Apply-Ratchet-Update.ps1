@@ -17,6 +17,9 @@ function Ping {
 function Launch {
   $launcher=Join-Path $AppRoot 'Uruchom-Ratchet-Bez-Electron.ps1'
   if(-not (Test-Path -LiteralPath $launcher -PathType Leaf)){throw 'Brakuje launchera Ratcheta'}
+  # Ratchet.exe (built by the installer) starts PowerShell without any console window.
+  $exe=Join-Path $AppRoot 'Ratchet.exe'
+  if(Test-Path -LiteralPath $exe -PathType Leaf){ Start-Process -FilePath $exe -WorkingDirectory $AppRoot | Out-Null; return }
   Start-Process -FilePath 'powershell.exe' -WorkingDirectory $AppRoot -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$launcher+'"')) | Out-Null
 }
 function WaitForVersion([string]$version,[int]$tries=48) {

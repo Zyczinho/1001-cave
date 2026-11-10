@@ -1,15 +1,17 @@
-﻿# Ratchet 0.2.8 - supervised mascot with independent exit.
+﻿# Ratchet 0.2.9 - supervised mascot with independent exit.
 $ErrorActionPreference = 'Stop'
 # Single desktop mascot per Windows user session. Repeated launchers do not add duplicates.
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'Ratchet-Backend.ps1')
-$createdNew = $false
-$script:instanceMutex = [System.Threading.Mutex]::new($true, 'Local\1001CAVE_RatchetOrb', [ref]$createdNew)
-if (-not $createdNew) {
+$script:baseUrl = $script:RatchetBaseUrl
+$script:instanceMutex = [System.Threading.Mutex]::new($false, 'Local\1001CAVE_RatchetOrb' + $script:RatchetInstanceSuffix)
+$ownsOrb = $false
+# An older orb may still be closing after the launcher asked its backend to quit.
+try { $ownsOrb = $script:instanceMutex.WaitOne(4000) }
+catch [System.Threading.AbandonedMutexException] { $ownsOrb = $true }
+if (-not $ownsOrb) {
     $script:instanceMutex.Dispose()
     # Another launcher was clicked: ask the existing orb to show its one panel.
-    try {
-      Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"panel:show","data":{}}' -TimeoutSec 2 | Out-Null
-    } catch {}
+    try { Invoke-RatchetAction 'panel:show' } catch {}
     exit 0
 }
 
@@ -17,49 +19,62 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# Use the existing Edge application window; never spawn another on repeated clicks.
+# C# 5 only (Windows PowerShell 5.1 compiler): no ?. operators, no string interpolation.
 Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing') -TypeDefinition @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Forms;
 public sealed class RatchetOrbForm : Form {
   public RatchetOrbForm() { this.DoubleBuffered=true; this.ResizeRedraw=true; this.SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint,true); }
+  // The orb appears without stealing focus from the window the user is working in.
+  protected override bool ShowWithoutActivation { get { return true; } }
 }
 public static class RatchetNativeWindow {
+  [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr data);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder title, int max);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, StringBuilder title, int max);
   [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
   private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr data);
-  public static IntPtr FindPanel() {
+  // The panel runs in Ratchet's own Edge profile, so its browser process IDs are
+  // known. A terminal, a test decoy or the user's own Edge titled "Ratchet" can
+  // never match, because their windows belong to other processes.
+  public static IntPtr FindPanel(int[] browserPids) {
     IntPtr found = IntPtr.Zero;
-    EnumWindows((window, data) => {
+    if (browserPids == null || browserPids.Length == 0) return found;
+    HashSet<uint> owners = new HashSet<uint>();
+    foreach (int pid in browserPids) { if (pid > 0) owners.Add((uint)pid); }
+    EnumWindows(delegate(IntPtr window, IntPtr data) {
       if (!IsWindowVisible(window)) return true;
-      var text = new System.Text.StringBuilder(256);
-      GetWindowText(window, text, text.Capacity);
-      string name = text.ToString();
-      // The terminal/Windows Terminal tab can also be titled "Ratchet".
-      // Never treat arbitrary windows as our panel or send them WM_CLOSE.
-      bool matchingTitle = name == "Ratchet" ||
-        name == "Ratchet - Microsoft Edge" ||
-        (name.StartsWith("Ratchet - ") && name.EndsWith(" - Microsoft Edge"));
-      if (!matchingTitle) return true;
       uint ownerPid;
       GetWindowThreadProcessId(window, out ownerPid);
-      if (ownerPid == 0) return true;
-      try {
-        using (var owner = System.Diagnostics.Process.GetProcessById((int)ownerPid)) {
-          if (!string.Equals(owner.ProcessName, "msedge", StringComparison.OrdinalIgnoreCase)) return true;
-        }
-      } catch (ArgumentException) { return true; }
-        catch (System.ComponentModel.Win32Exception) { return true; }
-        catch (InvalidOperationException) { return true; }
-      found = window; return false;
+      if (!owners.Contains(ownerPid)) return true;
+      StringBuilder text = new StringBuilder(256);
+      GetWindowText(window, text, text.Capacity);
+      string name = text.ToString();
+      if (!(name.StartsWith("Ratchet", StringComparison.Ordinal) || name.Contains("127.0.0.1"))) return true;
+      found = window;
+      return false;
     }, IntPtr.Zero);
     return found;
+  }
+  public static int[] GetRect(IntPtr window) {
+    RECT r;
+    if (window == IntPtr.Zero || !GetWindowRect(window, out r)) return new int[0];
+    return new int[] { r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top };
+  }
+  public static bool Place(IntPtr window, int x, int y, int width, int height) {
+    // SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER
+    return SetWindowPos(window, IntPtr.Zero, x, y, width, height, 0x0004 | 0x0010 | 0x0200);
   }
 }
 '@
@@ -71,13 +86,56 @@ $script:lastBackendRecovery = [datetime]::MinValue
 $script:backendStartAttempts = 0
 $script:lastPanelRequest = -1
 $script:lastPanelHideRequest = -1
+$script:lastOrbResetRequest = -1
 $script:hadServer = $false
 $script:consecutiveOfflineTicks = 0
+# Compact companion by default; a size the user sets by dragging the edge is remembered.
+$script:defaultPanelWidth = 360
+$script:defaultPanelHeight = 520
+$script:panelWidth = $script:defaultPanelWidth
+$script:panelHeight = $script:defaultPanelHeight
+$script:panelHandle = [IntPtr]::Zero
+$script:panelPlaced = $null
+$script:panelSizeCandidate = $null
+$script:panelPids = @()
+$script:lastPidLookup = [datetime]::MinValue
+$script:autoStartApplied = $null
+# Separate Edge profile: an already running Edge cannot take over the panel window,
+# ignore --window-size or restore an old, large window placement.
+$script:panelProfile = Join-Path $env:LOCALAPPDATA ('Ratchet\panel-edge' + $script:RatchetInstanceSuffix)
 
+function Test-RatchetPanelPids {
+    if (@($script:panelPids).Count -eq 0) { return $false }
+    foreach ($id in @($script:panelPids)) {
+        $p = Get-Process -Id $id -ErrorAction SilentlyContinue
+        if (-not $p -or $p.ProcessName -ne 'msedge') { return $false }
+    }
+    return $true
+}
+function Update-RatchetPanelPids {
+    param([switch]$Force)
+    if (-not $Force -and (Test-RatchetPanelPids)) { return }
+    # The CIM query is comparatively slow; never run it more than once per second.
+    if (-not $Force -and ([datetime]::UtcNow - $script:lastPidLookup).TotalMilliseconds -lt 1000) { return }
+    $script:lastPidLookup = [datetime]::UtcNow
+    $needle = $script:panelProfile
+    try {
+        $script:panelPids = @(Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" -ErrorAction Stop |
+            Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($needle,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine -notmatch '--type=' } |
+            ForEach-Object { [int]$_.ProcessId })
+    } catch { $script:panelPids = @() }
+}
 function Find-RatchetPanel {
-    # Enumerate real top-level HWNDs, not only Process.MainWindowHandle: Edge
-    # often hosts multiple browser windows in a shared process.
-    return [RatchetNativeWindow]::FindPanel()
+    # Cheap path: the window found last time is still alive.
+    if ($script:panelHandle -ne [IntPtr]::Zero -and [RatchetNativeWindow]::IsWindow($script:panelHandle) -and (Test-RatchetPanelPids)) {
+        $again = [RatchetNativeWindow]::FindPanel([int[]]@($script:panelPids))
+        if ($again -ne [IntPtr]::Zero) { $script:panelHandle = $again; return $again }
+    }
+    Update-RatchetPanelPids
+    $handle = [RatchetNativeWindow]::FindPanel([int[]]@($script:panelPids))
+    if ($handle -ne $script:panelHandle) { $script:panelPlaced = $null }
+    $script:panelHandle = $handle
+    return $handle
 }
 
 function Close-RatchetPanel {
@@ -86,25 +144,29 @@ function Close-RatchetPanel {
     $script:lastPanelClose = [datetime]::UtcNow
     $handle=Find-RatchetPanel
     if ($handle -eq [IntPtr]::Zero) { return }
-    # WM_CLOSE (0x0010) to the exact named Ratchet window; never kill Edge process.
+    # WM_CLOSE (0x0010) to Ratchet's own Edge window; never kill an Edge process.
     [void][RatchetNativeWindow]::PostMessage($handle,16,[IntPtr]::Zero,[IntPtr]::Zero)
 }
 function Focus-RatchetPanel {
     param([IntPtr]$handle)
     if ($handle -eq [IntPtr]::Zero) { return $false }
-    [void][RatchetNativeWindow]::ShowWindow($handle, 9)   # SW_RESTORE
+    if ([RatchetNativeWindow]::IsIconic($handle)) { [void][RatchetNativeWindow]::ShowWindow($handle, 9) }   # SW_RESTORE
     [void][RatchetNativeWindow]::SetForegroundWindow($handle)
     return $true
 }
 
-$script:baseUrl = 'http://127.0.0.1:47823'
 $script:status = 'idle'
 $script:orbSize = 84
 $script:dragStart = $null
 $script:dragging = $false
 $script:lastSeen = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$script:shownReminders = New-Object 'System.Collections.Generic.HashSet[string]'
 $script:notifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $script:notifyIcon.Icon = [System.Drawing.SystemIcons]::Information
+try {
+    $ico = Join-Path $script:ratchetBackendRoot 'assets\ratchet.ico'
+    if (Test-Path -LiteralPath $ico -PathType Leaf) { $script:notifyIcon.Icon = New-Object System.Drawing.Icon($ico) }
+} catch {}
 $script:notifyIcon.Text = 'Ratchet - plan dnia i agenci AI'
 $script:notifyIcon.Visible = $true
 
@@ -117,8 +179,11 @@ $form.ShowInTaskbar = $false
 $form.TopMost = $true
 $form.BackColor = [System.Drawing.Color]::Magenta
 $form.TransparencyKey = [System.Drawing.Color]::Magenta
-$area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$form.Location = [System.Drawing.Point]::new(($area.Right - $script:orbSize - 23),($area.Top + 155))
+function Get-RatchetDefaultOrbLocation {
+    $area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    return [System.Drawing.Point]::new(($area.Right - $script:orbSize - 23),($area.Top + 155))
+}
+$form.Location = Get-RatchetDefaultOrbLocation
 
 # P0: Native Windows HIT-TEST region must match the painted orb, not its
 # transparent rectangular Form. A TransparencyKey only affects pixels;
@@ -158,6 +223,93 @@ function Set-RatchetOrbSize {
     try { Set-RatchetHitRegion } catch { $form.TopMost = $false; $form.Hide(); return }
     $form.Location = [System.Drawing.Point]::new($left,$top)
     $form.Invalidate()
+}
+
+# Saved positions from another monitor layout must never strand the orb off-screen.
+function Set-RatchetOrbPosition {
+    param($position)
+    if ($null -eq $position -or $null -eq $position.x -or $null -eq $position.y) { return }
+    $x = [int]$position.x; $y = [int]$position.y
+    $center = [System.Drawing.Point]::new($x + [int]($script:orbSize / 2), $y + [int]($script:orbSize / 2))
+    foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
+        if ($screen.WorkingArea.Contains($center)) { $form.Location = [System.Drawing.Point]::new($x,$y); return }
+    }
+}
+function Save-RatchetOrbPosition {
+    try {
+        $body = @{action='orb:position';data=@{x=$form.Left;y=$form.Top}} | ConvertTo-Json -Compress
+        Invoke-RestMethod -Uri "$script:baseUrl/api/action" -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body $body -TimeoutSec 2 | Out-Null
+    } catch {}
+}
+function Set-RatchetPanelSize {
+    param($size)
+    if ($null -ne $size -and $null -ne $size.w -and $null -ne $size.h) {
+        $script:panelWidth = [int]$size.w; $script:panelHeight = [int]$size.h
+    } else {
+        $script:panelWidth = $script:defaultPanelWidth; $script:panelHeight = $script:defaultPanelHeight
+    }
+}
+function Save-RatchetPanelSize {
+    param([int]$width,[int]$height)
+    try {
+        $body = @{action='settings:save';data=@{settings=@{panelSize=@{w=$width;h=$height}}}} | ConvertTo-Json -Compress -Depth 5
+        Invoke-RestMethod -Uri "$script:baseUrl/api/action" -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body $body -TimeoutSec 2 | Out-Null
+    } catch {}
+}
+
+# Panel next to the orb: below it when there is room, otherwise above, otherwise beside.
+function Get-RatchetPanelGeometry {
+    $area = [System.Windows.Forms.Screen]::FromControl($form).WorkingArea
+    $margin = 8; $gap = 6
+    $width = [int][Math]::Max(280,[Math]::Min($script:panelWidth,$area.Width - 2*$margin))
+    $height = [int][Math]::Max(340,[Math]::Min($script:panelHeight,$area.Height - 2*$margin))
+    # Use the painted circle, not the Form: Windows may keep a borderless Form wider
+    # than the orb (minimum track size), while Form.Region clips it to the circle.
+    $orbLeft = $form.Left; $orbTop = $form.Top
+    $orbRight = $orbLeft + $script:orbSize; $orbBottom = $orbTop + $script:orbSize
+    $rightHalf = ($orbLeft + $script:orbSize / 2) -ge ($area.Left + $area.Width / 2)
+    if ($rightHalf) { $x = $orbRight - $width } else { $x = $orbLeft }
+    if ($orbBottom + $gap + $height -le $area.Bottom - $margin) { $y = $orbBottom + $gap }
+    elseif ($orbTop - $gap - $height -ge $area.Top + $margin) { $y = $orbTop - $gap - $height }
+    else {
+        $y = $area.Bottom - $margin - $height
+        if ($rightHalf) { $x = $orbLeft - $gap - $width } else { $x = $orbRight + $gap }
+    }
+    $x = [int][Math]::Max($area.Left + $margin,[Math]::Min($area.Right - $margin - $width,$x))
+    $y = [int][Math]::Max($area.Top + $margin,[Math]::Min($area.Bottom - $margin - $height,$y))
+    return @($x,$y,$width,$height)
+}
+
+# Edge may restore its own size; Ratchet sets the final geometry once per window.
+function Set-RatchetPanelPlacement {
+    param([IntPtr]$handle)
+    if ($handle -eq [IntPtr]::Zero) { return }
+    $g = Get-RatchetPanelGeometry
+    $rect = [RatchetNativeWindow]::GetRect($handle)
+    if ($rect.Count -eq 4 -and ([Math]::Abs($rect[0]-$g[0]) -gt 4 -or [Math]::Abs($rect[1]-$g[1]) -gt 4 -or
+        [Math]::Abs($rect[2]-$g[2]) -gt 4 -or [Math]::Abs($rect[3]-$g[3]) -gt 4)) {
+        [void][RatchetNativeWindow]::Place($handle,$g[0],$g[1],$g[2],$g[3])
+        Write-RatchetOrbLog ('PANEL_PLACED from ' + ($rect -join ',') + ' to ' + ($g -join ','))
+    }
+    $script:panelPlaced = @($g[2],$g[3])
+    $script:panelSizeCandidate = $null
+}
+
+# A size changed by the user (dragging the panel edge) is remembered for next time.
+function Watch-RatchetPanelSize {
+    if ($script:panelHandle -eq [IntPtr]::Zero -or $null -eq $script:panelPlaced) { return }
+    if (-not [RatchetNativeWindow]::IsWindow($script:panelHandle) -or [RatchetNativeWindow]::IsIconic($script:panelHandle)) { return }
+    $rect = [RatchetNativeWindow]::GetRect($script:panelHandle)
+    if ($rect.Count -ne 4) { return }
+    $w = $rect[2]; $h = $rect[3]
+    if ([Math]::Abs($w - $script:panelPlaced[0]) -le 6 -and [Math]::Abs($h - $script:panelPlaced[1]) -le 6) { $script:panelSizeCandidate = $null; return }
+    if ($null -ne $script:panelSizeCandidate -and $script:panelSizeCandidate[0] -eq $w -and $script:panelSizeCandidate[1] -eq $h) {
+        $script:panelWidth = $w; $script:panelHeight = $h
+        $script:panelPlaced = @($w,$h)
+        $script:panelSizeCandidate = $null
+        Save-RatchetPanelSize $w $h
+        Write-RatchetOrbLog ('PANEL_SIZE_SAVED ' + $w + 'x' + $h)
+    } else { $script:panelSizeCandidate = @($w,$h) }
 }
 
 function Open-RatchetPanel {
@@ -202,20 +354,20 @@ function Open-RatchetPanel {
         "${env:LOCALAPPDATA}\Microsoft\Edge\Application\msedge.exe"
     ) | Where-Object { Test-Path $_ } | Select-Object -First 1
     if ($edge) {
-        $area = [System.Windows.Forms.Screen]::FromControl($form).WorkingArea
-        # Compact companion panel next to the orb, not a desktop-sized window.
-        # Keep all coordinates inside the active monitor working area.
-        $width = [int][Math]::Min(360,[Math]::Max(280,$area.Width-24))
-        $height = [int][Math]::Min(520,[Math]::Max(340,$area.Height-24))
-        $x = [int][Math]::Max($area.Left+8,[Math]::Min($area.Right-$width-8,$form.Left+$form.Width-$width))
-        $y = [int][Math]::Max($area.Top+8,[Math]::Min($area.Bottom-$height-8,$form.Bottom+10))
-        # Set final geometry before opening Edge. Never move a visible window.
+        $g = Get-RatchetPanelGeometry
+        New-Item -ItemType Directory -Path $script:panelProfile -Force | Out-Null
+        # Own profile = own browser process: these flags are honoured even when the
+        # user's Edge is already running (Startup boost, open tabs).
         Start-Process -FilePath $edge -ArgumentList @(
-          '--app=http://127.0.0.1:47823/ui/panel.html',
-          "--window-size=$width,$height", "--window-position=$x,$y",
-          '--no-first-run','--no-default-browser-check'
+          ('--user-data-dir="' + $script:panelProfile + '"'),
+          ('--app=' + $script:baseUrl + '/ui/panel.html'),
+          ('--window-size=' + $g[2] + ',' + $g[3]), ('--window-position=' + $g[0] + ',' + $g[1]),
+          '--no-first-run','--no-default-browser-check','--disable-sync'
         )
-    } else { Start-Process $script:baseUrl }
+    } else {
+        $script:pendingPanelOpen = $false
+        Start-Process ($script:baseUrl + '/ui/panel.html')
+    }
 }
 
 $form.Add_SizeChanged({
@@ -297,6 +449,11 @@ $form.Add_MouseDown({
 })
 $form.Add_MouseMove({
   if($null -eq $script:dragStart) {return}
+  # Button released elsewhere (focus change, lost capture): never keep the orb glued to the cursor.
+  if(([System.Windows.Forms.Control]::MouseButtons -band [System.Windows.Forms.MouseButtons]::Left) -eq 0) {
+    if($script:dragging){ Save-RatchetOrbPosition }
+    $script:dragStart=$null; $script:dragging=$false; $form.Capture=$false; return
+  }
   $mouse = [System.Windows.Forms.Control]::MousePosition
   $dx=$mouse.X-$script:dragStart.X; $dy=$mouse.Y-$script:dragStart.Y
   if([Math]::Abs($dx)+[Math]::Abs($dy) -gt 6) {$script:dragging=$true}
@@ -310,8 +467,12 @@ $form.Add_MouseUp({
    } elseif ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left -and
        $null -ne $script:dragStart -and -not $script:dragging) {
      Open-RatchetPanel
+   } elseif ($script:dragging) {
+     # The orb stays where the user put it, also after a restart.
+     Save-RatchetOrbPosition
    }
    $script:dragStart=$null
+   $script:dragging=$false
    $form.Capture=$false
 })
 
@@ -321,9 +482,12 @@ $openItem=$menu.Items.Add('Otwórz Ratchet')
 $openItem.Add_Click({Open-RatchetPanel})
 $diagItem=$menu.Items.Add('Zdiagnozuj Ratchet')
 $diagItem.Add_Click({
-    $diagnostics = Join-Path $PSScriptRoot 'Diagnostyka-Ratchet.ps1'
-    if (Test-Path -LiteralPath $diagnostics -PathType Leaf) {
-        Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $diagnostics + '"'))
+    $diagnostics = Join-Path $script:ratchetBackendRoot 'Diagnostyka-Ratchet.ps1'
+    $exe = Join-Path $script:ratchetBackendRoot 'Ratchet.exe'
+    if (Test-Path -LiteralPath $exe -PathType Leaf) {
+        Start-Process -FilePath $exe -ArgumentList '--diagnostics'
+    } elseif (Test-Path -LiteralPath $diagnostics -PathType Leaf) {
+        Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $diagnostics + '"'))
     } else {
         $script:notifyIcon.ShowBalloonTip(3000,'Ratchet','Brakuje pliku Diagnostyka-Ratchet.ps1',[System.Windows.Forms.ToolTipIcon]::Warning)
     }
@@ -345,9 +509,8 @@ $showItem.Add_Click({if($form.Visible){$form.Hide()}else{$form.Show()}})
 $null=$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $quitItem=$menu.Items.Add('Zakończ Ratchet')
 $quitItem.Add_Click({
-  try {
-    Invoke-RestMethod -Uri "$script:baseUrl/api/action" -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 2 | Out-Null
-  } catch {}
+  try { Invoke-RatchetAction 'quit' } catch {}
+  Close-RatchetPanel
   $form.Close()
 })
 # The orb handles its own right-click menu to work independently of Edge and localhost.
@@ -355,12 +518,93 @@ $script:notifyIcon.ContextMenuStrip=$menu
 $script:notifyIcon.Add_DoubleClick({$form.Show();Open-RatchetPanel})
 $script:notifyIcon.Add_BalloonTipClicked({Open-RatchetPanel})
 
+# Autostart is managed only for the installed copy, never for a test or a loose ZIP folder.
+function Sync-RatchetAutoStart {
+    param([bool]$enabled)
+    if ($script:autoStartApplied -eq $enabled) { return }
+    $script:autoStartApplied = $enabled
+    $installed = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Ratchet\app')).TrimEnd('\')
+    if ($script:RatchetInstanceSuffix -or ([IO.Path]::GetFullPath($script:ratchetBackendRoot).TrimEnd('\') -ine $installed)) { return }
+    $link = Join-Path ([Environment]::GetFolderPath('Startup')) 'Ratchet.lnk'
+    try {
+        if ($enabled) {
+            $exe = Join-Path $installed 'Ratchet.exe'
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { return }
+            $ws = New-Object -ComObject WScript.Shell
+            $lnk = $ws.CreateShortcut($link)
+            $lnk.TargetPath = $exe
+            $lnk.WorkingDirectory = $installed
+            $lnk.IconLocation = (Join-Path $installed 'assets\ratchet.ico')
+            $lnk.Description = 'Ratchet - start razem z Windows'
+            $lnk.Save()
+        } elseif (Test-Path -LiteralPath $link -PathType Leaf) {
+            Remove-Item -LiteralPath $link -Force
+        }
+    } catch {}
+}
+
+$script:orbLog = Join-Path $env:LOCALAPPDATA ('Ratchet\logs\orb' + $script:RatchetInstanceSuffix + '.log')
+function Write-RatchetOrbLog([string]$message) {
+    try {
+        # Small rolling log: keep it under ~256 KB.
+        if ((Test-Path -LiteralPath $script:orbLog) -and (Get-Item -LiteralPath $script:orbLog).Length -gt 262144) {
+            Move-Item -LiteralPath $script:orbLog -Destination ($script:orbLog + '.old') -Force
+        }
+        Add-Content -LiteralPath $script:orbLog -Value ('[' + (Get-Date -Format s) + '] ' + $message) -Encoding UTF8
+    } catch {}
+}
+
+function Invoke-RatchetOfflineTick {
+    $script:status='blocked'
+    $script:consecutiveOfflineTicks++
+    # Keep the mascot responsive even when the Node process crashes.
+    # Only one attempt per 12 seconds, guarded by a process-wide mutex.
+    if ($script:consecutiveOfflineTicks -ge 2 -and
+        ([datetime]::UtcNow - $script:lastBackendRecovery).TotalSeconds -ge 12) {
+        $script:lastBackendRecovery = [datetime]::UtcNow
+        $script:backendStartAttempts++
+        $restored = $null
+        try { $restored = Start-RatchetBackend } catch { Write-RatchetOrbLog ('BACKEND_RESTART_ERROR ' + $_.Exception.Message) }
+        if ($restored) {
+            $script:consecutiveOfflineTicks = 0
+            $script:backendStartAttempts = 0
+            $script:hadServer = $true
+            $script:status = 'idle'
+            Write-RatchetOrbLog ('BACKEND_RESTORED ' + $restored.version)
+        } elseif ($script:backendStartAttempts -ge 4) {
+            # If recovery repeatedly fails, hide rather than blocking desktop.
+            $form.Hide()
+            $script:notifyIcon.ShowBalloonTip(4000,'Ratchet',
+              'Nie można wznowić serwera. Otwórz menu ikonki przy zegarze, aby spróbować ponownie lub zakończyć.',
+              [System.Windows.Forms.ToolTipIcon]::Warning)
+        }
+    }
+}
+
+function Get-RatchetReminderTitle([string]$phase) {
+    switch ($phase) {
+        'start' { return 'Ratchet - początek zadania' }
+        'end'   { return 'Ratchet - planowany koniec' }
+        'test'  { return 'Ratchet - test powiadomienia' }
+        default { return $null }
+    }
+}
+
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 1200
 $timer.Add_Tick({
+    $info = $null
     try {
         $info = Invoke-RestMethod -Uri "$script:baseUrl/api/status" -TimeoutSec 2
-        if($info.quitRequested) { $timer.Stop(); $form.Close(); return }
+    } catch {
+        # Only a failed status request means "server offline".
+        Invoke-RatchetOfflineTick
+        $form.Invalidate()
+        return
+    }
+    try {
+        if($info.quitRequested) { $timer.Stop(); Close-RatchetPanel; $form.Close(); return }
+        Set-RatchetPanelSize $info.panelSize
         if ($null -ne $info.panelRequests -and [int]$info.panelRequests -gt $script:lastPanelRequest) {
             $script:lastPanelRequest = [int]$info.panelRequests
             Open-RatchetPanel
@@ -369,58 +613,52 @@ $timer.Add_Tick({
             $script:lastPanelHideRequest = [int]$info.panelHideRequests
             Close-RatchetPanel
         }
+        if ($null -ne $info.orbResetRequests -and [int]$info.orbResetRequests -gt $script:lastOrbResetRequest) {
+            $script:lastOrbResetRequest = [int]$info.orbResetRequests
+            $form.Location = Get-RatchetDefaultOrbLocation
+            $form.Show()
+            Save-RatchetOrbPosition
+        }
         # A successful Start-Process does not guarantee that Edge created a window.
-        # Re-check the real HWND and retry at most three times after a close/open race.
+        # Re-check the real HWND, place it once, and retry at most three times.
         if ($script:pendingPanelOpen) {
-            if ((Find-RatchetPanel) -ne [IntPtr]::Zero) {
+            Update-RatchetPanelPids -Force
+            $found = Find-RatchetPanel
+            if ($found -ne [IntPtr]::Zero) {
                 $script:pendingPanelOpen = $false
                 $script:panelSpawnAttempts = 0
+                Set-RatchetPanelPlacement $found
+                [void](Focus-RatchetPanel $found)
             } elseif (([datetime]::UtcNow - $script:lastPanelSpawn).TotalSeconds -ge 3) {
                 Open-RatchetPanel -Retry
             }
+        } elseif ($script:panelHandle -ne [IntPtr]::Zero) {
+            if ([RatchetNativeWindow]::IsWindow($script:panelHandle)) { Watch-RatchetPanelSize }
+            else { $script:panelHandle = [IntPtr]::Zero; $script:panelPlaced = $null }
         }
         $script:hadServer = $true
         $script:consecutiveOfflineTicks = 0
         $script:status = [string]$info.status
         if ($null -ne $info.avatarSize) { Set-RatchetOrbSize -requested ([int]$info.avatarSize) }
+        if ($null -ne $info.alwaysOnTop -and $form.TopMost -ne [bool]$info.alwaysOnTop) { $form.TopMost = [bool]$info.alwaysOnTop }
+        if ($null -ne $info.autoStart) { Sync-RatchetAutoStart ([bool]$info.autoStart) }
         if($info.notifications) {
             foreach($entry in @($info.activity | Sort-Object at)) {
-                $when = ([DateTimeOffset]::Parse($entry.at)).ToUnixTimeMilliseconds()
-                # Cursor prevents replay of old reminders on every status poll.
-                if($when -gt $script:lastSeen) {
-                    $title = if ($entry.phase -eq 'start') {'Ratchet - początek zadania'}
-                             elseif ($entry.phase -eq 'end') {'Ratchet - planowany koniec'}
-                             elseif ($entry.phase -eq 'finished') {'Ratchet - zakończono'}
-                             else {'Ratchet - powiadomienie'}
-                    $script:notifyIcon.ShowBalloonTip(7000,$title,[string]$entry.text,[System.Windows.Forms.ToolTipIcon]::Info)
-                    $script:lastSeen=$when
-                }
+                $when = ([DateTimeOffset]::Parse([string]$entry.at)).ToUnixTimeMilliseconds()
+                # Cursor + ids prevent replay of old reminders on every status poll.
+                if($when -lt $script:lastSeen -or $script:shownReminders.Contains([string]$entry.id)) { continue }
+                [void]$script:shownReminders.Add([string]$entry.id)
+                $script:lastSeen = $when
+                # Only scheduled reminders and the explicit test reach Windows notifications;
+                # the user's own clicks (started/finished) are not echoed back as toasts.
+                $title = Get-RatchetReminderTitle ([string]$entry.phase)
+                if ($title) { $script:notifyIcon.ShowBalloonTip(8000,$title,[string]$entry.text,[System.Windows.Forms.ToolTipIcon]::Info) }
             }
         }
         $script:notifyIcon.Text = 'Ratchet - ' + $script:status
     } catch {
-        $script:status='blocked'
-        $script:consecutiveOfflineTicks++
-        # Keep the mascot responsive even when the Node process crashes.
-        # Only one attempt per 12 seconds, guarded by a process-wide mutex.
-        if ($script:consecutiveOfflineTicks -ge 2 -and
-            ([datetime]::UtcNow - $script:lastBackendRecovery).TotalSeconds -ge 12) {
-            $script:lastBackendRecovery = [datetime]::UtcNow
-            $script:backendStartAttempts++
-            $restored = Start-RatchetBackend
-            if ($restored) {
-                $script:consecutiveOfflineTicks = 0
-                $script:backendStartAttempts = 0
-                $script:hadServer = $true
-                $script:status = 'idle'
-            } elseif ($script:backendStartAttempts -ge 4) {
-                # If recovery repeatedly fails, hide rather than blocking desktop.
-                $form.Hide()
-                $script:notifyIcon.ShowBalloonTip(4000,'Ratchet',
-                  'Nie można wznowić serwera. Otwórz menu ikonki przy zegarze, aby spróbować ponownie lub zakończyć.',
-                  [System.Windows.Forms.ToolTipIcon]::Warning)
-            }
-        }
+        # A bug in the orb must be visible in a log, never disguised as "server offline".
+        Write-RatchetOrbLog ('TICK_ERROR line ' + $_.InvocationInfo.ScriptLineNumber + ': ' + $_.Exception.Message)
     }
     $form.Invalidate()
 })
@@ -432,13 +670,17 @@ $form.Add_FormClosed({
    try { $script:instanceMutex.ReleaseMutex() } catch {}
    $script:instanceMutex.Dispose()
 })
-# Load saved size immediately; subsequent changes are picked up by the timer.
+# Load saved size, position and request counters immediately; later changes come from the timer.
 try {
     $initial = Invoke-RestMethod -Uri "$script:baseUrl/api/status" -TimeoutSec 2
     $script:hadServer = [bool]$initial
     if ($null -ne $initial.avatarSize) { Set-RatchetOrbSize -requested ([int]$initial.avatarSize) }
+    if ($null -ne $initial.orbPosition) { Set-RatchetOrbPosition $initial.orbPosition }
+    if ($null -ne $initial.alwaysOnTop) { $form.TopMost = [bool]$initial.alwaysOnTop }
+    Set-RatchetPanelSize $initial.panelSize
     if ($null -ne $initial.panelRequests) { $script:lastPanelRequest = [int]$initial.panelRequests }
     if ($null -ne $initial.panelHideRequests) { $script:lastPanelHideRequest = [int]$initial.panelHideRequests }
+    if ($null -ne $initial.orbResetRequests) { $script:lastOrbResetRequest = [int]$initial.orbResetRequests }
 } catch {}
 $timer.Start()
 # Start with only the orb. Panel is opened on explicit click.
