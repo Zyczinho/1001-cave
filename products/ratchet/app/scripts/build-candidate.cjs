@@ -11,7 +11,7 @@ const source=path.resolve(__dirname,'..');
 const packageFiles=[
   'README.md',
   'Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1',
-  'Uruchom-Ratchet-Bez-Electron.ps1','Instaluj-Ratchet.ps1',
+  'Uruchom-Ratchet-Bez-Electron.ps1','Instaluj-Ratchet.ps1','Instaluj-Ratchet-Test.ps1','ZAINSTALUJ-TEST.cmd',
   'Apply-Ratchet-Update.ps1','Zatrzymaj-Ratchet.ps1',
   'URUCHOM-RATCHET.cmd','ZAINSTALUJ-RAZ.cmd','AWARYJNIE-ZATRZYMAJ-RATCHET.cmd',
   'OTWORZ-TYLKO-PANEL.cmd','PODGLAD-OFFLINE.cmd',
