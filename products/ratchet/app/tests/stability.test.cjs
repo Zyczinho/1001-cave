@@ -15,6 +15,12 @@ test('no console launcher scripts remain that could open a visible terminal',()=
   assert.match(installer,/\/target:winexe/);
   assert.match(installer,/Set-Shortcut \(Join-Path \$desktop 'Ratchet\.lnk'\) \$launcher/);
 });
+test('quit followed by an immediate relaunch never adopts the dying server',()=>{
+  assert.match(read('server.cjs'),/quitting:quitRequested/);
+  const src=read('Ratchet-Backend.ps1');
+  assert.match(src,/if \(\$response\.ok -and -not \$response\.quitting\)/);
+  assert.match(src,/if \(-not \(Wait-RatchetBackendReleased\)\)/);
+});
 test('backend recovery uses named mutex + proper health endpoint',()=>{
   const src=read('Ratchet-Backend.ps1');
   assert.match(src,/Local\\1001CAVE_RatchetBackendStart/);

@@ -84,8 +84,10 @@ jobs:
           New-Item -ItemType Directory -Path (Join-Path $desk 'MojProjekt') -Force | Out-Null
           'secret' | Set-Content (Join-Path $desk 'MojProjekt\plan.txt')
           Expand-Archive -LiteralPath $zip -DestinationPath $desk
-          $top = @(Get-ChildItem -LiteralPath $desk | Select-Object -ExpandProperty Name | Sort-Object)
-          if (($top -join ',') -ne ("MojProjekt,moje-notatki.txt,Ratchet-$($env:RATCHET_VERSION)-RC")) { throw ('ZIP spilled files: ' + ($top -join ',')) }
+          $top = @(Get-ChildItem -LiteralPath $desk | Select-Object -ExpandProperty Name)
+          $expectedTop = @('MojProjekt','moje-notatki.txt',"Ratchet-$($env:RATCHET_VERSION)-RC")
+          $spilled = @($top | Where-Object { $expectedTop -notcontains $_ })
+          if ($top.Count -ne 3 -or $spilled.Count) { throw ('ZIP spilled files: ' + ($top -join ',')) }
           Write-Host ('RC_ZIP_OK: ' + $zip)
       - name: Install from the extracted ZIP next to private Desktop files
         run: |

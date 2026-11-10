@@ -266,7 +266,7 @@ async function appRequest(req,res) {
   if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) return fail(res,'Tylko localhost',403);
   const url=new URL(req.url,`http://127.0.0.1:${PORT}`);
   if(req.method==='GET'){
-    if(url.pathname==='/api/ping') return json(res,{ok:true,version:CURRENT_VERSION,commit:BUILD.commit,root:__dirname,pid:process.pid});
+    if(url.pathname==='/api/ping') return json(res,{ok:true,version:CURRENT_VERSION,commit:BUILD.commit,root:__dirname,pid:process.pid,quitting:quitRequested});
     if(url.pathname==='/api/snapshot') return json(res,snapshot());
     if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,alwaysOnTop:state.settings.alwaysOnTop!==false,autoStart:state.settings.autoStart===true,panelSize:state.settings.panelSize||null,orbPosition:state.orbPosition||null,panelRequests,panelHideRequests,orbResetRequests,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
     return staticResponse(url.pathname,res);

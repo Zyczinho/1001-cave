@@ -15,9 +15,19 @@ $script:ratchetBackendUrl = $script:RatchetBaseUrl + '/api/ping'
 function Get-RatchetBackendHealth {
   try {
     $response = Invoke-RestMethod -Uri $script:ratchetBackendUrl -TimeoutSec 1
-    if ($response.ok) { return $response }
+    # A server that is shutting down (quit + relaunch within seconds) is not healthy.
+    if ($response.ok -and -not $response.quitting) { return $response }
   } catch { }
   return $null
+}
+
+# Wait until nothing answers on the port any more (old server finished its shutdown).
+function Wait-RatchetBackendReleased {
+  for ($i = 0; $i -lt 40; $i++) {
+    try { Invoke-RestMethod -Uri $script:ratchetBackendUrl -TimeoutSec 1 | Out-Null } catch { return $true }
+    Start-Sleep -Milliseconds 250
+  }
+  return $false
 }
 
 function Invoke-RatchetAction([string]$name, [int]$timeoutSec = 2) {
@@ -42,6 +52,7 @@ function Start-RatchetBackend {
     # Another launcher may have started the server while we waited.
     $existing = Get-RatchetBackendHealth
     if ($existing) { if($existing.version -eq $script:RatchetVersion){return $existing} else{throw ('Port ' + $script:RatchetPort + ' zajmuje inna wersja: '+$existing.version)} }
+    if (-not (Wait-RatchetBackendReleased)) { throw ('Port ' + $script:RatchetPort + ' nie zwolnił się po zamknięciu poprzedniego serwera') }
     $node = (Get-Command 'node.exe' -ErrorAction Stop).Source
     $entry = Join-Path $script:ratchetBackendRoot 'server.cjs'
     if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { throw 'Brakuje server.cjs' }
