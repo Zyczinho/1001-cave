@@ -44,7 +44,7 @@ function VerifySource {
     $paths=@{}
     foreach($item in @($ledger.files)){
         $relative=[string]$item.path
-        if($relative -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(cmd|ps1|cjs|js|html|css|json|md|txt|png)$' -or
+        if($relative -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(cmd|ps1|cjs|js|html|css|json|md|txt|png|ico)$' -or
            $relative.Contains('..') -or $relative.Contains('\') -or
            ([string]$item.sha256) -notmatch '^[a-fA-F0-9]{64}$' -or $paths.ContainsKey($relative)){
             throw 'Niebezpieczny lub zdublowany plik w paczce'
