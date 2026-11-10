@@ -179,6 +179,114 @@ $form.ShowInTaskbar = $false
 $form.TopMost = $true
 $form.BackColor = [System.Drawing.Color]::Magenta
 $form.TransparencyKey = [System.Drawing.Color]::Magenta
+
+# Small comic-style speech surface. Independent of the Edge panel, with a true
+# WinForms Region so no invisible screen-wide hitbox can steal clicks.
+$script:speechForm = New-Object RatchetOrbForm
+$script:speechForm.Text = 'Ratchet - wiadomosc'
+$script:speechForm.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$script:speechForm.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+$script:speechForm.Size = [System.Drawing.Size]::new(274,114)
+$script:speechForm.ShowInTaskbar = $false
+$script:speechForm.TopMost = $true
+$script:speechForm.BackColor = [System.Drawing.Color]::FromArgb(25,39,57)
+$script:speechForm.Opacity = 0.98
+$tail = [System.Drawing.Point[]]@(
+  [System.Drawing.Point]::new(244,39),
+  [System.Drawing.Point]::new(271,56),
+  [System.Drawing.Point]::new(244,73)
+)
+$speechShape = [System.Drawing.Drawing2D.GraphicsPath]::new()
+$speechShape.AddRectangle([System.Drawing.Rectangle]::new(0,0,245,114))
+$speechShape.AddPolygon($tail)
+$script:speechForm.Region = [System.Drawing.Region]::new($speechShape)
+$speechShape.Dispose()
+$script:speechForm.Add_Paint({
+  param($sender,$e)
+  $g=$e.Graphics
+  $g.SmoothingMode=[System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+  $pen=[System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(82,141,205),[single]1.2)
+  $brush=[System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(25,39,57))
+  $points=[System.Drawing.Point[]]@(
+    [System.Drawing.Point]::new(244,39),
+    [System.Drawing.Point]::new(271,56),
+    [System.Drawing.Point]::new(244,73))
+  $g.FillPolygon($brush,$points)
+  $g.DrawPolygon($pen,$points)
+  $g.DrawRectangle($pen,0,0,244,113)
+  $brush.Dispose();$pen.Dispose()
+})
+$script:speechTitle = New-Object System.Windows.Forms.Label
+$script:speechTitle.SetBounds(11,7,225,19)
+$script:speechTitle.ForeColor = [System.Drawing.Color]::FromArgb(144,202,255)
+$script:speechTitle.Font = [System.Drawing.Font]::new('Segoe UI',[single]9,[System.Drawing.FontStyle]::Bold)
+$script:speechTitle.Text = 'Ratchet'
+$script:speechForm.Controls.Add($script:speechTitle)
+$script:speechText = New-Object System.Windows.Forms.Label
+$script:speechText.SetBounds(11,29,224,49)
+$script:speechText.ForeColor = [System.Drawing.Color]::White
+$script:speechText.Font = [System.Drawing.Font]::new('Segoe UI',[single]8.5)
+$script:speechText.Text = ''
+$script:speechForm.Controls.Add($script:speechText)
+$script:speechOpen = New-Object System.Windows.Forms.Button
+$script:speechOpen.Text='Otworz'
+$script:speechOpen.SetBounds(11,84,84,24)
+$script:speechOpen.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$script:speechOpen.ForeColor = [System.Drawing.Color]::White
+$script:speechOpen.BackColor = [System.Drawing.Color]::FromArgb(44,102,162)
+$script:speechForm.Controls.Add($script:speechOpen)
+$script:speechLater = New-Object System.Windows.Forms.Button
+$script:speechLater.Text='Pozniej'
+$script:speechLater.SetBounds(102,84,78,24)
+$script:speechLater.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$script:speechLater.ForeColor = [System.Drawing.Color]::White
+$script:speechLater.BackColor = [System.Drawing.Color]::FromArgb(48,64,84)
+$script:speechForm.Controls.Add($script:speechLater)
+$script:bubbleUntil=[datetime]::MinValue
+$script:bubbleEventId=''
+$script:bubbleTaskId=''
+$script:bubblePhase=''
+function Place-RatchetSpeech {
+  $area=[System.Windows.Forms.Screen]::FromControl($form).WorkingArea
+  $x=$form.Left-$script:speechForm.Width-7
+  if($x -lt $area.Left) { $x=$form.Right+7 }
+  $x=[Math]::Max($area.Left,[Math]::Min($x,$area.Right-$script:speechForm.Width))
+  $y=$form.Top+[int](($form.Height-$script:speechForm.Height)/2)
+  $y=[Math]::Max($area.Top,[Math]::Min($y,$area.Bottom-$script:speechForm.Height))
+  $script:speechForm.Location=[System.Drawing.Point]::new([int]$x,[int]$y)
+}
+function Show-RatchetSpeech {
+  param([string]$eventId,[string]$message,[string]$phase,[string]$taskId)
+  $script:bubbleEventId=$eventId
+  $script:bubbleTaskId=$taskId
+  $script:bubblePhase=$phase
+  $script:speechTitle.Text = if($phase -eq 'agent'){'Ratchet - agent'} elseif($phase -eq 'test'){'Ratchet - test'} else {'Ratchet - przypomnienie'}
+  $script:speechText.Text = if($message.Length -gt 136){$message.Substring(0,133)+'...'}else{$message}
+  Place-RatchetSpeech
+  $script:bubbleUntil=[datetime]::UtcNow.AddSeconds(9)
+  if(-not $script:speechForm.Visible){$script:speechForm.Show()}
+  $script:speechForm.Invalidate()
+  return $script:speechForm.Visible
+}
+$script:speechOpen.Add_Click({
+  $id=$script:bubbleEventId
+  $script:speechForm.Hide()
+  if($id) {
+    try {
+      $body=@{action='notification:open';data=@{id=$id}} | ConvertTo-Json -Compress
+      Invoke-RestMethod -Uri ($script:baseUrl+'/api/action') -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body $body -TimeoutSec 2 | Out-Null
+    } catch { Open-RatchetPanel }
+  } else { Open-RatchetPanel }
+})
+$script:speechLater.Add_Click({
+  $script:speechForm.Hide()
+  if($script:bubbleTaskId -and $script:bubblePhase -eq 'start') {
+    try {
+      $body=@{action='schedule:action';data=@{id=$script:bubbleTaskId;action='snooze'}} | ConvertTo-Json -Compress
+      Invoke-RestMethod -Uri ($script:baseUrl+'/api/action') -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body $body -TimeoutSec 2 | Out-Null
+    } catch { Write-RatchetOrbLog ('SNOOZE_ERROR '+$_.Exception.Message) }
+  }
+})
 function Get-RatchetDefaultOrbLocation {
     $area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     return [System.Drawing.Point]::new(($area.Right - $script:orbSize - 23),($area.Top + 155))
@@ -494,7 +602,11 @@ $diagItem.Add_Click({
 })
 $testItem=$menu.Items.Add('Test powiadomienia')
 $testItem.Add_Click({
-    $script:notifyIcon.ShowBalloonTip(7000,'Ratchet - test','To jest próbne powiadomienie systemowe Ratcheta.',[System.Windows.Forms.ToolTipIcon]::Info)
+    try { Invoke-RatchetAction 'notification:test' }
+    catch {
+      Write-RatchetOrbLog ('TEST_NOTIFICATION_ERROR '+$_.Exception.Message)
+      [void](Show-RatchetSpeech 'offline-test' 'Backend nie odebral testu. Uruchom diagnostyke.' 'test' '')
+    }
 })
 $retryItem=$menu.Items.Add('Uruchom ponownie serwer')
 $retryItem.Add_Click({
@@ -586,6 +698,7 @@ function Get-RatchetReminderTitle([string]$phase) {
         'start' { return 'Ratchet - początek zadania' }
         'end'   { return 'Ratchet - planowany koniec' }
         'test'  { return 'Ratchet - test powiadomienia' }
+        'agent' { return 'Ratchet - zakonczono sesje Claude Code' }
         default { return $null }
     }
 }
@@ -642,17 +755,32 @@ $timer.Add_Tick({
         if ($null -ne $info.avatarSize) { Set-RatchetOrbSize -requested ([int]$info.avatarSize) }
         if ($null -ne $info.alwaysOnTop -and $form.TopMost -ne [bool]$info.alwaysOnTop) { $form.TopMost = [bool]$info.alwaysOnTop }
         if ($null -ne $info.autoStart) { Sync-RatchetAutoStart ([bool]$info.autoStart) }
+        if($script:speechForm.Visible) {
+          Place-RatchetSpeech
+          if([datetime]::UtcNow -ge $script:bubbleUntil){$script:speechForm.Hide()}
+        }
         if($info.notifications) {
             foreach($entry in @($info.activity | Sort-Object at)) {
                 $when = ([DateTimeOffset]::Parse([string]$entry.at)).ToUnixTimeMilliseconds()
-                # Cursor + ids prevent replay of old reminders on every status poll.
                 if($when -lt $script:lastSeen -or $script:shownReminders.Contains([string]$entry.id)) { continue }
                 [void]$script:shownReminders.Add([string]$entry.id)
                 $script:lastSeen = $when
-                # Only scheduled reminders and the explicit test reach Windows notifications;
-                # the user's own clicks (started/finished) are not echoed back as toasts.
                 $title = Get-RatchetReminderTitle ([string]$entry.phase)
-                if ($title) { $script:notifyIcon.ShowBalloonTip(8000,$title,[string]$entry.text,[System.Windows.Forms.ToolTipIcon]::Info) }
+                if (-not $title) { continue }
+                $windowsAttempted=$false
+                $bubbleShown=$false
+                try {
+                  $script:notifyIcon.ShowBalloonTip(7000,$title,[string]$entry.text,[System.Windows.Forms.ToolTipIcon]::Info)
+                  $windowsAttempted=$true
+                } catch { Write-RatchetOrbLog ('WINDOWS_NOTIFICATION_ERROR '+$_.Exception.Message) }
+                try {
+                  $bubbleShown=Show-RatchetSpeech ([string]$entry.id) ([string]$entry.text) ([string]$entry.phase) ([string]$entry.taskId)
+                } catch { Write-RatchetOrbLog ('SPEECH_ERROR '+$_.Exception.Message) }
+                # Receipt records attempted system delivery and actual bubble display separately.
+                try {
+                  $payload=@{action='notification:delivery';data=@{id=[string]$entry.id;windowsAttempted=[bool]$windowsAttempted;bubbleShown=[bool]$bubbleShown}} | ConvertTo-Json -Compress
+                  Invoke-RestMethod -Uri ($script:baseUrl+'/api/action') -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body $payload -TimeoutSec 2 | Out-Null
+                } catch { Write-RatchetOrbLog ('DELIVERY_ACK_ERROR '+$_.Exception.Message) }
             }
         }
         $script:notifyIcon.Text = 'Ratchet - ' + $script:status
@@ -665,6 +793,7 @@ $timer.Add_Tick({
 $form.Add_FormClosed({
    $timer.Stop()
    $timer.Dispose()
+   try { $script:speechForm.Close();$script:speechForm.Dispose() } catch {}
    $script:notifyIcon.Visible=$false
    $script:notifyIcon.Dispose()
    try { $script:instanceMutex.ReleaseMutex() } catch {}
