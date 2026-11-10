@@ -12,13 +12,14 @@ $reportDir = Join-Path $stateRoot (Join-Path 'diagnostics' $reportId)
 function Redact-RatchetText([string]$value) {
     if ([string]::IsNullOrEmpty($value)) { return '' }
     $safe = $value
-    foreach ($pair in @(
-        @($env:LOCALAPPDATA,'%LOCALAPPDATA%'),
-        @($env:APPDATA,'%APPDATA%'),
-        @($env:USERPROFILE,'%USERPROFILE%')
-    )) {
-        if (-not [string]::IsNullOrEmpty($pair[0])) {
-            $safe = [regex]::Replace($safe,[regex]::Escape([string]$pair[0]),[string]$pair[1],[System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $prefixes = @(
+        [pscustomobject]@{ original=$env:LOCALAPPDATA; label='%LOCALAPPDATA%' },
+        [pscustomobject]@{ original=$env:APPDATA; label='%APPDATA%' },
+        [pscustomobject]@{ original=$env:USERPROFILE; label='%USERPROFILE%' }
+    )
+    foreach ($prefix in $prefixes) {
+        if (-not [string]::IsNullOrEmpty([string]$prefix.original)) {
+            $safe = [regex]::Replace($safe,[regex]::Escape([string]$prefix.original),[string]$prefix.label,[System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
         }
     }
     $safe = [regex]::Replace($safe,'(?i)\b(Authorization|token|password|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+','$1=[REDACTED]')
