@@ -58,7 +58,6 @@ public static class RatchetNativeWindow {
         catch (System.ComponentModel.Win32Exception) { return true; }
         catch (InvalidOperationException) { return true; }
       found = window; return false;
-      return true;
     }, IntPtr.Zero);
     return found;
   }
