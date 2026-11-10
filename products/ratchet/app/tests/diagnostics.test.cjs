@@ -25,7 +25,7 @@ test('diagnostics shortcut runs without console, prompt or Node prerequisite',()
   const s=read('Instaluj-Ratchet.ps1');
   assert.match(s,/"--diagnostics"/);
   assert.match(s,/\$diagTarget = \$launcher; \$diagArgs = '--diagnostics'/);
-  assert.match(s,/Set-DesktopShortcut \$desktop @\('Ratchet - Diagnostyka\.lnk'/);
+  assert.match(s,/Set-DesktopShortcut \$desktop @\('Rachet - Diagnostyka\.lnk'/);
   const d=read('Diagnostyka-Ratchet.ps1');
   assert.doesNotMatch(d,/Read-Host|pause/i);
   // Reports which copy and which build is running, and whether Windows can show toasts.
@@ -37,7 +37,7 @@ test('diagnostics shortcut runs without console, prompt or Node prerequisite',()
 
 test('installer creates a separate shortcut which works without orb',()=>{
   const s=read('Instaluj-Ratchet.ps1');
-  assert.match(s,/Ratchet - Diagnostyka\.lnk/);
+  assert.match(s,/Rachet - Diagnostyka\.lnk/);
   assert.match(s,/Diagnostyka-Ratchet\.ps1/);
 });
 
@@ -60,7 +60,7 @@ test('orb, browser menu and backend expose a fixed, local-only action',()=>{
   const panel=read('ui/panel.js');
   const bridge=read('ui/browser-bridge.js');
   const server=read('server.cjs');
-  assert.match(orb,/Zdiagnozuj Ratchet/);
+  assert.match(orb,/Zdiagnozuj Rachet/);
   assert.match(html,/data-action="diagnose"/);
   assert.match(panel,/bridge\.diagnose\(\)/);
   assert.match(bridge,/diagnostics:run/);

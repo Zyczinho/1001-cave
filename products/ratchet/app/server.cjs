@@ -9,7 +9,7 @@ const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName} = require('./core.cjs');
 
 const PORT = Number(process.env.RATCHET_PORT || 47823);
 const CLAUDE_PORT = Number(process.env.RATCHET_HOOK_PORT || 47822);
@@ -412,22 +412,16 @@ function startHookServer() {
       const session=String(data.session_id||'').slice(0,100);
       if(!session||!['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','Stop','StopFailure','Notification','SessionEnd'].includes(event))throw Error('Niepoprawne zdarzenie');
       const id='claude:'+session,index=state.agents.findIndex(x=>x.id===id),prev=index>=0?state.agents[index]:null;
-      const status=event==='StopFailure'?'blocked':event==='Stop'||event==='Notification'?'needs_attention':event==='SessionEnd'?'idle':'working';
-      const clean=normalizeItem('agents',{...prev,id,title:prev?.title||'Claude · '+session.slice(0,8),tool:'Claude Code',status,source:'hook',kind:'folder',target:String(data.cwd||prev?.target||''),note:event==='Stop'?'Odpowiedź zakończona — CI i wdrożenie niezweryfikowane':'Zdarzenie: '+event,updatedAt:new Date().toISOString()});
+      const cwd=String(data.cwd||prev?.target||'');
+      const outcome=agentHookOutcome(event,{agents:state.agents,id,prev,cwd});
+      const clean=normalizeItem('agents',{...prev,id,title:prev?.title||projectName(cwd)||'Claude · '+session.slice(0,8),tool:'Claude Code',status:outcome.status,source:'hook',kind:'folder',target:cwd,note:outcome.note,updatedAt:new Date().toISOString()});
       if(index>=0)state.agents[index]=clean;else state.agents.unshift(clean);
       state.agents=state.agents.slice(0,100);save();
-      // Notification and Stop may share the same needs_attention status.
-      // Compare the last hook event instead: never suppress a real Stop after Notification,
-      // but don't notify twice for a repeated Stop callback.
       const coordId=String(data.coordinator_job_id||'').slice(0,80);
       const coordinated=coordId&&state.coordinator.jobs.some(j=>j.id===coordId&&(j.status==='running'||j.status==='queued'));
-      // Coordinator-owned stages report through the runner, not duplicate human Stop alerts.
-      if(!coordinated&&(event==='Stop'||event==='StopFailure')&&prev?.note!==clean.note){
-        activity(event==='StopFailure'
-          ? 'Claude Code zgłosił błąd: '+clean.title+'. Sprawdź sesję.'
-          : 'Claude Code zakończył odpowiedź: '+clean.title+'. Zmiany nie są jeszcze zweryfikowane.',
-          'reminder','',event==='StopFailure'?'agent-failure':'agent');
-      }
+      // Coordinator-owned stages report through the runner, not duplicate human alerts.
+      // agentHookOutcome stays silent while other agents in the same project still work.
+      if(!coordinated&&outcome.alert)activity(outcome.alert.text,'reminder','',outcome.alert.phase);
       res.writeHead(204);res.end();
     }).catch(()=>{res.writeHead(400);res.end();});
   });

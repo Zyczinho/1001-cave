@@ -21,7 +21,7 @@ test('version aligned across server + updater + panel',()=>{
  assert.match(read('updater.cjs'),/CURRENT_VERSION = '0\.2\.9'/);
  assert.match(read('server.cjs'),/version:CURRENT_VERSION/);
  assert.match(read('ui/panel.js'),/<strong>0\.2\.9<\/strong>/);
- assert.match(read('ui/panel.html'),/Ratchet 0\.2\.9 RC/);
+ assert.match(read('ui/panel.html'),/Rachet 0\.2\.9 RC/);
  assert.match(read('Ratchet-Backend.ps1'),/\$script:RatchetVersion = '0\.2\.9'/);
  // No other hard-coded release number may drift behind.
  for(const f of ['server.cjs','updater.cjs','ui/panel.js','ui/panel.html','Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1','Instaluj-Ratchet.ps1','Uruchom-Ratchet-Bez-Electron.ps1']){

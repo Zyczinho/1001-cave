@@ -157,4 +157,41 @@ function handoffText(state, github) {
   lines.push('', 'POLECENIE:', 'Przed zmianą kodu sprawdź aktualny main, PR-y, zmieniane pliki i testy. Nie zakładaj, że odpowiedź agenta oznacza wdrożenie. Pracuj na osobnej gałęzi/worktree. Przy nakładaniu się plików uzgodnij kolejność merge. Po zmianie podaj commit, testy i status PR.');
   return lines.join('\n');
 }
-module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText};
+// Claude Code hook event -> agent status and at most one human alert.
+// Rules the owner asked for: stay silent while work continues, say "done, come look"
+// only when nothing else in the same project is still working, and say "I need you"
+// at once when an agent waits for a decision or fails.
+const BUSY_WINDOW_MS = 30 * 60 * 1000;
+function projectName(cwd) {
+  const parts = String(cwd || '').split(/[\\/]+/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
+}
+function sameProject(a, b) {
+  return String(a || '').replace(/[\\/]+$/, '').toLowerCase() === String(b || '').replace(/[\\/]+$/, '').toLowerCase();
+}
+function agentHookOutcome(event, {agents = [], id = '', prev = null, cwd = '', now = Date.now()} = {}) {
+  const status = event === 'StopFailure' ? 'blocked'
+    : event === 'Notification' ? 'needs_attention'
+    : event === 'Stop' ? 'ready'
+    : event === 'SessionEnd' ? (prev?.status === 'needs_attention' || prev?.status === 'blocked' ? prev.status : 'idle')
+    : 'working';
+  const note = event === 'Stop' ? 'Skończył — wejdź i zobacz'
+    : event === 'Notification' ? 'Czeka na Twoją decyzję'
+    : event === 'StopFailure' ? 'Błąd — sprawdź sesję'
+    : event === 'SessionEnd' ? (prev?.note || 'Sesja zamknięta')
+    : 'Pracuje';
+  const label = projectName(cwd) || prev?.title || 'Claude Code';
+  let alert = null;
+  const changed = prev?.status !== status;
+  if (event === 'Notification' && changed) {
+    alert = {phase: 'agent-attention', text: 'Potrzebuję Cię: ' + label + ' — agent czeka na Twoją decyzję.'};
+  } else if (event === 'StopFailure' && changed) {
+    alert = {phase: 'agent-failure', text: 'Potrzebuję Cię: ' + label + ' — agent zgłosił błąd.'};
+  } else if (event === 'Stop' && changed) {
+    const othersBusy = agents.some(a => a.id !== id && a.source === 'hook' && a.status === 'working'
+      && sameProject(a.target, cwd) && now - Date.parse(a.updatedAt || 0) < BUSY_WINDOW_MS);
+    if (!othersBusy) alert = {phase: 'agent-done', text: 'Gotowe: ' + label + ' — wejdź i zobacz.'};
+  }
+  return {status, note, alert};
+}
+module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName};

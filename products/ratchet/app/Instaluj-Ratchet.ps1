@@ -78,7 +78,7 @@ function Test-Files([string]$root, $manifest) {
 function Stop-Ratchet {
     $health = Get-Health
     if ($health) {
-        Say ('Zamykam działającego Ratcheta ' + $health.version + '...')
+        Say ('Zamykam działającego Racheta ' + $health.version + '...')
         try {
             Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 3 | Out-Null
         } catch { Trace ('Quit: ' + $_.Exception.Message) }
@@ -209,6 +209,25 @@ function Set-DesktopShortcut([string]$desktop, [string[]]$names, [string]$target
     }
     return $null
 }
+# Old "Ratchet" shortcuts that start this program are moved to the backup (never deleted),
+# so the Desktop shows one "Rachet". Shortcuts pointing anywhere else are left alone.
+function Move-OldShortcuts([string]$desktop) {
+    $ws = New-Object -ComObject WScript.Shell
+    foreach ($name in @('Ratchet.lnk','Ratchet (1001 CAVE).lnk','Ratchet - Diagnostyka.lnk','Ratchet (1001 CAVE) - Diagnostyka.lnk')) {
+        $path = Join-Path $desktop $name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        try {
+            $lnk = $ws.CreateShortcut($path)
+            $target = [string]$lnk.TargetPath
+            $ours = $target -match '\\Ratchet\\app\\Ratchet\.exe$' -or ($target -match 'powershell\.exe$' -and [string]$lnk.Arguments -match '\\Ratchet\\app\\')
+            if (-not $ours) { Trace ('Old shortcut kept (other target): ' + $name); continue }
+            $dest = Join-Path $backupRoot 'desktop-shortcuts'
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Move-Item -LiteralPath $path -Destination (Join-Path $dest $name) -Force -ErrorAction Stop
+            Trace ('Old shortcut moved to backup: ' + $name)
+        } catch { Trace ('Old shortcut not moved: ' + $name + ' ' + $_.Exception.Message) }
+    }
+}
 function Start-Installed([string]$launcher) {
     if ($launcher) {
         Start-Process -FilePath $launcher -WorkingDirectory $appRoot | Out-Null
@@ -279,7 +298,7 @@ function Invoke-DesktopCleanup([string]$packageRoot) {
     $preview = ($names | Select-Object -First 14) -join "`n  "
     if ($names.Count -gt 14) { $preview += "`n  ... i " + ($names.Count - 14) + ' innych' }
     $target = Join-Path $backupRoot 'pulpit'
-    $answer = Show-Box ("Na Pulpicie zostały pliki techniczne starszych wersji Ratcheta (" + $names.Count + "):`n  " + $preview +
+    $answer = Show-Box ("Na Pulpicie zostały pliki techniczne starszych wersji Racheta (" + $names.Count + "):`n  " + $preview +
         "`n`nPrzenieść je z Pulpitu do kopii zapasowej Ratcheta?`nNiczego nie usuwam. Kopia: " + $target +
         "`n`nTwoje inne pliki i foldery na Pulpicie nie zostaną ruszone.") 'Ratchet - porządek na Pulpicie' 'YesNo' 'Question'
     if ($answer -ne 'Yes') { Say 'Pulpit: pozostawiono pliki bez zmian.'; return }
@@ -304,7 +323,7 @@ try {
     $manifest = Read-Manifest $source
     $version = [string]$manifest.version
     $commit = [string]$manifest.commit
-    Say ('Ratchet ' + $version + ' (' + $(if ($commit) { $commit.Substring(0, [Math]::Min(12,$commit.Length)) } else { 'bez numeru commita' }) + ')') 'Cyan'
+    Say ('Rachet ' + $version + ' (' + $(if ($commit) { $commit.Substring(0, [Math]::Min(12,$commit.Length)) } else { 'bez numeru commita' }) + ')') 'Cyan'
     try { $null = (Get-Command 'node.exe' -ErrorAction Stop).Source }
     catch { throw 'Brak Node.js. Zainstaluj Node.js LTS z nodejs.org, a potem uruchom instalator ponownie.' }
 
@@ -361,8 +380,11 @@ try {
     # Shortcuts never decide whether the install succeeded. On a OneDrive Desktop an old,
     # deleted name can stay locked ("access denied" for exactly Ratchet.lnk); then a
     # second name is used and the installed program keeps working.
-    $mainLink = Set-DesktopShortcut $desktop @('Ratchet.lnk','Ratchet (1001 CAVE).lnk') $mainTarget $mainArgs $appRoot $icon 'Ratchet - kuleczka i mały panel'
-    $diagLink = Set-DesktopShortcut $desktop @('Ratchet - Diagnostyka.lnk','Ratchet (1001 CAVE) - Diagnostyka.lnk') $diagTarget $diagArgs $appRoot $icon 'Ratchet - diagnoza jednym kliknięciem, raport tylko lokalnie'
+    # Visible name is "Rachet"; folders, profile and process names stay "Ratchet" so user
+    # data, antivirus exceptions and running copies are found exactly as before.
+    $mainLink = Set-DesktopShortcut $desktop @('Rachet.lnk','Rachet (1001 CAVE).lnk') $mainTarget $mainArgs $appRoot $icon 'Rachet - kuleczka i mały panel'
+    $diagLink = Set-DesktopShortcut $desktop @('Rachet - Diagnostyka.lnk','Rachet (1001 CAVE) - Diagnostyka.lnk') $diagTarget $diagArgs $appRoot $icon 'Rachet - diagnoza jednym kliknięciem, raport tylko lokalnie'
+    if ($mainLink) { Move-OldShortcuts $desktop }
     if ($mainLink) { Say ('Pulpit: skróty "' + [IO.Path]::GetFileNameWithoutExtension($mainLink) + '" i "' + $(if ($diagLink) { [IO.Path]::GetFileNameWithoutExtension($diagLink) } else { 'brak diagnostyki' }) + '".') }
     else { Say 'UWAGA: nie udało się utworzyć skrótu na Pulpicie. Ratchet jest zainstalowany; uruchom go z %LOCALAPPDATA%\Ratchet\app\Ratchet.exe.' 'Yellow' }
 
@@ -376,7 +398,7 @@ try {
     }
 
     if (-not $NoLaunch) {
-        Say 'Uruchamiam Ratcheta...'
+        Say 'Uruchamiam Racheta...'
         Start-Installed $launcher
         $health = $null
         # Deadline in time, not attempts: on Windows a refused localhost connect alone takes ~1-2 s.
@@ -406,7 +428,7 @@ try {
 
     if (-not $Unattended -and -not $NoDesktopCleanup) { Invoke-DesktopCleanup $packageRoot }
     Trace '==== SUCCESS'
-    [void](Show-Box ('Ratchet ' + $version + ' jest zainstalowany i działa.' + "`n`nKliknij kuleczkę, aby otworzyć panel. Na Pulpicie są tylko dwa skróty Ratcheta: start i diagnostyka.`n`nFolder z rozpakowanym ZIP-em możesz teraz usunąć.") 'Ratchet')
+    [void](Show-Box ('Rachet ' + $version + ' jest zainstalowany i działa.' + "`n`nKliknij kuleczkę, aby otworzyć panel. Na Pulpicie są tylko dwa skróty Racheta: start i diagnostyka.`n`nFolder z rozpakowanym ZIP-em możesz teraz usunąć.") 'Ratchet')
     exit 0
 } catch {
     $failure = $_.Exception.Message
@@ -438,6 +460,6 @@ try {
     Write-Host ('Instalacja nie powiodła się: ' + $failure) -ForegroundColor Red
     Write-Host ('Dziennik: ' + $log)
     Write-Host 'Dane użytkownika w %APPDATA%\Ratchet nie zostały zmienione.'
-    [void](Show-Box ('Instalacja Ratcheta nie powiodła się:' + "`n" + $failure + "`n`nPoprzednia wersja została przywrócona. Dane użytkownika nie zostały zmienione.`nDziennik: " + $log) 'Ratchet - instalacja' 'OK' 'Error')
+    [void](Show-Box ('Instalacja Racheta nie powiodła się:' + "`n" + $failure + "`n`nPoprzednia wersja została przywrócona. Dane użytkownika nie zostały zmienione.`nDziennik: " + $log) 'Rachet - instalacja' 'OK' 'Error')
     exit 1
 }
