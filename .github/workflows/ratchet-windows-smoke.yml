@@ -80,6 +80,23 @@ jobs:
             if(-not (Test-Path -LiteralPath (Join-Path $unpacked $required))) {throw ('RC ZIP missing '+$required)}
           }
           Write-Host ('RC_ZIP_OK: '+$zip)
+      - name: Test the actual one-click RC installer from extracted ZIP
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $env:RUNNER_TEMP 'ratchet-unpacked-verify\Instaluj-Ratchet-Test.ps1'
+          if(-not (Test-Path -LiteralPath $installer)){throw 'RC installer missing after unzip'}
+          $install = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$installer+'"')) -PassThru -Wait
+          if($install.ExitCode -ne 0){
+            $log = Join-Path $env:LOCALAPPDATA 'Ratchet\installer-test.log'
+            if(Test-Path -LiteralPath $log){Get-Content -LiteralPath $log -Tail 30 | Write-Host}
+            throw ('RC installer failed exit code '+$install.ExitCode)
+          }
+          $health = Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/ping' -TimeoutSec 3
+          if(-not $health.ok -or $health.version -ne '0.2.8'){throw 'Installed RC health mismatch'}
+          $installedManifest = Join-Path $env:LOCALAPPDATA 'Ratchet\app\ratchet-release-manifest.json'
+          if(-not (Test-Path -LiteralPath $installedManifest)){throw 'Installed RC manifest missing'}
+          Write-Host 'RC_INSTALL_FROM_ZIP_OK'
+          Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 3 | Out-Null
       - name: Publish downloadable TEST artifact (not stable channel)
         uses: actions/upload-artifact@v4
         with:
