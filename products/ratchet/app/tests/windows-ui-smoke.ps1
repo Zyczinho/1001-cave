@@ -6,6 +6,11 @@ $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $port=47823
 if($env:RATCHET_PORT -match '^[1-9][0-9]{3,4}$'){$port=[int]$env:RATCHET_PORT}
+# Fail closed on a real user machine. The default port is the live Ratchet.
+# GitHub Actions runs on a disposable runner and may use the default for CI.
+if($port -eq 47823 -and $env:GITHUB_ACTIONS -ne 'true') {
+    throw 'Test Windows nie moze dzialac na produkcyjnym porcie 47823. Uzyj TESTUJ-P0-BEZPIECZNIE.ps1.'
+}
 $base='http://127.0.0.1:'+$port
 $profileSuffix=''
 if($port -ne 47823){$profileSuffix='-'+$port}
