@@ -1,4 +1,5 @@
-# Ratchet P0: isolated Windows smoke test. NEVER installs or updates the live Ratchet.
+# Ratchet P0: isolated Windows smoke/manual test. NEVER installs or updates the live Ratchet.
+param([switch]$Manual)
 # Works from a separate checkout of PR #23, not from %LOCALAPPDATA%\Ratchet\app.
 $ErrorActionPreference='Stop'
 $testScript=Join-Path $PSScriptRoot 'windows-ui-smoke.ps1'
@@ -46,16 +47,26 @@ try {
     $env:RATCHET_DISABLE_HOOKS='1'
     # Do not execute CI-only Edge preference fixture on a user's actual browser.
     $env:GITHUB_ACTIONS=''
-    $tests=@(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.test.cjs' -File | ForEach-Object { $_.FullName })
-    if(-not $tests.Count){throw 'Nie znaleziono testow Node'}
-    Write-Host ('TEST 1/2: Node ('+$tests.Count+' plikow)') -ForegroundColor Cyan
-    & $node.Source --test @tests
-    if($LASTEXITCODE -ne 0){throw ('Testy Node nie przeszly (exit '+$LASTEXITCODE+'). Test pulpitu nie zostal uruchomiony.')}
-    Write-Host 'TEST 2/2: WinForms + Edge + panel + powiadomienie' -ForegroundColor Cyan
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $testScript
-    if($LASTEXITCODE -ne 0){throw ('Smoke Windows nie przeszedl (exit '+$LASTEXITCODE+').')}
-    Write-Host 'TESTY ZAKONCZONE: PASS (automatyczny test pulpitu)' -ForegroundColor Green
-    Write-Host 'UWAGA: Windows moze wyciszyc balloon notification. Ten test potwierdza natywny dymek.' -ForegroundColor Yellow
+    if($Manual) {
+        Write-Host 'TRYB RECZNY: uruchamiam DRUGA kuleczke Ratcheta na porcie 47830.' -ForegroundColor Cyan
+        Write-Host 'Przetestuj licznik, sygnaly i powiadomienia. Zakoncz test przez PPM na kuleczce -> Zakoncz Ratchet.' -ForegroundColor Yellow
+        Write-Host 'Nie zamykaj oryginalnego Ratcheta. Test ma osobne porty i dane.'
+        $launcher=Join-Path $appRoot 'Uruchom-Ratchet-Bez-Electron.ps1'
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $launcher
+        if($LASTEXITCODE -ne 0){throw ('Testowa kuleczka nie uruchomila sie poprawnie (exit '+$LASTEXITCODE+').')}
+        Write-Host 'Zakonczono reczny test bez podmieniania zainstalowanego Ratcheta.' -ForegroundColor Green
+    } else {
+        $tests=@(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.test.cjs' -File | ForEach-Object { $_.FullName })
+        if(-not $tests.Count){throw 'Nie znaleziono testow Node'}
+        Write-Host ('TEST 1/2: Node ('+$tests.Count+' plikow)') -ForegroundColor Cyan
+        & $node.Source --test @tests
+        if($LASTEXITCODE -ne 0){throw ('Testy Node nie przeszly (exit '+$LASTEXITCODE+'). Test pulpitu nie zostal uruchomiony.')}
+        Write-Host 'TEST 2/2: WinForms + Edge + panel + powiadomienie' -ForegroundColor Cyan
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $testScript
+        if($LASTEXITCODE -ne 0){throw ('Smoke Windows nie przeszedl (exit '+$LASTEXITCODE+').')}
+        Write-Host 'TESTY ZAKONCZONE: PASS (automatyczny test pulpitu)' -ForegroundColor Green
+        Write-Host 'UWAGA: Windows moze wyciszyc balloon notification. Ten test potwierdza natywny dymek.' -ForegroundColor Yellow
+    }
 } catch {
     $code=1
     Write-Host ('STOP: '+$_.Exception.Message) -ForegroundColor Red
