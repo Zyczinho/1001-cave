@@ -1,8 +1,9 @@
 name: Ratchet — Windows startup smoke
+# Native Windows gate for the Ratchet release candidate.
 on:
   push:
     branches:
-      - ratchet/stability-0.2.7
+      - codex/ratchet-oneclick-diagnostics
     paths:
       - "products/ratchet/app/**"
       - ".github/workflows/ratchet-windows-smoke.yml"
@@ -27,7 +28,7 @@ jobs:
           node --test tests/*.test.cjs
       - name: Parse PowerShell scripts
         run: |
-          $files = @('Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1','Uruchom-Ratchet-Bez-Electron.ps1','Apply-Ratchet-Update.ps1')
+          $files = @('Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1','Uruchom-Ratchet-Bez-Electron.ps1','Apply-Ratchet-Update.ps1','Diagnostyka-Ratchet.ps1','Instaluj-Ratchet.ps1','Instaluj-Ratchet-Test.ps1','tests/windows-ui-smoke.ps1')
           foreach ($f in $files) {
             $tokens = $null
             $errors = $null
@@ -35,6 +36,18 @@ jobs:
             if (@($errors).Count -gt 0) { throw "Parser error $f : $($errors | Out-String)" }
             Write-Host "PARSE_OK: $f"
           }
+      - name: One-click diagnostics run when backend is offline
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\Diagnostyka-Ratchet.ps1 -Quiet | Out-Null
+          $reports = Join-Path $env:LOCALAPPDATA 'Ratchet\diagnostics'
+          $newest = Get-ChildItem -LiteralPath $reports -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $newest) { throw 'No diagnostics folder' }
+          $json = Get-Content -LiteralPath (Join-Path $newest.FullName 'report.json') -Raw | ConvertFrom-Json
+          if ($json.sharing -ne 'LOCAL_ONLY_NOT_SENT') { throw 'Report must remain local' }
+          if (-not $json.reportId -or -not $json.backend.status -or -not $json.files) { throw 'Incomplete report' }
+          if (-not (Test-Path (Join-Path $newest.FullName 'summary.txt'))) { throw 'Missing summary' }
+          Write-Host "DIAGNOSTICS_OK: $($json.reportId) / backend $($json.backend.status)"
       - name: Start backend via PowerShell and verify health
         run: |
           $ErrorActionPreference = 'Stop'
@@ -42,18 +55,65 @@ jobs:
           try {
             $h = Start-RatchetBackend
             if (-not $h) { throw "Start-RatchetBackend returned null" }
-            if (-not $h.ok -or $h.version -ne '0.2.7') { throw "Wrong health response: $($h|ConvertTo-Json -Compress)" }
+            if (-not $h.ok -or $h.version -ne '0.2.8') { throw "Wrong health response: $($h|ConvertTo-Json -Compress)" }
             Write-Host "BACKEND_OK: $($h|ConvertTo-Json -Compress)"
           } finally {
             try {
               Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 3 | Out-Null
             } catch { Write-Host "Stop error: $($_.Exception.Message)" }
           }
+      - name: Native orb and Edge panel lifecycle
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tests\windows-ui-smoke.ps1
+      - name: Build verified Windows RC installation ZIP
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:RATCHET_RC_DIR = Join-Path $env:RUNNER_TEMP 'ratchet-rc-0.2.8'
+          node -e "const x=require('./scripts/build-candidate.cjs'); const b=x.buildCandidate({outputDir:process.env.RATCHET_RC_DIR}); console.log('RC verified files:',b.files)"
+          $source = Join-Path $env:RATCHET_RC_DIR 'ratchet-updates\releases\v0.2.8'
+          $zip = Join-Path $env:RUNNER_TEMP 'Ratchet-0.2.8-RC-Windows.zip'
+          Compress-Archive -Path (Join-Path $source '*') -DestinationPath $zip -CompressionLevel Optimal
+          $unpacked = Join-Path $env:RUNNER_TEMP 'ratchet-unpacked-verify'
+          Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
+          foreach ($required in @('ZAINSTALUJ-TEST.cmd','Instaluj-Ratchet-Test.ps1','ratchet-release-manifest.json','Ratchet-Kuleczka.ps1')) {
+            if(-not (Test-Path -LiteralPath (Join-Path $unpacked $required))) {throw ('RC ZIP missing '+$required)}
+          }
+          Write-Host ('RC_ZIP_OK: '+$zip)
+      - name: Test the actual one-click RC installer from extracted ZIP
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $env:RUNNER_TEMP 'ratchet-unpacked-verify\Instaluj-Ratchet-Test.ps1'
+          if(-not (Test-Path -LiteralPath $installer)){throw 'RC installer missing after unzip'}
+          # -Wait would wait for the long-lived orb descendant too: poll only installer PID.
+          $install = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$installer+'"')) -PassThru
+          for($i=0;$i -lt 100;$i++){ Start-Sleep -Milliseconds 300; $install.Refresh(); if($install.HasExited){break} }
+          if(-not $install.HasExited){throw 'Installer did not exit within 30s'}
+          if($install.ExitCode -ne 0){
+            $log = Join-Path $env:LOCALAPPDATA 'Ratchet\installer-test.log'
+            if(Test-Path -LiteralPath $log){Get-Content -LiteralPath $log -Tail 30 | Write-Host}
+            throw ('RC installer failed exit code '+$install.ExitCode)
+          }
+          $health = Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/ping' -TimeoutSec 3
+          if(-not $health.ok -or $health.version -ne '0.2.8'){throw 'Installed RC health mismatch'}
+          $installedManifest = Join-Path $env:LOCALAPPDATA 'Ratchet\app\ratchet-release-manifest.json'
+          if(-not (Test-Path -LiteralPath $installedManifest)){throw 'Installed RC manifest missing'}
+          Write-Host 'RC_INSTALL_FROM_ZIP_OK'
+          Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 3 | Out-Null
+      - name: Publish downloadable TEST artifact (not stable channel)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ratchet-0.2.8-RC-Windows
+          path: ${{ runner.temp }}\Ratchet-0.2.8-RC-Windows.zip
+          retention-days: 30
+          if-no-files-found: error
       - name: Diagnostics on failure
         if: failure()
         run: |
           $root=Join-Path $env:LOCALAPPDATA 'Ratchet'
           Write-Host "APP_DATA: $root"
+          $boot = Join-Path $root "launcher-boot.log"
+          if(Test-Path -LiteralPath $boot){Write-Host "LAUNCHER_BOOT_LOG";Get-Content -LiteralPath $boot -Tail 45 | Write-Host}
           Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue | Select-Object FullName,Length,LastWriteTime | Format-Table -AutoSize
           Get-ChildItem -LiteralPath (Join-Path $root 'logs') -Filter '*.log' -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Host "\nLOG: $($_.FullName)"; Get-Content -LiteralPath $_.FullName -Tail 70 -ErrorAction SilentlyContinue }

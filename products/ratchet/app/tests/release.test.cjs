@@ -18,7 +18,7 @@ test('self-hosted icons and no external CDN',()=>{
  assert.doesNotMatch(html,/cdn\.|unpkg\.|fonts\.googleapis/);
 });
 test('version aligned across server + updater + panel',()=>{
- assert.match(read('updater.cjs'),/CURRENT_VERSION = '0\.2\.7'/);
- assert.match(read('server.cjs'),/version:'0\.2\.7'/);
- assert.match(read('ui/panel.js'),/0\.2\.7/);
+ assert.match(read('updater.cjs'),/CURRENT_VERSION = '0\.2\.8'/);
+ assert.match(read('server.cjs'),/version:'0\.2\.8'/);
+ assert.match(read('ui/panel.js'),/0\.2\.8/);
 });

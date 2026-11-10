@@ -17,6 +17,13 @@ try {
 } catch {
   $errorText = '['+(Get-Date -Format s)+'] ERROR '+$_.Exception.ToString()
   try { Add-Content -LiteralPath $log -Value $errorText } catch {}
+  # Independent, local-only snapshot on launcher failure; never restart or delete data.
+  try {
+    $diagnostics = Join-Path $root 'Diagnostyka-Ratchet.ps1'
+    if (Test-Path -LiteralPath $diagnostics -PathType Leaf) {
+      & $diagnostics -Quiet | Out-Null
+    }
+  } catch {}
   try {
     Add-Type -AssemblyName System.Windows.Forms
     [System.Windows.Forms.MessageBox]::Show(('Ratchet: nie można uruchomić aplikacji. Log: '+$log),'Ratchet') | Out-Null

@@ -26,9 +26,11 @@ if(!window.ratchet && location.hostname==='127.0.0.1' && location.port==='47823'
     open:(kind,target)=>action('open-target',{kind,target}),
     handoff:async()=>{const value=await action('handoff');await navigator.clipboard.writeText(value);return value;},
     refreshGithub:()=>action('github:refresh'),
-    hidePanel:async()=>window.close(),
+    hidePanel:async()=>{await action('panel:hide');window.close();return true;},
     checkUpdate:()=>action('update:check'),
     installUpdate:()=>action('update:install'),
+    diagnose:()=>action('diagnostics:run'),
+    testNotification:()=>action('notification:test'),
     quit:()=>action('quit'),
     resetOrb:async()=>true
   };

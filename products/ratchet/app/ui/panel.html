@@ -11,6 +11,7 @@
         <div class="app-menu" id="appMenu" hidden>
           <button type="button" data-action="show-settings"><span data-icon="settings"></span> Ustawienia</button>
           <button type="button" data-action="update-check"><span data-icon="refresh"></span> Sprawdź aktualizacje</button>
+          <button type="button" data-action="diagnose"><span data-icon="settings"></span> Zdiagnozuj Ratchet</button>
           <button type="button" data-action="hide-panel"><span data-icon="minimize"></span> Ukryj panel</button>
           <div class="menu-rule"></div>
           <button type="button" class="menu-danger" data-action="quit"><span data-icon="power"></span> Zakończ Ratchet</button>
@@ -21,13 +22,13 @@
     <section class="topline"><div><div class="tiny-label">TERAZ</div><div class="clock" id="clock">--:--</div></div><div class="date-chip" id="dateLabel">—</div></section>
     <section class="status-strip" id="statusStrip"><div class="status-box"><span class="s-dot blue"></span> Ładowanie...</div></section>
     <nav class="tabs" aria-label="Sekcje">
-      <button data-tab="today" class="tab active"><span data-icon="clock"></span> Dziś</button>
-      <button data-tab="agents" class="tab"><span data-icon="bot"></span> Agenci</button>
-      <button data-tab="links" class="tab"><span data-icon="external"></span> Skróty</button>
+      <button data-tab="today" class="tab active">Dziś</button>
+      <button data-tab="agents" class="tab"><span data-icon="glasses"></span> Agenci</button>
+      <button data-tab="links" class="tab"><span data-icon="link"></span> Skróty</button>
       <button data-tab="settings" class="tab"><span data-icon="settings"></span> Ustawienia</button>
     </nav>
     <section id="view" class="view"></section>
-    <div class="footer"><span><span class="dot pulse"></span> Ratchet 0.2.7 · 1001 CAVE</span><span>Ctrl + Shift + R</span></div>
+    <div class="footer"><span><span class="dot pulse"></span> Ratchet 0.2.8 RC · 1001 CAVE</span><span>Ctrl + Shift + R</span></div>
     <div id="toast" role="status"></div>
     <div class="overlay" id="modal" hidden><div class="modal-card"><div class="modal-head"><h2 id="modalTitle">Nowy element</h2><button class="icon-btn" data-action="modal-close" aria-label="Zamknij formularz"><span data-icon="x"></span></button></div><form id="itemForm"></form></div></div>
   </main>

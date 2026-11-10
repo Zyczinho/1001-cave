@@ -1,10 +1,12 @@
-# Ratchet 0.2.7 — sprint stabilności (1001 CAVE)
+# Ratchet 0.2.8 RC — stabilność i samodiagnostyka (1001 CAVE)
+
+**Status: kandydat do wydania. Niepublikowany w kanale stable; wymaga zielonego Windows CI i rzeczywistego testu na komputerze.**
 
 Ratchet jest małym asystentem Windows: plan dnia, skróty do stron i folderów, monitoring sesji agentów oraz wybrane informacje z GitHuba. Ta wersja koncentruje się na stabilności; bez Electron i bez `npm install`. Wymagany jest lokalnie Node.js.
 
-## Aktualizacja z wersji 0.2.4–0.2.5 (zalecana)
+## Aktualizacja z wersji 0.2.4–0.2.7 (po zatwierdzeniu wydania)
 
-Jeśli Ratchet jest zainstalowany w `%LOCALAPPDATA%\Ratchet\app`, uruchom jego zwykły skrót, wybierz **Ustawienia → Sprawdź aktualizacje → Zainstaluj 0.2.7**. Kanał jest w prywatnym repozytorium `Zyczinho/1001-cave`, gałąź `ratchet-updates`. Obecna wersja aktualizatora korzysta z jednorazowego logowania do GitHub CLI (`gh auth login`) w przypadku prywatnego repo. Nie trzeba zmieniać widoczności repo ani ponownie rozpakowywać ZIP-ów.
+Jeśli Ratchet jest zainstalowany w `%LOCALAPPDATA%\Ratchet\app`, uruchom jego zwykły skrót, wybierz **Ustawienia → Sprawdź aktualizacje → Zainstaluj 0.2.8**, dopiero gdy 0.2.8 zostanie opublikowana po testach. Kanał jest w prywatnym repozytorium `Zyczinho/1001-cave`, gałąź `ratchet-updates`. Obecna wersja aktualizatora korzysta z jednorazowego logowania do GitHub CLI (`gh auth login`) w przypadku prywatnego repo. Nie trzeba zmieniać widoczności repo ani ponownie rozpakowywać ZIP-ów.
 
 **Ważne przy pierwszym przejściu:** stara wersja aktualizatora (0.2.4) uruchamia aktualizację według swoich dotychczasowych zasad. Test po restarcie i automatyczny rollback są częścią nowego aktualizatora 0.2.7 i działają dla kolejnych wersji. Nie zamykaj Ratcheta podczas podmiany plików. W przypadku pierwszej awarii sprawdź `%LOCALAPPDATA%\Ratchet\update-log.txt`.
 
@@ -27,7 +29,7 @@ Automatycznie: `node --test tests/*.test.cjs` — 34 testy (logika, serwer HTTP,
 
 **Testy manualne Windows są obowiązkowe przed uznaniem wydania za w pełni stabilne:**
 
-1. Uruchom Ratcheta ze skrótu, zamknij każdy otwarty Terminal. `/api/ping` nadal zwraca `ok:true` oraz `version:0.2.7`.
+1. Uruchom Ratcheta ze skrótu, zamknij każdy otwarty Terminal. `/api/ping` nadal zwraca `ok:true` oraz `version:0.2.8`.
 2. Kliknij kuleczkę szybko pięć razy: pozostaje jedno okno panelu.
 3. Klikaj w pulpit, linki i przyciski tuż poza obrysem kuleczki: żadne kliknięcie nie jest przechwytywane.
 4. Zamknij wyłącznie proces `node.exe` uruchamiający `server.cjs` Ratcheta: kuleczka powinna automatycznie odtworzyć serwer.
@@ -35,6 +37,17 @@ Automatycznie: `node --test tests/*.test.cjs` — 34 testy (logika, serwer HTTP,
 6. Prawy klik na kuleczce lub ikonie obok zegara → `Zakończ Ratchet`: kula znika, a backend przestaje działać.
 7. Ponowne uruchomienie zachowuje zadania i skróty; awaryjny skrypt `AWARYJNIE-ZATRZYMAJ-RATCHET.cmd` działa bez kasowania danych.
 
+## Samodiagnostyka jednym kliknieciem (kandydat do kolejnego wydania)
+
+**Stan: kod na galezi / PR, NIE opublikowano do stabilnego kanalu aktualizacji i NIE potwierdzono Windows E2E.**
+
+Nowy plik `Diagnostyka-Ratchet.ps1` dziala w Windows PowerShell 5.1, nawet gdy lokalny serwer Node, orb lub panel nie odpowiada. Zbiera tylko odczyty: procesy Ratcheta, zdrowie `/api/ping`, skrot desktop, SHA-256 plikow i ostatnie logi. Nie restartuje niczego i nie wysyla danych do internetu. Nie wymaga logowania do GitHub.
+
+Punkty uruchomienia: skrot `Ratchet - Diagnostyka` utworzony po ponownym uruchomieniu instalatora, `Diagnostyka-Ratchet.cmd` w folderze programu, menu kuleczki i panelu. Jezeli launcher rzuci wyjatek, sprobuje uruchomic diagnostyke z `-Quiet`, bez wyswietlania okna.
+
+Raport zapisuje sie w `%LOCALAPPDATA%\Ratchet\diagnostics\<ID>\report.json` wraz z `summary.txt`. Przy zwyklym uruchomieniu podsumowanie otwiera sie w Notatniku. Logi sa lokalne i redagowane pod katem typowych sekretow oraz sciezek profilu, ale przed udostepnieniem nalezy je przejrzec; zadna automatyczna wysylka nie jest jeszcze uruchomiona. Bez lokalnego manifestu release diagnostyka pokazuje status `UNKNOWN_NO_LOCAL_MANIFEST`, a nie sugeruje, ze hash pasuje do wersji w GitHub.
+
+To jest P0: **jeden raport zamiast serii kopiowanych komend**. Drugi etap — autoryzowana komunikacja Ratchet <-> asystent bez przeklejania wynikow — ma specyfikacje w `products/ratchet/DIAGNOSTICS_BRIDGE_SPEC.md` na PR #16 i osobne zadanie #18. Nie jest jeszcze zaimplementowany.
 ## Diagnostyka i odzyskiwanie
 
 - Serwer: `http://127.0.0.1:47823/api/ping`
@@ -46,4 +59,4 @@ Automatycznie: `node --test tests/*.test.cjs` — 34 testy (logika, serwer HTTP,
 
 Nie usuwaj folderu profilu, nawet jeśli chcesz odinstalować starą aplikację. W razie awarii ustawień autostartu/Windows użyj zwykłego skrótu lub pliku `URUCHOM-RATCHET.cmd` z katalogu instalacji.
 
-**Status wydania:** automatyczne testy zaliczone; kod opublikowany do ręcznego testu na Windowsie. Natywnego testu PowerShell/WinForms nie można uznać za zakończony na podstawie testów Node.
+**Status wydania:** kod przygotowany, ale kontrola CI dla tego repozytorium jest zablokowana przed przydziałem runnera. Nie uznawać tego wydania za dostępne ani przetestowane. Natywnego testu PowerShell/WinForms nie można uznać za zakończony na podstawie testów Node.

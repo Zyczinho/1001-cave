@@ -21,7 +21,7 @@ test('one orb and one panel with native HWND enumeration',()=>{
   assert.match(src,/EnumWindows/);
   assert.match(src,/FindPanel\(\)/);
   assert.match(src,/panel:show/);
-  assert.match(src,/TotalSeconds -lt 18/);
+  assert.match(src,/TotalSeconds -lt 2/);
 });
 test('installer rolls back if new version does not start',()=>{
   const src=read('Apply-Ratchet-Update.ps1');
@@ -38,4 +38,41 @@ test('panel offline state explicitly tracks request failures',()=>{
   assert.match(read('ui/browser-bridge.js'),/ratchet:connection/);
   assert.match(read('ui/panel.js'),/BRAK POŁĄCZENIA/);
   assert.match(read('ui/panel.html'),/id="backendStatus"/);
+});
+
+test('backend startup accepts old versions 0.2.0 through 0.2.7 without corrupt PowerShell regex',()=>{
+  const src=read('Ratchet-Backend.ps1');
+  assert.ok(src.includes(String.raw`-match '^0\.2\.[0-7]$'`),'version-regex must retain closing quote and anchor');
+  assert.ok(src.includes("$existing.version -eq '0.2.8'"));
+  assert.equal((src.match(/function Start-RatchetBackend/g)||[]).length,1);
+  assert.match(src.trimEnd(),/return \$null\r?\n\}$/,'backend script must not have extra tokens after its single function');
+});
+test('PowerShell updater message does not interpolate an invalid drive-style variable',()=>{
+  const src=read('Apply-Ratchet-Update.ps1');
+  assert.ok(src.includes('SUCCESS ${ExpectedVersion}: /api/ping confirmed'));
+  assert.doesNotMatch(src,/SUCCESS \$ExpectedVersion:/);
+});
+
+test('orb never mistakes Windows Terminal or PowerShell with title Ratchet for Edge panel',()=>{
+  const src=read('Ratchet-Kuleczka.ps1');
+  assert.match(src,/GetWindowThreadProcessId/);
+  assert.match(src,/Process\.GetProcessById/);
+  assert.match(src,/owner\.ProcessName, "msedge"/);
+  assert.match(src,/return true;\s*}\s*catch/);
+  const smoke=read('tests/windows-ui-smoke.ps1');
+  assert.match(smoke,/RATCHET_TERMINAL_DECOY_READY/);
+  assert.match(smoke,/RatchetSmokeWindows\]::PanelTitles/);
+});
+
+test('panel opens as compact 360x520 companion anchored to orb',()=>{
+  const src=read('Ratchet-Kuleczka.ps1');
+  assert.match(src,/Min\(360,/);
+  assert.match(src,/Min\(520,/);
+  assert.match(src,/\$form\.Bottom\+10/);
+  assert.doesNotMatch(src,/Min\(480,/);
+  assert.doesNotMatch(src,/Min\(720,/);
+  const css=read('ui/style.css');
+  assert.match(css,/Compact companion window \(360 x 520\)/);
+  assert.match(css,/@media \(max-width: 410px\)/);
+  assert.match(css,/\.view \{ min-height: 0; padding:/);
 });

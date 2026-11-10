@@ -15,8 +15,8 @@ function Get-RatchetBackendHealth {
 function Start-RatchetBackend {
   param([switch]$ForceCheck)
   $existing = Get-RatchetBackendHealth
-  if ($existing -and $existing.version -eq '0.2.7') { return $existing }
-  if ($existing -and $existing.version -match '^0\.2\.[0-6]$') {
+  if ($existing -and $existing.version -eq '0.2.8') { return $existing }
+  if ($existing -and $existing.version -match '^0\.2\.[0-7]$') {
     try {Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 3 | Out-Null} catch {}
     for($i=0;$i -lt 28;$i++){Start-Sleep -Milliseconds 250;if(-not (Get-RatchetBackendHealth)){break}}
   }
@@ -28,7 +28,7 @@ function Start-RatchetBackend {
     if (-not $owned) { return $null }
     # Another launcher may have started the server while we waited.
     $existing = Get-RatchetBackendHealth
-    if ($existing) { if($existing.version -eq '0.2.7'){return $existing} else{throw ('Port 47823 zajmuje inna wersja: '+$existing.version)} }
+    if ($existing) { if($existing.version -eq '0.2.8'){return $existing} else{throw ('Port 47823 zajmuje inna wersja: '+$existing.version)} }
     $node = (Get-Command 'node.exe' -ErrorAction Stop).Source
     $entry = Join-Path $script:ratchetBackendRoot 'server.cjs'
     if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { throw 'Brakuje server.cjs' }

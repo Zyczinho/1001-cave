@@ -28,5 +28,15 @@ $link.WorkingDirectory = $destination
 $link.IconLocation = (Join-Path $destination 'assets\ratchet.ico')
 $link.Description = 'Ratchet — jeden panel, jedna kuleczka, szybkie aktualizacje'
 $link.Save()
+# Diagnostic entrypoint survives a dead backend and a missing orb process.
+$diagnosticShortcut = Join-Path $desktop 'Ratchet - Diagnostyka.lnk'
+$diag = $ws.CreateShortcut($diagnosticShortcut)
+$diag.TargetPath = 'powershell.exe'
+$diag.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $destination 'Diagnostyka-Ratchet.ps1') + '"'
+$diag.WorkingDirectory = $destination
+$diag.IconLocation = (Join-Path $destination 'assets\ratchet.ico')
+$diag.Description = 'Ratchet - diagnoza jednym kliknieciem, raport tylko lokalnie'
+$diag.Save()
 Write-Host ('Gotowe. Skrot na Pulpicie: ' + $shortcut)
+Write-Host ('Diagnostyka bez serwera: ' + $diagnosticShortcut)
 Start-Process powershell.exe -ArgumentList @('-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $destination 'Uruchom-Ratchet-Bez-Electron.ps1')+'"')) -WorkingDirectory $destination
