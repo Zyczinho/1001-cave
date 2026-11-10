@@ -272,7 +272,7 @@ function Show-RatchetSpeech {
   $script:bubbleEventId=$eventId
   $script:bubbleTaskId=$taskId
   $script:bubblePhase=$phase
-  $script:speechTitle.Text = if($phase -in @('agent-attention','agent-failure','chatgpt-failure','chatgpt-attention','chatgpt-signal-attention')){'Potrzebuję Cię'} elseif($phase -in @('agent-done','agent','chatgpt','chatgpt-signal','coordinator')){'Gotowe'} elseif($phase -eq 'test'){'Rachet - test'} else {'Rachet'}
+  $script:speechTitle.Text = if($phase -in @('agent-attention','agent-failure','chatgpt-failure','chatgpt-attention','chatgpt-signal-attention')){'Potrzebuję Cię'} elseif($phase -in @('agent-done','chatgpt-done','agent','chatgpt','chatgpt-signal','coordinator')){'Gotowe'} elseif($phase -eq 'test'){'Rachet - test'} else {'Rachet'}
   $script:speechText.Text = if($message.Length -gt 136){$message.Substring(0,133)+'...'}else{$message}
   Place-RatchetSpeech
   $script:bubbleUntil=[datetime]::UtcNow.AddSeconds(9)
@@ -736,6 +736,7 @@ function Get-RatchetReminderTitle([string]$phase) {
         'end'   { return 'Rachet - planowany koniec' }
         'test'  { return 'Rachet - test powiadomienia' }
         'agent-done' { return 'Rachet - gotowe, zobacz' }
+        'chatgpt-done' { return 'Rachet - ChatGPT skończył' }
         'agent-attention' { return 'Rachet - potrzebuję Cię' }
         'agent' { return 'Rachet - agent skończył' }
         'agent-failure' { return 'Rachet - potrzebuję Cię' }

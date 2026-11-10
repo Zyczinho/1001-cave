@@ -81,7 +81,7 @@ function normalizeItem(collection, raw) {
       : [];
     return {id,title,time,endTime:endTime||null,date,days,project:cleanText(raw.project,70),target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url', note:cleanText(raw.note,500), enabled:raw.enabled !== false, snoozeUntil:raw.snoozeUntil || null,completedDates};
   }
-  return {id,title,tool:cleanText(raw.tool,70)||'Inny model',status:STATUS.includes(raw.status)?raw.status:'idle',target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url',branch:cleanText(raw.branch,120),note:cleanText(raw.note,500),source:raw.source === 'hook' ? 'hook' : 'manual',updatedAt:cleanText(raw.updatedAt,50)||new Date().toISOString()};
+  return {id,title,tool:cleanText(raw.tool,70)||'Inny model',status:STATUS.includes(raw.status)?raw.status:'idle',target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url',branch:cleanText(raw.branch,120),note:cleanText(raw.note,500),source:['hook','browser'].includes(raw.source) ? raw.source : 'manual',updatedAt:cleanText(raw.updatedAt,50)||new Date().toISOString()};
 }
 function dayKey(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
 function minuteOfDay(date) { return date.getHours()*60+date.getMinutes(); }
@@ -200,4 +200,35 @@ function agentHookOutcome(event, {agents = [], id = '', prev = null, cwd = '', n
   }
   return {status, note, alert};
 }
-module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName};
+// ChatGPT in the browser, reported by the Rachet Edge extension. Only conversation
+// URLs on chatgpt.com are accepted; a ChatGPT project URL gives the project name.
+const CHATGPT_CHAT = /^https:\/\/chatgpt\.com\/(?:g\/g-p-[0-9a-f]{32}(?:-([A-Za-z0-9-]{1,80}))?\/)?c\/([A-Za-z0-9-]{8,80})$/;
+function parseChatUrl(url) {
+  const m = CHATGPT_CHAT.exec(String(url || ''));
+  return m ? {url: m[0], project: m[1] || '', conversation: m[2]} : null;
+}
+const MIN_ANSWER_MS = 15000;
+function browserChatOutcome(signal = {}, {agents = [], now = Date.now()} = {}) {
+  const chat = parseChatUrl(signal.url);
+  if (!chat) throw Error('Nieobsługiwany adres rozmowy ChatGPT');
+  const state = ['working', 'done', 'closed'].includes(signal.state) ? signal.state : null;
+  if (!state) throw Error('Nieznany stan rozmowy');
+  const id = 'chatgpt:' + chat.conversation;
+  const prev = agents.find(a => a.id === id) || null;
+  const chatTitle = String(signal.title || '').replace(/\s*[|–-]\s*ChatGPT\s*$/i, '').replace(/^ChatGPT$/i, '').trim().slice(0, 80);
+  const label = chat.project || chatTitle || 'ChatGPT';
+  const title = (chat.project && chatTitle ? chat.project + ' · ' + chatTitle : label).slice(0, 120);
+  const status = state === 'working' ? 'working' : state === 'done' ? 'ready' : (prev?.status === 'working' ? 'idle' : prev?.status || 'idle');
+  const note = state === 'working' ? 'Pracuje' : state === 'done' ? 'Skończył — wejdź i zobacz' : prev?.note || 'Karta zamknięta';
+  let alert = null;
+  const duration = Number(signal.durationMs) || 0;
+  // Silent when you are looking at that tab or the answer was quick; silent while
+  // another chat of the same ChatGPT project is still working.
+  if (state === 'done' && prev?.status === 'working' && signal.visible !== true && duration >= MIN_ANSWER_MS) {
+    const othersBusy = chat.project && agents.some(a => a.id !== id && a.source === 'browser' && a.status === 'working'
+      && parseChatUrl(a.target)?.project === chat.project && now - Date.parse(a.updatedAt || 0) < BUSY_WINDOW_MS);
+    if (!othersBusy) alert = {phase: 'chatgpt-done', text: 'Gotowe: ' + label + ' — wejdź i zobacz.'};
+  }
+  return {id, url: chat.url, title, status, note, alert};
+}
+module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,browserChatOutcome};

@@ -9,7 +9,7 @@ const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, browserChatOutcome} = require('./core.cjs');
 
 const PORT = Number(process.env.RATCHET_PORT || 47823);
 const CLAUDE_PORT = Number(process.env.RATCHET_HOOK_PORT || 47822);
@@ -310,6 +310,8 @@ async function handleAction(key,data) {
     // or opens the project folder when Claude is not running.
     if(entry?.agentId){
       const agent=state.agents.find(x=>x.id===entry.agentId);
+      // A ChatGPT chat reopens exactly that conversation (validated chatgpt.com URL only).
+      if(agent?.source==='browser'&&parseChatUrl(agent.target))return openTarget('url',agent.target);
       return {focus:'claude',folder:agent?.kind==='folder'?agent.target:''};
     }
     // Notification actions may open only verified ChatGPT conversation URLs, never arbitrary links.
@@ -408,6 +410,23 @@ async function appRequest(req,res) {
     if(url.pathname==='/api/snapshot') return json(res,snapshot());
     if(url.pathname==='/api/status') return json(res,{status:health(),quitRequested,avatarSize:state.settings.avatarSize,alwaysOnTop:state.settings.alwaysOnTop!==false,autoStart:state.settings.autoStart===true,panelSize:state.settings.panelSize||null,orbPosition:state.orbPosition||null,panelRequests,panelHideRequests,orbResetRequests,focusRequests,focusFolder,activity:state.activity.filter(x=>x.level==='reminder').slice(0,20),notifications:state.settings.notifications});
     return staticResponse(url.pathname,res);
+  }
+  // Narrow door for the Rachet Edge extension: it can only report a ChatGPT chat
+  // working/done/closed. It cannot reach any other action (open, quit, settings...).
+  if(req.method==='POST'&&url.pathname==='/api/browser-signal'){
+    const origin=String(req.headers.origin||'');
+    if(!/^(?:chrome-)?extension:\/\/[a-p]{32}$/.test(origin)||req.headers['x-ratchet-local']!=='1'||!(req.headers['content-type']||'').startsWith('application/json'))
+      return fail(res,'Nieautoryzowane żądanie',403);
+    try {
+      const body=await bodyOf(req);
+      const out=browserChatOutcome(body,{agents:state.agents});
+      const index=state.agents.findIndex(x=>x.id===out.id),prev=index>=0?state.agents[index]:null;
+      const clean=normalizeItem('agents',{...prev,id:out.id,title:out.title,tool:'ChatGPT',status:out.status,source:'browser',kind:'url',target:out.url,note:out.note,updatedAt:new Date().toISOString()});
+      if(index>=0)state.agents[index]=clean;else state.agents.unshift(clean);
+      state.agents=state.agents.slice(0,100);save();
+      if(out.alert)activity(out.alert.text,'reminder','',out.alert.phase,{agentId:out.id});
+      return json(res,{ok:true,status:out.status,notified:!!out.alert});
+    } catch(e) {return fail(res,e.message||'Niepoprawny sygnał');}
   }
   if(req.method==='POST'&&url.pathname==='/api/action'){
     if(!acceptPost(req)) return fail(res,'Nieautoryzowane żądanie',403);
