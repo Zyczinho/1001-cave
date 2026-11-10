@@ -200,7 +200,7 @@ const agentGuideSteps=[
     icon:'glasses',
     title:'Poznaj dwa tryby pracy',
     body:'Obserwowanie pokazuje status istniejącej sesji AI. Koordynator uruchamia osobne, lokalne etapy analizy i recenzji. To dwie różne funkcje.',
-    note:'ChatGPT i Claude w przeglądarce nie są automatycznie sterowane przez Ratcheta.'
+    note:'Claude Code może zgłaszać zakończenie przez hooki. Zwykły ChatGPT w przeglądarce nie wysyła Ratchetowi informacji, że skończył odpowiedź.'
   },
   {
     icon:'edit',
