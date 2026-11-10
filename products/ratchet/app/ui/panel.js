@@ -186,12 +186,13 @@ function renderCoordinator(){
   const c=state().coordinator||{enabled:false,jobs:[]};
   const running=(c.jobs||[]).filter(j=>j.status==='running').length;
   let html='<div class="group-title"><h3>Koordynator · Beta</h3><span class="quiet">'+running+'/2 pracuje</span></div>';
-  html+='<div class="coordinator-box"><div class="coordinator-top"><div><strong>Przekazywanie agent → agent</strong><p class="hint">2 etapy: analiza Claude Code → niezależna recenzja Claude Code. Odczyt repo, bez zapisu, commitów i wdrożeń.</p></div>'
+  html+='<div class="coordinator-box"><div class="coordinator-top"><div><strong>Przekazywanie agent → agent</strong><p class="hint">2 etapy: analiza Claude Code → recenzja Claude Code lub Codex CLI. Odczyt repo, bez zapisu, commitów i wdrożeń.</p></div>'
     +'<button class="btn small '+(c.enabled?'danger':'secondary')+'" data-action="coordinator-toggle" data-enabled="'+String(!c.enabled)+'">'+(c.enabled?'Wyłącz nowe':'Włącz')+'</button></div>';
   html+='<form id="coordinatorForm" class="coordinator-form">'
     +'<input name="title" aria-label="Tytuł zadania" placeholder="Np. Audyt zdjęć City Route" maxlength="120" required>'
     +'<textarea name="goal" aria-label="Cel analizy" placeholder="Opisz, co mają przeanalizować i zweryfikować agenci. Minimum 15 znaków." required minlength="15" maxlength="3000"></textarea>'
     +'<input name="projectRoot" aria-label="Folder projektu Windows" placeholder="C:\\Users\\...\\city-route-app" required>'
+    +'<select name="reviewer" aria-label="Drugi wykonawca"><option value="claude">Recenzja: drugi Claude Code</option><option value="codex">Recenzja: Codex CLI (jeśli zainstalowany)</option></select>'
     +'<button class="btn small full" type="submit">+ Zleć analizę i recenzję</button></form>'
     +'<p class="hint">Tryb wykonawczy domyślnie wyłączony. Włączenie uruchamia lokalne procesy CLI z limitem ok. $0.35 na etap (szacunek może zostać przekroczony). Maks. 2 równoczesne zadania. Nie steruje otwartymi rozmowami ChatGPT.</p></div>';
   for(const job of (c.jobs||[]).slice(0,8)){
@@ -436,7 +437,8 @@ document.addEventListener('submit',e=>{
       await bridge.coordinatorCreate({
         title:String(fd.get('title')||'').trim(),
         goal:String(fd.get('goal')||'').trim(),
-        projectRoot:String(fd.get('projectRoot')||'').trim()
+        projectRoot:String(fd.get('projectRoot')||'').trim(),
+        reviewer:String(fd.get('reviewer')||'claude')
       });
       if(!DEMO)snapshot=await bridge.snapshot();
       render();toast('Zadanie dodane do kolejki koordynatora');
