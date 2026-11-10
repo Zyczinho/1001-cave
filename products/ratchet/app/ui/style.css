@@ -140,7 +140,7 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .coordinator-top strong{font-size:12px}
 .coordinator-top .hint{margin:6px 0 8px}
 .coordinator-form{display:grid;gap:7px;margin-top:10px}
-.coordinator-form input,.coordinator-form textarea{width:100%;background:#131f2e;color:#ecf5ff;border:1px solid #425a76;border-radius:9px;padding:9px;font-size:11px;min-height:35px}
+.coordinator-form input,.coordinator-form textarea,.coordinator-form select{width:100%;background:#131f2e;color:#ecf5ff;border:1px solid #425a76;border-radius:9px;padding:9px;font-size:11px;min-height:35px}
 .coordinator-form textarea{min-height:66px;max-height:130px;resize:vertical}
 .coordinator-form input:focus,.coordinator-form textarea:focus{outline:2px solid #6caeff}
 .coordinator-job{border:1px solid #354c64;background:#1b293a;border-radius:11px;margin-top:7px;padding:10px}
