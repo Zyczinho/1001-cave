@@ -706,6 +706,8 @@ function Get-RatchetReminderTitle([string]$phase) {
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 1200
 $timer.Add_Tick({
+    # Expire the speech bubble even while the backend is offline.
+    if($script:speechForm.Visible -and [datetime]::UtcNow -ge $script:bubbleUntil){$script:speechForm.Hide()}
     $info = $null
     try {
         $info = Invoke-RestMethod -Uri "$script:baseUrl/api/status" -TimeoutSec 2
