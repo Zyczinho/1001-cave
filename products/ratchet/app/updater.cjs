@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 const BASE = 'https://raw.githubusercontent.com/Zyczinho/1001-cave/ratchet-updates/ratchet-updates';
 const MANIFEST = BASE + '/latest.json';
 const CURRENT_VERSION = '0.2.7';
+const INSTALLED_MANIFEST = 'ratchet-release-manifest.json';
 const ALLOWED = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(?:cmd|ps1|cjs|js|html|css|json|md|txt|png)$/;
 
 function compareVersion(a,b) {
@@ -63,6 +64,7 @@ async function stageUpdate(manifest){
   const checked=validateManifest(manifest);
   if(compareVersion(checked.version,CURRENT_VERSION)<=0)throw Error('Brak nowszej wersji');
   if(!checked.files.length)throw Error('Brak plików aktualizacji');
+  if(checked.files.length>=100||checked.files.some(f=>f.path===INSTALLED_MANIFEST))throw Error('Wydanie zawiera niepoprawny lub zastrzeżony plik manifestu');
   const stage=fs.mkdtempSync(path.join(os.tmpdir(),'ratchet-verified-'));
   try{
     for(const f of checked.files){
@@ -73,7 +75,12 @@ async function stageUpdate(manifest){
       fs.mkdirSync(path.dirname(target),{recursive:true});
       fs.writeFileSync(target,data);
     }
-    fs.writeFileSync(path.join(stage,'ratchet-update-list.json'),JSON.stringify(checked.files.map(f=>f.path)),'utf8');
+    // Local version ledger is installed atomically with verified release files.
+    // It is an integrity reference, NOT cryptographic proof of publisher identity.
+    const ledger={version:checked.version,source:'ratchet-updates/latest.json',files:checked.files};
+    fs.writeFileSync(path.join(stage,INSTALLED_MANIFEST),JSON.stringify(ledger,null,2),'utf8');
+    fs.writeFileSync(path.join(stage,'ratchet-update-list.json'),
+      JSON.stringify([...checked.files.map(f=>f.path),INSTALLED_MANIFEST]),'utf8');
     return stage;
   }catch(e){fs.rmSync(stage,{recursive:true,force:true});throw e;}
 }
