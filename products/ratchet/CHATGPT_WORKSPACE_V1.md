@@ -69,8 +69,12 @@ W Agenci wybierz sekcję ChatGPT, wprowadź nazwę, `agtch_...` i polecenie. Dop
 4. Dopiero po uzyskaniu dostępu Workspace Agents: pojedyncze prawdziwe `POST /trigger`, GET statusu i próba powiadomienia. Brak realnego testu nie jest potwierdzeniem działania na koncie.
 5. Rollback; nie scalamy do `main`, nie publikujemy aktualizacji bez powyższych wyników.
 
-## Następny etap: zwykły ChatGPT
+## Równoległy prototyp: zwykły ChatGPT przez wtyczkę MCP
 
-Dla niezależnych sesji ChatGPT w przeglądarce trzeba przygotować **dobrowolny kanał sygnałowy**, np. plugin Ratchet przez Secure MCP Tunnel z narzędziami `task_started`, `task_completed` oraz `task_needs_attention`. Wywołanie takiego narzędzia musiałoby być faktycznie wykonane przez ChatGPT; nie można zakładać, że każde zakończenie odpowiedzi automatycznie wywoła plugin. Brak sygnału ≠ zakończenie zadania.
+W `integrations/chatgpt-mcp` dodano osobny, opcjonalny serwer MCP z narzędziami `ratchet_task_started`, `ratchet_task_completed` oraz `ratchet_task_needs_attention`. Ratchet zapisuje takie zdarzenia jako **raportowane przez agenta**, nie jako potwierdzone przez API platformy. Wtyczka działa wyłącznie po osobnym uruchomieniu i autoryzowanym podłączeniu przez Secure MCP Tunnel.
+
+Wywołanie musi zostać **naprawdę wykonane** przez ChatGPT; nie można zakładać, że każde zakończenie odpowiedzi automatycznie wywoła plugin. Brak sygnału ≠ zakończenie zadania. Wtyczka nie czyta DOM ani cookies ChatGPT.
+
+[Instrukcja podłączenia wtyczki](./integrations/chatgpt-mcp/README.md).
 
 Wykonywanie zadań przez ChatGPT Work może też pozostawić audytowalny ślad w GitHub PR/CI — wtedy Ratchet monitoruje fakty GitHuba, a nie stan rozmowy.
