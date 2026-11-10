@@ -1,7 +1,12 @@
 name: Ratchet — Windows startup smoke
-# Windows-runner provisioning is currently failing before step execution.
-# Keep native tests as mandatory release gate, but avoid failing every source commit.
+# Native Windows gate for the Ratchet release candidate.
 on:
+  push:
+    branches:
+      - codex/ratchet-oneclick-diagnostics
+    paths:
+      - "products/ratchet/app/**"
+      - ".github/workflows/ratchet-windows-smoke.yml"
   workflow_dispatch:
 
 permissions:
