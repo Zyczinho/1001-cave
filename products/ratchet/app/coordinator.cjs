@@ -19,7 +19,7 @@ function normalizeCoordinator(raw){
   const r=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};
   const jobs=Array.isArray(r.jobs)?r.jobs.slice(-MAX_JOBS).map(j=>{
     const stages=Array.isArray(j.stages)?j.stages.slice(0,2).map((s,i)=>({
-      role:ROLES[i],provider:'claude',status:safeStatus.has(s?.status)?s.status:'queued',
+      role:ROLES[i],provider:i===1&&s?.provider==='codex'?'codex':'claude',status:safeStatus.has(s?.status)?s.status:'queued',
       startedAt:trim(s?.startedAt,60),finishedAt:trim(s?.finishedAt,60),
       summary:trim(s?.summary,MAX_OUTPUT),error:trim(s?.error,400),retryUsed:s?.retryUsed===true
     })):[];
@@ -44,9 +44,10 @@ function makeJob(data){
   catch {throw Error('Nie znaleziono lokalnego folderu projektu.');}
   if(/^\\\\/.test(location))throw Error('Ścieżki sieciowe nie są obsługiwane.');
   const at=iso();
+  const reviewer=data?.reviewer==='codex'?'codex':'claude';
   return {id:randomUUID(),title,goal,projectRoot:location,createdAt:at,updatedAt:at,
     status:'queued',stepIndex:0,alerted:false,stages:ROLES.map(role=>({
-      role,provider:'claude',status:'queued',startedAt:'',finishedAt:'',summary:'',error:'',retryUsed:false
+      role,provider:role==='review'?reviewer:'claude',status:'queued',startedAt:'',finishedAt:'',summary:'',error:'',retryUsed:false
     }))};
 }
 function promptFor(job){
@@ -70,6 +71,18 @@ function claudeArgs(job){
     '--no-session-persistence','--max-budget-usd',MAX_BUDGET_USD,'--max-turns','6',
     '--output-format','text',promptFor(job)];
 }
+
+function executionSpec(job){
+  const stage=job.stages[job.stepIndex];
+  if(stage?.role==='review'&&stage.provider==='codex'){
+    // Codex is an OPTIONAL, separate CLI process, never an existing ChatGPT private chat.
+    // Fail closed on machines where --sandbox read-only is unavailable.
+    return {command:'codex',args:['exec','--sandbox','read-only','--skip-git-repo-check',promptFor(job)]};
+  }
+  if(stage?.provider!=='claude')throw Error('Nieobsługiwany wykonawca');
+  return {command:'claude',args:claudeArgs(job)};
+}
+
 class CoordinatorRunner {
   constructor({getState,persist,notify,spawnAgent=spawn,now=Date.now}){
     this.getState=getState;this.persist=persist;this.notify=notify;
@@ -88,14 +101,14 @@ class CoordinatorRunner {
     const stage=job.stages[job.stepIndex];
     if(!stage){this.fail(job,'Brak następnego etapu.');return;}
     // No shell and NO user-controlled executable/flags. Fail closed if native CLI unavailable.
-    const args=claudeArgs(job);
+    const spec=executionSpec(job);
     let child;
     try{
-      child=this.spawnAgent('claude',args,{
+      child=this.spawnAgent(spec.command,spec.args,{
         cwd:job.projectRoot,shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],
         env:{...process.env,RATCHET_COORDINATOR_JOB:job.id,RATCHET_DISABLE_HOOKS:'1'}
       });
-    }catch(e){this.fail(job,'Nie uruchomiono Claude CLI: '+e.message);return;}
+    }catch(e){this.fail(job,'Nie uruchomiono '+spec.command+' CLI: '+e.message);return;}
     job.status='running';job.updatedAt=iso();stage.status='running';stage.startedAt=iso();
     let stdout='',stderr='',finished=false;
     const timer=setTimeout(()=>{
@@ -124,8 +137,8 @@ class CoordinatorRunner {
     this.persist();
     child.stdout?.on('data',buf=>{stdout=(stdout+String(buf)).slice(-MAX_OUTPUT);});
     child.stderr?.on('data',buf=>{stderr=(stderr+String(buf)).slice(-1800);});
-    child.on('error',e=>complete('Błąd uruchomienia Claude CLI: '+e.message));
-    child.on('close',(code,signal)=>complete(code===0?null:'Claude CLI exit '+code+(signal?' / '+signal:'')+'. '+trim(stderr,250)));
+    child.on('error',e=>complete('Błąd uruchomienia '+spec.command+' CLI: '+e.message));
+    child.on('close',(code,signal)=>complete(code===0?null:spec.command+' CLI exit '+code+(signal?' / '+signal:'')+'. '+trim(stderr,250)));
   }
   fail(job,reason){
     job.status='attention';job.updatedAt=iso();job.alerted=true;
@@ -150,4 +163,4 @@ class CoordinatorRunner {
     this.active.clear();this.persist();
   }
 }
-module.exports={normalizeCoordinator,makeJob,promptFor,claudeArgs,CoordinatorRunner,MAX_ACTIVE,MAX_RUNTIME_MS};
+module.exports={normalizeCoordinator,makeJob,promptFor,claudeArgs,executionSpec,CoordinatorRunner,MAX_ACTIVE,MAX_RUNTIME_MS};
