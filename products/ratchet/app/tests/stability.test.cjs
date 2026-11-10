@@ -63,3 +63,16 @@ test('orb never mistakes Windows Terminal or PowerShell with title Ratchet for E
   assert.match(smoke,/RATCHET_TERMINAL_DECOY_READY/);
   assert.match(smoke,/RatchetSmokeWindows\]::PanelTitles/);
 });
+
+test('panel opens as compact 360x520 companion anchored to orb',()=>{
+  const src=read('Ratchet-Kuleczka.ps1');
+  assert.match(src,/Min\(360,/);
+  assert.match(src,/Min\(520,/);
+  assert.match(src,/\$form\.Bottom\+10/);
+  assert.doesNotMatch(src,/Min\(480,/);
+  assert.doesNotMatch(src,/Min\(720,/);
+  const css=read('ui/style.css');
+  assert.match(css,/Compact companion window \(360 x 520\)/);
+  assert.match(css,/@media \(max-width: 410px\)/);
+  assert.match(css,/\.view \{ min-height: 0; padding:/);
+});
