@@ -50,6 +50,7 @@ const bridge=window.ratchet||{
   refreshGithub:async()=>({github:null,githubError:'GitHub jest obsługiwany w aplikacji Windows.'}),
   checkUpdate:async()=>({available:false,version:'0.2.7',current:'0.2.7'}),
   installUpdate:async()=>toast('Aktualizator działa w aplikacji Windows'),
+  diagnose:async()=>{throw Error('Diagnostyka działa w aplikacji Windows');},
   hidePanel:async()=>toast('Podgląd: ukrywanie działa w aplikacji Windows'),
   quit:async()=>toast('Podgląd: wyłączanie działa w aplikacji Windows'),
   resetOrb:async()=>toast('Pozycja kuleczki działa w aplikacji Windows')
