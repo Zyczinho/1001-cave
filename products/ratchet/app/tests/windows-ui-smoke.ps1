@@ -58,6 +58,31 @@ public static class RatchetSmokeWindows {
     },IntPtr.Zero);
     return result.ToArray();
   }
+  public static int[] PanelRect() {
+    int[] result=new int[2];
+    EnumWindows((h,state)=>{
+      if(!IsWindowVisible(h))return true;
+      var titleBuffer=new StringBuilder(256);GetWindowText(h,titleBuffer,titleBuffer.Capacity);
+      var title=titleBuffer.ToString();
+      if(!(title=="Ratchet" || title=="Ratchet - Microsoft Edge" ||
+          (title.StartsWith("Ratchet - ") && title.EndsWith(" - Microsoft Edge"))))return true;
+      uint pid;GetWindowThreadProcessId(h,out pid);
+      if(pid==0)return true;
+      try{
+        using(var owner=System.Diagnostics.Process.GetProcessById((int)pid)){
+          if(!string.Equals(owner.ProcessName,"msedge",StringComparison.OrdinalIgnoreCase))return true;
+        }
+      }catch{return true;}
+      RECT rect;
+      if(GetWindowRect(h,out rect)){
+        result[0]=rect.Right-rect.Left;
+        result[1]=rect.Bottom-rect.Top;
+        return false;
+      }
+      return true;
+    },IntPtr.Zero);
+    return result;
+  }
   public static int[] OrbRect() {
     int[] value=new int[2];
     EnumWindows((h,state)=>{
@@ -120,6 +145,14 @@ try {
     $opened=$false
     for($i=0;$i -lt 35;$i++){Start-Sleep -Milliseconds 400;if(@(Panels).Count -gt 0){$opened=$true;break}}
     if(-not $opened){throw 'Edge app window did not open (Ratchet panel)'}
+    $geometry=[RatchetSmokeWindows]::PanelRect()
+    Write-Host ('PANEL_GEOMETRY: '+$geometry[0]+'x'+$geometry[1])
+    # Edge decorations can add a few pixels, but a desktop-sized window is a regression.
+    if($geometry[0] -lt 300 -or $geometry[0] -gt 420 -or
+       $geometry[1] -lt 430 -or $geometry[1] -gt 590) {
+        throw ('Panel is not compact: '+$geometry[0]+'x'+$geometry[1])
+    }
+    Write-Host 'PANEL_COMPACT_OK'
     Act 'panel:show' @{} | Out-Null
     Start-Sleep -Seconds 3
     if(@(Panels).Count -ne 1){throw ('Expected one panel, found '+@(Panels).Count)}
