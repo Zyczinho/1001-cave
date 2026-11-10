@@ -1,4 +1,4 @@
-﻿# Ratchet 0.2.7 - supervised mascot with independent exit.
+﻿# Ratchet 0.2.8 - supervised mascot with independent exit.
 $ErrorActionPreference = 'Stop'
 # Single desktop mascot per Windows user session. Repeated launchers do not add duplicates.
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'Ratchet-Backend.ps1')
