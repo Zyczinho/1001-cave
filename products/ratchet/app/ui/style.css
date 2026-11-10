@@ -51,3 +51,36 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.app-menu:not([hidden]){animation:none}.btn,.plain-icon,.icon-btn{transition:none}}
 
 .live-tag.offline {color:#ffb7c0!important;border-color:rgba(255,107,130,.4)!important;background:rgba(130,35,51,.22)!important}.live-tag.offline .live-dot {background:#ff627d!important;box-shadow:0 0 8px #ff627d}
+
+/* Compact companion window (360 x 520): all content remains scrollable. */
+@media (max-width: 410px) {
+  .panel-body { padding: 4px; }
+  .shell { border-radius: 16px; }
+  .header { height: 58px; padding: 9px 10px 7px; gap: 7px; flex-shrink: 0; }
+  .brandmark { width: 31px; height: 31px; }
+  .mini-head { transform: scale(.83); transform-origin: top left; }
+  .brandcopy { flex: 1; min-width: 0; }
+  .brand-name { font-size: 18px; line-height: 20px; }
+  .brand-subtitle { font-size: 7px; letter-spacing: .5px; margin-top: 3px; }
+  .live-tag { gap: 4px; font-size: 8px; padding: 5px 6px; letter-spacing: 0; flex-shrink: 0; }
+  .icon-btn { width: 25px; height: 25px; flex-shrink: 0; }
+  .topline { padding: 4px 14px 10px; }
+  .clock { font-size: 29px; }
+  .date-chip { font-size: 10px; }
+  .status-strip { gap: 5px; padding: 0 10px 10px; min-height: 0; }
+  .status-box { gap: 4px; padding: 7px 3px; font-size: 9px; border-radius: 8px; min-width: 0; }
+  .tabs { height: 37px; padding: 0 8px; gap: 2px; flex-shrink: 0; }
+  .tab { gap: 4px; font-size: 10px; }
+  .tab span { font-size: 14px; }
+  .view { min-height: 0; padding: 11px 11px 22px; }
+  .hero { padding: 12px; margin-bottom: 10px; }
+  .hero h2 { font-size: 15px; }
+  .hero p { max-width: 100%; }
+  .link-grid { gap: 6px; }
+  .link-card { padding: 10px; min-height: 80px; }
+  .task-card, .agent-card, .pr-card { padding: 10px; }
+  .footer { height: 25px; padding: 6px 10px; font-size: 8px; }
+  .modal-card { max-height: 98%; }
+  .modal-card form { padding: 10px; }
+  .form-grid { gap: 6px; }
+}
