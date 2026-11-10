@@ -27,7 +27,7 @@ jobs:
           node --test tests/*.test.cjs
       - name: Parse PowerShell scripts
         run: |
-          $files = @('Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1','Uruchom-Ratchet-Bez-Electron.ps1','Apply-Ratchet-Update.ps1')
+          $files = @('Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1','Uruchom-Ratchet-Bez-Electron.ps1','Apply-Ratchet-Update.ps1','Diagnostyka-Ratchet.ps1')
           foreach ($f in $files) {
             $tokens = $null
             $errors = $null
@@ -35,6 +35,18 @@ jobs:
             if (@($errors).Count -gt 0) { throw "Parser error $f : $($errors | Out-String)" }
             Write-Host "PARSE_OK: $f"
           }
+      - name: One-click diagnostics run when backend is offline
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\Diagnostyka-Ratchet.ps1 -Quiet | Out-Null
+          $reports = Join-Path $env:LOCALAPPDATA 'Ratchet\diagnostics'
+          $newest = Get-ChildItem -LiteralPath $reports -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $newest) { throw 'No diagnostics folder' }
+          $json = Get-Content -LiteralPath (Join-Path $newest.FullName 'report.json') -Raw | ConvertFrom-Json
+          if ($json.sharing -ne 'LOCAL_ONLY_NOT_SENT') { throw 'Report must remain local' }
+          if (-not $json.reportId -or -not $json.backend.status -or -not $json.files) { throw 'Incomplete report' }
+          if (-not (Test-Path (Join-Path $newest.FullName 'summary.txt'))) { throw 'Missing summary' }
+          Write-Host "DIAGNOSTICS_OK: $($json.reportId) / backend $($json.backend.status)"
       - name: Start backend via PowerShell and verify health
         run: |
           $ErrorActionPreference = 'Stop'
