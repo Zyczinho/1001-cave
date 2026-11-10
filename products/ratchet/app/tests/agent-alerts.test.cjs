@@ -81,7 +81,7 @@ test('agent alerts: server uses the rule and the orb shows both kinds with plain
 test('clicking an agent alert leads to Claude, not just the panel',()=>{
   const server=read('server.cjs'),orb=read('Ratchet-Kuleczka.ps1'),js=read('ui/panel.js');
   // The alert remembers its agent, and opening it asks the orb to focus Claude.
-  assert.match(server,/activity\(outcome\.alert\.text,'reminder','',outcome\.alert\.phase,\{agentId:id\}\)/);
+  assert.match(server,/activity\(outcome\.alert\.text,'reminder','',outcome\.alert\.phase,\{agentId:row\}\)/);
   assert.match(server,/if\(entry\?\.agentId\)\{[\s\S]*?focus:'claude'/);
   assert.match(server,/if\(key==='agent:focus'\)\{[\s\S]*?focusRequests\+\+/);
   // Bubble button, bubble text and the Windows notification all use the same path.

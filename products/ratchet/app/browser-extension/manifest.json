@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Rachet — ChatGPT skończył",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Daje znać Rachetowi, gdy ChatGPT skończy odpowiadać. Nie czyta treści rozmów.",
   "icons": { "128": "icon.png" },
   "background": { "service_worker": "background.js" },

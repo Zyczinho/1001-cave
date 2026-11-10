@@ -38,6 +38,25 @@ test('ChatGPT done: silent while another chat in the same project still works',(
   assert.equal(browserChatOutcome({url:PROJECT_CHAT,state:'done',visible:false,durationMs:60000},{agents,now}).alert,null);
 });
 
+test('a project row stops saying "working" when its chats go quiet',()=>{
+  const {rowStatus}=require('../core.cjs');
+  const fresh={source:'browser',status:'working',updatedAt:new Date(now-60000).toISOString()};
+  const silent={source:'browser',status:'working',updatedAt:new Date(now-4*60000).toISOString()};
+  assert.equal(rowStatus([fresh],now),'working');
+  assert.equal(rowStatus([silent],now),'idle','no confirmation for 3 minutes');
+  assert.equal(rowStatus([silent,{source:'browser',status:'ready',updatedAt:new Date(now).toISOString()}],now),'ready');
+  // A Claude Code session thinks longer without tool calls; it gets 30 minutes.
+  assert.equal(rowStatus([{source:'hook',status:'working',updatedAt:new Date(now-10*60000).toISOString()}],now),'working');
+  assert.equal(rowStatus([{source:'hook',status:'needs_attention',updatedAt:new Date(now).toISOString()},fresh],now),'needs_attention');
+});
+
+test('the extension sends "done" to the chat that answered, never to the one on screen',()=>{
+  const content=fs.readFileSync(path.join(__dirname,'..','browser-extension','content.js'),'utf8');
+  assert.match(content,/send\(here === workingUrl \? 'done' : 'closed', workingUrl/);
+  assert.match(content,/if \(isChat\(workingUrl\)\) send\('closed', workingUrl\)/);
+  assert.match(content,/send\('closed', workingUrl\)\; \}\);/);
+});
+
 test('closing a tab mid-answer leaves the chat idle, never "done"',()=>{
   const prev=working(PLAIN_CHAT,'chatgpt:6af32fb0-3f14-83ed-8d8c-0fb848808290');
   const r=browserChatOutcome({url:PLAIN_CHAT,state:'closed'},{agents:[prev],now});
@@ -67,13 +86,23 @@ test('server: the extension door accepts only extension origins and only chat si
     assert.equal((await send('https://chatgpt.com',{url:PROJECT_CHAT,state:'working'})).status,403,'a web page cannot call it');
     assert.equal((await send(ext,{url:'https://evil.com/c/12345678',state:'working'})).status,400);
     assert.equal((await send(ext,{action:'quit'})).status,400,'no other actions through this door');
+    // Two chats in one ChatGPT project are one row; it says done only when both are.
+    const SECOND='https://chatgpt.com/g/g-p-6ae875411f64819199b53f8db8549b47-1001-cave/c/7af32fb0-3f14-83ed-8d8c-0fb848808289';
     assert.equal((await send(ext,{url:PROJECT_CHAT,state:'working',title:'Test'})).status,200);
+    assert.equal((await send(ext,{url:SECOND,state:'working',title:'Drugi'})).status,200);
+    const first=await (await send(ext,{url:SECOND,state:'done',title:'Drugi',visible:false,durationMs:30000})).json();
+    assert.equal(first.notified,false,'the other chat in the project still works');
+    assert.equal(first.status,'working');
     const done=await (await send(ext,{url:PROJECT_CHAT,state:'done',title:'Test',visible:false,durationMs:30000})).json();
     assert.equal(done.notified,true);
+    assert.equal(done.row,'project:chatgpt:1001-cave');
     const snap=await (await fetch('http://127.0.0.1:'+port+'/api/snapshot')).json();
-    const agent=snap.state.agents.find(a=>a.id==='chatgpt:6af32fb0-3f14-83ed-8d8c-0fb848808289');
-    assert.equal(agent.source,'browser');assert.equal(agent.status,'ready');assert.equal(agent.target,PROJECT_CHAT);
+    const rows=snap.state.agents.filter(a=>a.source==='browser');
+    assert.equal(rows.length,1,'one row per project, not per conversation');
+    const agent=rows[0];
+    assert.equal(agent.title,'1001-cave');assert.equal(agent.status,'ready');assert.equal(agent.target,PROJECT_CHAT);
     assert.equal(snap.state.activity[0].agentId,agent.id);
+    assert.equal(snap.state.activity[0].target,PROJECT_CHAT,'the alert opens the chat that finished');
     assert.equal((await fetch('http://127.0.0.1:'+port+'/api/ping')).ok,true,'still running');
   } finally { proc.kill(); }
 });

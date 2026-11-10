@@ -226,9 +226,24 @@ function browserChatOutcome(signal = {}, {agents = [], now = Date.now()} = {}) {
   // another chat of the same ChatGPT project is still working.
   if (state === 'done' && prev?.status === 'working' && signal.visible !== true && duration >= MIN_ANSWER_MS) {
     const othersBusy = chat.project && agents.some(a => a.id !== id && a.source === 'browser' && a.status === 'working'
-      && parseChatUrl(a.target)?.project === chat.project && now - Date.parse(a.updatedAt || 0) < BUSY_WINDOW_MS);
+      && parseChatUrl(a.target)?.project === chat.project && sessionLive(a, now));
     if (!othersBusy) alert = {phase: 'chatgpt-done', text: 'Gotowe: ' + label + ' — wejdź i zobacz.'};
   }
   return {id, url: chat.url, title, status, note, alert};
 }
-module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,browserChatOutcome};
+// The panel shows one row per project, not one per conversation or session.
+// A row "works" while any of its sessions works; a browser session that stops
+// confirming (closed tab, lost signal) stops counting after 3 minutes.
+const STALE_MS = {browser: 3 * 60 * 1000, hook: BUSY_WINDOW_MS};
+function sessionLive(s, now = Date.now()) {
+  return s.status !== 'working' || now - Date.parse(s.updatedAt || 0) < (STALE_MS[s.source] || BUSY_WINDOW_MS);
+}
+function rowStatus(sessions = [], now = Date.now()) {
+  const live = sessions.map(s => sessionLive(s, now) ? s.status : 'idle');
+  for (const status of ['blocked', 'needs_attention', 'working', 'ready']) if (live.includes(status)) return status;
+  return 'idle';
+}
+function rowKey(source, name) {
+  return 'project:' + source + ':' + String(name || '').toLowerCase().slice(0, 80);
+}
+module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
