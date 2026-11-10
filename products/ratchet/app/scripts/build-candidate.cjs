@@ -21,7 +21,7 @@ const packageFiles=[
   'ui/orb.css','ui/orb.html','ui/orb.js',
   'ui/panel.html','ui/panel.js','ui/preview.html','ui/style.css',
   'scripts/claude-hook.cjs','scripts/install-claude-hooks.cjs',
-  'scripts/remove-claude-hooks.cjs','assets/ratchet.png'
+  'scripts/remove-claude-hooks.cjs','assets/ratchet.png','assets/ratchet.ico'
 ];
 const sha256=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 
