@@ -92,6 +92,8 @@ function Stop-Ratchet {
         if (-not $cmd -or $p.ProcessId -eq $PID) { continue }
         $kill = $false
         if ($p.Name -in @('powershell.exe','pwsh.exe') -and $cmd -match 'Ratchet-Kuleczka\.ps1|Uruchom-Ratchet-Bez-Electron\.ps1') { $kill = $true }
+        # Ratchet.exe hosts the orb in-process; only Ratchet's own copy, never another "Ratchet.exe".
+        elseif ($p.Name -eq 'Ratchet.exe' -and $p.ExecutablePath -and (Test-Path -LiteralPath (Join-Path (Split-Path $p.ExecutablePath -Parent) 'Ratchet-Kuleczka.ps1'))) { $kill = $true }
         elseif ($p.Name -eq 'node.exe') {
             $m = [regex]::Match($cmd, '([A-Za-z]:\\[^"]*?\\)server\.cjs')
             if ($m.Success -and (Test-Path -LiteralPath (Join-Path $m.Groups[1].Value 'Ratchet-Kuleczka.ps1'))) { $kill = $true }
@@ -108,12 +110,17 @@ function Stop-Ratchet {
 
 # ---------------------------------------------------------------- launcher
 # Ratchet.exe is compiled on this computer (no download, no SmartScreen prompt).
-# It starts PowerShell with CreateNoWindow, so no console/Terminal window appears.
+# It runs the Ratchet scripts INSIDE its own process through the PowerShell engine
+# library: no powershell.exe, no console window, and no "-ExecutionPolicy Bypass
+# -WindowStyle Hidden" command line that antivirus behaviour shields (Avast
+# IDP.HELU.PSE96) treat as malware.
 $launcherSource = @'
 using System;
-using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Windows.Forms;
+using System.Management.Automation;
+using System.Management.Automation.Runspaces;
 [assembly: System.Reflection.AssemblyTitle("Ratchet")]
 [assembly: System.Reflection.AssemblyProduct("Ratchet - 1001 CAVE")]
 public static class RatchetLauncher {
@@ -126,16 +133,29 @@ public static class RatchetLauncher {
       MessageBox.Show("Brakuje pliku programu:\n" + script + "\n\nUruchom ponownie instalator Ratcheta.", "Ratchet", MessageBoxButtons.OK, MessageBoxIcon.Warning);
       return 2;
     }
-    string shell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell\\v1.0\\powershell.exe");
-    ProcessStartInfo info = new ProcessStartInfo(shell);
-    info.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + script + "\"";
-    info.WorkingDirectory = root;
-    info.UseShellExecute = false;
-    info.CreateNoWindow = true;
+    Directory.SetCurrentDirectory(root);
     try {
-      using (Process started = Process.Start(info)) { }
+      InitialSessionState state = InitialSessionState.CreateDefault();
+      // Process-scoped, like -ExecutionPolicy on a command line; machine policy is untouched.
+      state.ExecutionPolicy = Microsoft.PowerShell.ExecutionPolicy.Bypass;
+      using (Runspace runspace = RunspaceFactory.CreateRunspace(state)) {
+        // WinForms (the orb) needs this STA thread.
+        runspace.ApartmentState = ApartmentState.STA;
+        runspace.ThreadOptions = PSThreadOptions.UseCurrentThread;
+        runspace.Open();
+        using (PowerShell shell = PowerShell.Create()) {
+          shell.Runspace = runspace;
+          shell.AddCommand(script);
+          shell.Invoke();
+        }
+      }
       return 0;
     } catch (Exception error) {
+      try {
+        string logs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ratchet");
+        Directory.CreateDirectory(logs);
+        File.AppendAllText(Path.Combine(logs, "launcher-error.log"), "[" + DateTime.Now.ToString("s") + "] Ratchet.exe: " + error + Environment.NewLine);
+      } catch (Exception) { }
       MessageBox.Show("Nie udało się uruchomić Ratcheta:\n" + error.Message, "Ratchet", MessageBoxButtons.OK, MessageBoxIcon.Error);
       return 1;
     }
@@ -155,6 +175,8 @@ function Build-Launcher([string]$root) {
         $options.CompilerOptions = '/target:winexe /optimize+ /win32icon:"' + $icon + '"'
         [void]$options.ReferencedAssemblies.Add('System.dll')
         [void]$options.ReferencedAssemblies.Add('System.Windows.Forms.dll')
+        [void]$options.ReferencedAssemblies.Add('System.Core.dll')
+        [void]$options.ReferencedAssemblies.Add([System.Management.Automation.PSObject].Assembly.Location)
         $result = $provider.CompileAssemblyFromSource($options, $launcherSource)
         if ($result.Errors.HasErrors) {
             $text = ($result.Errors | Where-Object { -not $_.IsWarning } | ForEach-Object { $_.ToString() }) -join '; '
@@ -369,7 +391,9 @@ try {
         if ($commit -and [string]$health.commit -ne $commit) { throw ('Działa inny build (' + $health.commit + ') niż w pakiecie (' + $commit + ')') }
         $orb = $null
         for ($i = 0; $i -lt 20 -and -not $orb; $i++) {
-            $orb = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match 'Uruchom-Ratchet-Bez-Electron\.ps1' -and $_.CommandLine.IndexOf($appRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0 }) | Select-Object -First 1
+            $orb = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='Ratchet.exe'" | Where-Object {
+                ($_.Name -eq 'Ratchet.exe' -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($appRoot,[StringComparison]::OrdinalIgnoreCase)) -or
+                ($_.CommandLine -match 'Uruchom-Ratchet-Bez-Electron\.ps1' -and $_.CommandLine.IndexOf($appRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0) }) | Select-Object -First 1
             if (-not $orb) { Start-Sleep -Milliseconds 400 }
         }
         if (-not $orb) { throw 'Nie wykryto procesu kuleczki' }

@@ -9,10 +9,17 @@ test('no console launcher scripts remain that could open a visible terminal',()=
     assert.ok(!exists(old),old+' must not be shipped any more');
   }
   const installer=read('Instaluj-Ratchet.ps1');
-  // Ratchet.exe starts PowerShell with CreateNoWindow: no conhost, no Windows Terminal hand-off.
-  assert.match(installer,/info\.CreateNoWindow = true;/);
-  assert.match(installer,/info\.UseShellExecute = false;/);
+  // Ratchet.exe hosts the PowerShell engine in-process: no console, no Windows Terminal
+  // hand-off, and no "powershell -ExecutionPolicy Bypass -WindowStyle Hidden" command
+  // line for antivirus behaviour shields (Avast IDP.HELU.PSE96) to flag.
+  assert.match(installer,/RunspaceFactory\.CreateRunspace\(state\)/);
+  assert.match(installer,/runspace\.ApartmentState = ApartmentState\.STA;/);
+  assert.match(installer,/state\.ExecutionPolicy = Microsoft\.PowerShell\.ExecutionPolicy\.Bypass;/);
+  const launcher=installer.slice(installer.indexOf("$launcherSource = @'"),installer.indexOf("function Build-Launcher"));
+  assert.doesNotMatch(launcher,/powershell\.exe|ProcessStartInfo/);
   assert.match(installer,/\/target:winexe/);
+  // Links and folders open through explorer.exe, not a hidden encoded PowerShell command.
+  assert.doesNotMatch(read('server.cjs'),/-EncodedCommand/);
   assert.match(installer,/\$mainTarget = \$launcher; \$mainArgs = ''/);
   // A refused shortcut name (OneDrive keeps an old Ratchet.lnk locked) falls back, never rolls back.
   assert.match(installer,/Set-DesktopShortcut \$desktop @\('Ratchet\.lnk','Ratchet \(1001 CAVE\)\.lnk'\)/);

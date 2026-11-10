@@ -79,13 +79,17 @@ try {
     # Only Ratchet-related process commands; no global command-line dump.
     try {
         $procs = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-            $_.Name -in @('powershell.exe','pwsh.exe','node.exe') -and
+            $_.ProcessId -ne $PID -and (
+            ($_.Name -eq 'Ratchet.exe' -and $_.ExecutablePath -and $_.CommandLine -notmatch '--diagnostics' -and
+             (Test-Path -LiteralPath (Join-Path (Split-Path $_.ExecutablePath -Parent) 'Ratchet-Kuleczka.ps1'))) -or
+            ($_.Name -in @('powershell.exe','pwsh.exe','node.exe') -and
             ($_.CommandLine -match '(?i)Ratchet-Kuleczka[.]ps1|Uruchom-Ratchet-Bez-Electron[.]ps1|Ratchet[\\/]app[\\/]server[.]cjs' -or
              ($_.Name -eq 'node.exe' -and $_.CommandLine -match '(?i)([A-Za-z]:\\[^"]*?\\)server[.]cjs' -and
-              (Test-Path -LiteralPath (Join-Path $Matches[1] 'Ratchet-Kuleczka.ps1'))))
+              (Test-Path -LiteralPath (Join-Path $Matches[1] 'Ratchet-Kuleczka.ps1'))))))
         } | ForEach-Object {
             $cmd = [string]$_.CommandLine
             $role = if($cmd -match '(?i)server[.]cjs') {'backend'}
+                elseif($_.Name -eq 'Ratchet.exe') {'orb'}
                 elseif($cmd -match '(?i)Ratchet-Kuleczka[.]ps1') {'orb'}
                 else {'launcher_or_orb'}
             [ordered]@{ pid = [int]$_.ProcessId; name = [string]$_.Name; role = $role }

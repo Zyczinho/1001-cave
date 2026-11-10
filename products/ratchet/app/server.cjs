@@ -137,10 +137,11 @@ function openTarget(kind,target) {
   const t=validateTarget(kind,target);
   if(process.platform!=='win32') return Promise.resolve({wouldOpen:t});
   if(kind==='folder' && !fs.existsSync(t)) throw Error('Folder lub plik nie istnieje: '+t);
-  const targetCommand = "Start-Process -FilePath '" + t.replaceAll("'", "''") + "'";
-  // EncodedCommand avoids cmd.exe quoting and shell injection.
-  const encoded=Buffer.from(targetCommand,'utf16le').toString('base64');
-  const proc=spawn('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',encoded],{windowsHide:true,stdio:'ignore',detached:true});
+  // explorer.exe opens a validated http(s) URL in the default browser or a folder in
+  // Explorer. No shell, no quoting, and no hidden encoded PowerShell command line,
+  // which antivirus behaviour shields flag as malware.
+  const explorer=path.join(process.env.SystemRoot||'C:\\Windows','explorer.exe');
+  const proc=spawn(explorer,[t],{windowsHide:true,stdio:'ignore',detached:true});
   proc.on('error',e=>console.error('Launch:',e.message));proc.unref();
   return Promise.resolve({opened:true});
 }
@@ -206,8 +207,11 @@ async function handleAction(key,data) {
     if(process.platform!=='win32')throw Error('Diagnostyka natywna działa wyłącznie na Windows');
     const script=path.join(__dirname,'Diagnostyka-Ratchet.ps1');
     if(!fs.existsSync(script))throw Error('Brak modułu diagnostyki Ratcheta');
-    const child=spawn('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',script],
-      {detached:true,windowsHide:true,stdio:'ignore'});
+    // Ratchet.exe runs the script in-process (no flagged powershell command line).
+    const exe=path.join(__dirname,'Ratchet.exe');
+    const child=fs.existsSync(exe)
+      ? spawn(exe,['--diagnostics'],{detached:true,windowsHide:true,stdio:'ignore'})
+      : spawn('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',script],{detached:true,windowsHide:true,stdio:'ignore'});
     child.on('error',e=>console.error('[ratchet] Diagnostics launch:',e.message));
     child.unref();
     return {requested:true,localOnly:true};
