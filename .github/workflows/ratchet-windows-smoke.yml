@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - ratchet/stability-0.2.7
+      - codex/ratchet-oneclick-diagnostics
     paths:
       - "products/ratchet/app/**"
       - ".github/workflows/ratchet-windows-smoke.yml"
