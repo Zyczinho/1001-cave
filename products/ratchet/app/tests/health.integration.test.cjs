@@ -35,7 +35,7 @@ test('local backend: health, permissions, persistence and controlled exit',async
   try{
     proc=await boot(port,dir);
     let response=await fetch('http://127.0.0.1:'+port+'/api/ping');
-    assert.deepEqual(await response.json(),{ok:true,version:'0.2.7'});
+    assert.deepEqual(await response.json(),{ok:true,version:'0.2.8'});
     response=await action(port,{action:'item:save',data:{collection:'links',item:{id:'a',title:'Example',kind:'url',target:'https://example.com'}}});
     assert.equal(response.status,200);
     response=await action(port,{action:'item:save',data:{collection:'links',item:{id:'b',title:'Example B',kind:'url',target:'https://example.org'}}});
