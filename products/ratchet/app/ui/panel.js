@@ -48,7 +48,7 @@ const bridge=window.ratchet||{
   open:async(kind,target)=>{if(kind==='folder')throw Error('Otwieranie folderów działa w aplikacji Windows');if(!/^https?:\/\//.test(target))throw Error('Niepoprawny link');window.open(target,'_blank','noopener,noreferrer');},
   handoff:async()=>{const text=`Ratchet (podgląd) — agenci:\n${state().agents.map(a=>`${a.title}: ${a.status} ${a.note}`).join('\n')}`;await navigator.clipboard.writeText(text);return text;},
   refreshGithub:async()=>({github:null,githubError:'GitHub jest obsługiwany w aplikacji Windows.'}),
-  checkUpdate:async()=>({available:false,version:'0.2.7',current:'0.2.7'}),
+  checkUpdate:async()=>({available:false,version:'0.2.8',current:'0.2.8'}),
   installUpdate:async()=>toast('Aktualizator działa w aplikacji Windows'),
   diagnose:async()=>{throw Error('Diagnostyka działa w aplikacji Windows');},
   hidePanel:async()=>toast('Podgląd: ukrywanie działa w aplikacji Windows'),
@@ -105,7 +105,7 @@ function renderLinks(){return sectionHeader('Szybkie skróty','Prosto do czatu, 
 function renderUpdates(){
   const available=!!updateInfo?.available;
   return `<div class="settings-group update-group"><h3>Aktualizacje Ratcheta</h3>
-  <p class="hint">Zainstalowana wersja: <strong>0.2.7</strong>. Kolejne wersje instaluj z tego panelu — bez rozpakowywania kolejnych ZIP-ów.</p>
+  <p class="hint">Zainstalowana wersja: <strong>0.2.8</strong>. Kolejne wersje instaluj z tego panelu — bez rozpakowywania kolejnych ZIP-ów.</p>
   ${available?`<p class="update-ready">Dostępna wersja ${esc(updateInfo.version)}: ${esc(updateInfo.notes)}</p><button class="btn full" type="button" data-action="update-install">${I('download')} Zainstaluj ${esc(updateInfo.version)}</button>`:
   `<button class="btn secondary full" type="button" data-action="update-check">${I('refresh')} Sprawdź aktualizacje</button>`}
   <p class="hint">Kanał GitHub jest prywatny. Działa przez GitHub CLI po jednorazowym zalogowaniu (gh auth login). Nowe pliki są weryfikowane SHA-256. Brak zalogowania nie wpływa na pozostałe funkcje Ratcheta.</p></div>`;
