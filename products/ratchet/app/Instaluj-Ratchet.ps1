@@ -329,7 +329,9 @@ try {
         Say 'Uruchamiam Ratcheta...'
         Start-Installed $launcher
         $health = $null
-        for ($i = 0; $i -lt 60; $i++) {
+        # Deadline in time, not attempts: on Windows a refused localhost connect alone takes ~1-2 s.
+        $deadline = [Diagnostics.Stopwatch]::StartNew()
+        while ($deadline.Elapsed.TotalSeconds -lt 35) {
             Start-Sleep -Milliseconds 500
             $health = Get-Health
             if ($health -and [string]$health.version -eq $version) { break }

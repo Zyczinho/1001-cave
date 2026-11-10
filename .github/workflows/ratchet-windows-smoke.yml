@@ -168,7 +168,9 @@ jobs:
           $profileFile = Join-Path $env:APPDATA 'Ratchet\ratchet.json'
           $profileHash = (Get-FileHash $profileFile).Hash
           $p = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $bad 'app\Instaluj-Ratchet.ps1')+'"'),'-Unattended') -PassThru
-          for($i=0;$i -lt 300;$i++){ Start-Sleep -Milliseconds 300; $p.Refresh(); if($p.HasExited){break} }
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          while($sw.Elapsed.TotalSeconds -lt 180){ Start-Sleep -Milliseconds 500; $p.Refresh(); if($p.HasExited){break} }
+          Write-Host ('Broken install finished after ' + [int]$sw.Elapsed.TotalSeconds + ' s')
           if(-not $p.HasExited){throw 'Broken install did not finish'}
           if($p.ExitCode -eq 0){throw 'Broken build was reported as installed'}
           $health=$null
