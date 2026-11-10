@@ -24,3 +24,7 @@ Zatrzymaj zgadywanie. Oznacz przyczynę CI jako `UNKNOWN` i sprawdź konto/runne
 ## Bezpieczeństwo instalacji
 
 Nie usuwaj `%APPDATA%\Ratchet\ratchet.json`, nie zabijaj zbiorczo wszystkich `node.exe` ani `powershell.exe`; używaj wyłącznie procesów Ratcheta z potwierdzoną ścieżką i CommandLine. Nie scalaj otwartego draft PR jako stabilnego wydania bez testów końcowych.
+
+## Zero ręcznego kopiowania komend — zasada UX/diagnostyki
+
+Podczas awarii nie przeciągaj użytkownika przez niekończące się cykle „wklej polecenie → screenshot → kolejne polecenie”. Po pierwszym rozpoznaniu potrzebny jest **jeden lokalny pakiet diagnostyczny** i read-only testy wykonywane przez Ratcheta, a gdy bezpieczny most #18 jest już dostępny, asystent powinien pobierać je bezpośrednio. Jeśli most nie istnieje, przyznaj to jawnie — nigdy nie udawaj dostępu do Windows. Najpierw dąż do niezależnej samodiagnostyki #17, potem do mostu #18. Każdą potrzebę ręcznej komendy traktuj jako sygnał luki automatyzacji i udokumentuj ją w rejestrze. Specyfikacja: `products/ratchet/DIAGNOSTICS_BRIDGE_SPEC.md`.
