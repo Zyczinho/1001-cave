@@ -54,6 +54,17 @@ test('agent alerts: waiting for a decision or failing says "I need you" once',()
   assert.equal(repeatStop.alert,null,'repeated Stop must not repeat the alert');
 });
 
+test('agent alerts: worktrees are named and grouped by their repository',()=>{
+  const {projectName}=require('../core.cjs');
+  assert.equal(projectName('C:\\Users\\me\\1001-cave\\.claude\\worktrees\\ratchet-fix'),'1001-cave');
+  assert.equal(projectName('C:\\dev\\city-route-app\\'),'city-route-app');
+  // Two worktrees of one repository are one project: the first to finish stays silent.
+  const agents=[busy('claude:b','C:\\Users\\me\\1001-cave\\.claude\\worktrees\\other')];
+  const r=agentHookOutcome('Stop',{agents,id:'claude:a',cwd:'C:\\Users\\me\\1001-cave\\.claude\\worktrees\\ratchet-fix',now});
+  assert.equal(r.alert,null);
+  assert.match(read('server.cjs'),/const cwd=projectRoot\(/);
+});
+
 test('agent alerts: closing a session keeps an open "needs you"',()=>{
   const r=agentHookOutcome('SessionEnd',{id:'claude:a',prev:{status:'needs_attention',note:'Czeka na Twoją decyzję'},now});
   assert.equal(r.status,'needs_attention');

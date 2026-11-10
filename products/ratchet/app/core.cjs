@@ -162,12 +162,18 @@ function handoffText(state, github) {
 // only when nothing else in the same project is still working, and say "I need you"
 // at once when an agent waits for a decision or fails.
 const BUSY_WINDOW_MS = 30 * 60 * 1000;
+// The person thinks in projects, not folders: a Claude Code worktree
+// (<repo>\.claude\worktrees\<name>) belongs to <repo>. The server passes the git root
+// (see projectRoot in server.cjs), so a subfolder like "app" is never the name.
 function projectName(cwd) {
   const parts = String(cwd || '').split(/[\\/]+/).filter(Boolean);
+  const w = parts.findIndex((p, i) => p.toLowerCase() === '.claude' && String(parts[i + 1] || '').toLowerCase() === 'worktrees');
+  if (w > 0) return parts[w - 1];
   return parts.length ? parts[parts.length - 1] : '';
 }
 function sameProject(a, b) {
-  return String(a || '').replace(/[\\/]+$/, '').toLowerCase() === String(b || '').replace(/[\\/]+$/, '').toLowerCase();
+  const x = projectName(a).toLowerCase();
+  return !!x && x === projectName(b).toLowerCase();
 }
 function agentHookOutcome(event, {agents = [], id = '', prev = null, cwd = '', now = Date.now()} = {}) {
   const status = event === 'StopFailure' ? 'blocked'

@@ -403,6 +403,18 @@ async function appRequest(req,res) {
   }
   return fail(res,'Nie znaleziono',404);
 }
+// Claude Code reports the folder it is in, often a subfolder. Name and open the project
+// by its git root (a worktree's root counts) so "app" never stands for "1001-cave".
+function projectRoot(cwd){
+  let dir=cwd;
+  for(let i=0;i<10&&dir;i++){
+    try{if(fs.existsSync(path.join(dir,'.git')))return dir;}catch{return cwd;}
+    const up=path.dirname(dir);
+    if(up===dir)break;
+    dir=up;
+  }
+  return cwd;
+}
 function startHookServer() {
   hookServer=http.createServer((req,res)=>{
     if(req.method!=='POST'||req.url!=='/hook')return res.writeHead(404).end();
@@ -412,7 +424,7 @@ function startHookServer() {
       const session=String(data.session_id||'').slice(0,100);
       if(!session||!['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','Stop','StopFailure','Notification','SessionEnd'].includes(event))throw Error('Niepoprawne zdarzenie');
       const id='claude:'+session,index=state.agents.findIndex(x=>x.id===id),prev=index>=0?state.agents[index]:null;
-      const cwd=String(data.cwd||prev?.target||'');
+      const cwd=projectRoot(String(data.cwd||prev?.target||''));
       const outcome=agentHookOutcome(event,{agents:state.agents,id,prev,cwd});
       const clean=normalizeItem('agents',{...prev,id,title:prev?.title||projectName(cwd)||'Claude · '+session.slice(0,8),tool:'Claude Code',status:outcome.status,source:'hook',kind:'folder',target:cwd,note:outcome.note,updatedAt:new Date().toISOString()});
       if(index>=0)state.agents[index]=clean;else state.agents.unshift(clean);
