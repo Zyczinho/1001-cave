@@ -28,7 +28,7 @@ function normalizeChatGPTRuns(raw){
     conversationUrl:chatUrl(x.conversationUrl),
     status:[...ACTIVE,...TERMINAL,'attention','submitting'].includes(x.status)?x.status:'attention',
     reason:clip(x.reason,300),createdAt:clip(x.createdAt,60),
-    updatedAt:clip(x.updatedAt,60),alerted:x.alerted===true,
+    updatedAt:clip(x.updatedAt,60),alerted:x.alerted===true,suspendedNotified:x.suspendedNotified===true,
     pollFailures:Math.max(0,Math.min(3,Number(x.pollFailures)||0)),
     idempotencyKey:clip(x.idempotencyKey,80)
   }));
@@ -43,7 +43,7 @@ function newTask(data){
   const at=nowISO();
   return {job:{
     id:randomUUID(),title,triggerId,runId:'',conversationUrl:'',status:'submitting',
-    reason:'',createdAt:at,updatedAt:at,alerted:false,pollFailures:0,idempotencyKey:randomUUID()
+    reason:'',createdAt:at,updatedAt:at,alerted:false,suspendedNotified:false,pollFailures:0,idempotencyKey:randomUUID()
   },input,conversationKey};
 }
 class ChatGPTWorkspaceWatcher{
@@ -119,6 +119,11 @@ class ChatGPTWorkspaceWatcher{
       job.status=payload.status;
       job.reason=payload.status==='failed'?clip(payload.error?.code||'Agent zwrócił błąd.',100):'';
       this.persist();
+      if(payload.status==='suspended'&&!job.suspendedNotified){
+        job.suspendedNotified=true;this.persist();
+        this.notify('ChatGPT czeka na Twoje działanie: '+job.title+'. Otwórz rozmowę, żeby sprawdzić, czego potrzebuje agent.',
+          'reminder','','chatgpt-attention',job.conversationUrl);
+      }
       if(payload.status==='completed')
         this.emit(job,'ChatGPT zakończył zadanie: '+job.title+'. Otwórz rozmowę i sprawdź rezultat.','chatgpt');
       if(payload.status==='failed')
