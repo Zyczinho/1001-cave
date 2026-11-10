@@ -10,7 +10,7 @@ const {promisify} = require('node:util');
 const execFileAsync = promisify(execFile);
 const BASE = 'https://raw.githubusercontent.com/Zyczinho/1001-cave/ratchet-updates/ratchet-updates';
 const MANIFEST = BASE + '/latest.json';
-const CURRENT_VERSION = '0.2.7';
+const CURRENT_VERSION = '0.2.8';
 const INSTALLED_MANIFEST = 'ratchet-release-manifest.json';
 const ALLOWED = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(?:cmd|ps1|cjs|js|html|css|json|md|txt|png)$/;
 
@@ -31,7 +31,7 @@ function validateManifest(obj) {
 }
 function sha256(data){return crypto.createHash('sha256').update(data).digest('hex');}
 async function fetchBytes(url,limit=4*1024*1024){
-  const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(15000),headers:{'User-Agent':'Ratchet-Updater/0.2.7'}});
+  const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(15000),headers:{'User-Agent':'Ratchet-Updater/0.2.8'}});
   if(response.status===404){
     // Keep all repositories private: reuse the user's existing GitHub CLI login.
     // We never access or store the user's access token ourselves.
