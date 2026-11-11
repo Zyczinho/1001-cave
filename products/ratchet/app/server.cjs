@@ -27,8 +27,10 @@ function sweepRows(now = Date.now()) {
   for (const agent of state.agents) {
     if (!agent.id.startsWith('project:')) continue;
     const members = [...sessions.values()].filter(s => s.row === agent.id);
+    // No live sessions (e.g. after a Rachet restart): "Pracuje" and "Potrzebuje Cię"
+    // left over from an earlier day must not stay on the row forever.
     const status = members.length ? rowStatus(members, now)
-      : agent.status === 'working' && !sessionLive(agent, now) ? 'idle' : agent.status;
+      : !sessionLive(agent, now) ? 'idle' : agent.status;
     if (status !== agent.status) { agent.status = status; changed = true; }
   }
   return changed;
@@ -483,7 +485,8 @@ function startHookServer() {
       const id='claude:'+session,prev=sessions.get(id)||null;
       const cwd=projectRoot(String(data.cwd||prev?.target||''));
       const name=projectName(cwd)||'Claude Code',row=rowKey('claude',name);
-      const outcome=agentHookOutcome(event,{agents:[...sessions.values()],id,prev,cwd});
+      const outcome=agentHookOutcome(event,{agents:[...sessions.values()],id,prev,cwd,
+        notificationType:String(data.notification_type||'').slice(0,40),message:String(data.message||'').slice(0,200)});
       sessions.set(id,{id,source:'hook',status:outcome.status,target:cwd,note:outcome.note,updatedAt:new Date().toISOString(),row});
       upsertRow(row,{title:name,tool:'Claude Code',source:'hook',kind:'folder',target:cwd,note:outcome.note});
       save();

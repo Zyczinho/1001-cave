@@ -117,3 +117,41 @@ test('panel: one "now" card, compact rows and folded extras in a 360 x 520 windo
   assert.doesNotMatch(html,/id="clock"|id="statusStrip"|class="footer"/,'clock, counters and footer took 120 px of the window');
   assert.match(html,/<title>Rachet<\/title>/);
 });
+
+test('agent alerts: an idle session waiting for the next message is not "I need you"',()=>{
+  const done={...busy('claude:a','C:\Users\me\BOX2BOX'),status:'ready',note:'Skończył — wejdź i zobacz'};
+  const idle=agentHookOutcome('Notification',{id:'claude:a',prev:done,cwd:'C:\Users\me\BOX2BOX',now,notificationType:'idle_prompt',message:'Claude is waiting for your input'});
+  assert.equal(idle.status,'ready');
+  assert.equal(idle.alert,null);
+  // Older Claude Code without notification_type: recognised by the message.
+  const old=agentHookOutcome('Notification',{id:'claude:a',prev:done,cwd:'C:\Users\me\BOX2BOX',now,message:'Claude is waiting for your input'});
+  assert.equal(old.status,'ready');
+  assert.equal(old.alert,null);
+  const auth=agentHookOutcome('Notification',{id:'claude:a',cwd:'C:\Users\me\BOX2BOX',now,notificationType:'auth_success'});
+  assert.notEqual(auth.status,'needs_attention');
+  assert.equal(auth.alert,null);
+});
+
+test('agent alerts: a permission prompt or a question still says "I need you"',()=>{
+  for(const notificationType of ['permission_prompt','elicitation_dialog']){
+    const r=agentHookOutcome('Notification',{id:'claude:a',prev:busy('claude:a','C:\dev\cave'),cwd:'C:\dev\cave',now,notificationType,message:'Claude needs your permission to use Bash'});
+    assert.equal(r.status,'needs_attention',notificationType);
+    assert.equal(r.alert.phase,'agent-attention');
+  }
+});
+
+test('agent alerts: an unanswered "needs you" fades after 8 hours',()=>{
+  const {rowStatus,sessionLive}=require('../core.cjs');
+  const at=h=>new Date(now-h*3600000).toISOString();
+  assert.equal(sessionLive({status:'needs_attention',source:'hook',updatedAt:at(1)},now),true);
+  assert.equal(sessionLive({status:'needs_attention',source:'hook',updatedAt:at(9)},now),false);
+  assert.equal(sessionLive({status:'blocked',source:'hook',updatedAt:at(9)},now),false);
+  assert.equal(sessionLive({status:'ready',source:'hook',updatedAt:at(48)},now),true);
+  assert.equal(rowStatus([{status:'needs_attention',source:'hook',updatedAt:at(9)}],now),'idle');
+});
+
+test('agent alerts: the hook forwards the notification type and the server uses it',()=>{
+  assert.match(read('scripts/claude-hook.cjs'),/notification_type:payload\.notification_type/);
+  assert.match(read('server.cjs'),/notificationType:String\(data\.notification_type/);
+  assert.match(read('server.cjs'),/: !sessionLive\(agent, now\) \? 'idle' : agent\.status;/);
+});

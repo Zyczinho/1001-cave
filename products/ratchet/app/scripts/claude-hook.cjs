@@ -12,6 +12,9 @@ process.stdin.on('end',async()=>{
         session_id:payload.session_id,
         coordinator_job_id:process.env.RATCHET_COORDINATOR_JOB||'',
         hook_event_name:payload.hook_event_name,
+        // Notification only: tells a permission prompt apart from "waiting for your input".
+        notification_type:payload.notification_type||'',
+        message:String(payload.message||'').slice(0,200),
         cwd:payload.cwd||'',
         transcript_path:payload.transcript_path||''
       }),signal:AbortSignal.timeout(1300)
