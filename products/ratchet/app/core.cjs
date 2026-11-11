@@ -1,8 +1,6 @@
 'use strict';
 const { randomUUID } = require('crypto');
 const {normalizeCoordinator}=require('./coordinator.cjs');
-const {normalizeChatGPTRuns}=require('./chatgpt-workspace.cjs');
-const {normalizeSignals}=require('./chatgpt-signal.cjs');
 const COLLECTIONS = ['schedule', 'links', 'agents'];
 const STATUS = ['working', 'needs_attention', 'ready', 'blocked', 'idle'];
 const VALID_WEEKDAYS = [0,1,2,3,4,5,6];
@@ -20,8 +18,6 @@ const INIT = {
   ],
   agents: [],
   coordinator: {enabled:false,jobs:[]},
-  chatgptRuns: [],
-  chatgptSignals: [],
   reminded: {},
   activity: [],
   orbPosition: null
@@ -40,8 +36,6 @@ function normalizeStore(obj) {
   if (obj.reminded && typeof obj.reminded === 'object') def.reminded = obj.reminded;
   if (Array.isArray(obj.activity)) def.activity = obj.activity.slice(0, 100);
   def.coordinator=normalizeCoordinator(obj.coordinator);
-  def.chatgptRuns=normalizeChatGPTRuns(obj.chatgptRuns);
-  def.chatgptSignals=normalizeSignals(obj.chatgptSignals);
   if (obj.orbPosition && Number.isFinite(obj.orbPosition.x) && Number.isFinite(obj.orbPosition.y)) def.orbPosition = obj.orbPosition;
   return def;
 }
