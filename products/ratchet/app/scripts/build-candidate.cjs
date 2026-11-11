@@ -23,7 +23,7 @@ const packageFiles=[
   'README.md',
   'Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1','Uruchom-Ratchet-Bez-Electron.ps1',
   'Instaluj-Ratchet.ps1','Apply-Ratchet-Update.ps1','Zatrzymaj-Ratchet.ps1','Diagnostyka-Ratchet.ps1',
-  'core.cjs','server.cjs','updater.cjs',
+  'core.cjs','coordinator.cjs','server.cjs','updater.cjs',
   'ui/browser-bridge.js','ui/icons.js',
   'ui/orb.css','ui/orb.html','ui/orb.js',
   'ui/panel.html','ui/panel.js','ui/style.css',

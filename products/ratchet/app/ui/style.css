@@ -131,3 +131,54 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .tabs{padding-left:10px;padding-right:10px;gap:3px}
 .tab{font-size:11px;padding:0 4px}
 @media(max-width:520px){.tabs{padding-left:8px;padding-right:8px;gap:2px}.tab{font-size:10px;padding:0 3px}}
+
+
+/* Opt-in coordinator: isolated visually from regular agent status controls. */
+.coordinator-box{padding:11px;border-radius:12px;background:#1d2c3d;border:1px solid #405874;margin-bottom:9px}
+.coordinator-top{display:flex;gap:7px;align-items:start;justify-content:space-between}
+.coordinator-top>div{flex:1;min-width:0}
+.coordinator-top strong{font-size:12px}
+.coordinator-top .hint{margin:6px 0 8px}
+.coordinator-form{display:grid;gap:7px;margin-top:10px}
+.coordinator-form input,.coordinator-form textarea,.coordinator-form select{width:100%;background:#131f2e;color:#ecf5ff;border:1px solid #425a76;border-radius:9px;padding:9px;font-size:11px;min-height:35px}
+.coordinator-form textarea{min-height:66px;max-height:130px;resize:vertical}
+.coordinator-form input:focus,.coordinator-form textarea:focus{outline:2px solid #6caeff}
+.coordinator-job{border:1px solid #354c64;background:#1b293a;border-radius:11px;margin-top:7px;padding:10px}
+.coordinator-job-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.coordinator-job-head strong{min-width:0;font-size:11px;overflow-wrap:anywhere}
+.coordinator-job-head .pill{white-space:nowrap}
+.coordinator-stages{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.coordinator-stages span{font-size:9px;padding:5px 7px;background:#293e54;border-radius:7px;color:#91adcb}
+.coordinator-stages .is-done{background:#1d5145;color:#a9efd5}
+.coordinator-stages .is-active{background:#294f79;color:#badfff}
+.coordinator-job .alert{margin-top:7px;overflow-wrap:anywhere}
+.coordinator-report{font-size:10px;margin-top:9px}
+.coordinator-report summary{cursor:pointer;color:#abcbef;padding:5px}
+.coordinator-report pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;background:#132234;padding:7px;border-radius:7px;font-size:9px}
+
+/* First-run Agents guide: compact enough for Ratchet's native 360 x 520 companion. */
+.agent-guide{
+  margin:0 0 15px;padding:14px 13px 12px;
+  border:1px solid rgba(118,166,225,.42);border-radius:15px;
+  background:linear-gradient(145deg,#243950,#1b2b3d);
+}
+.agent-guide-top,.agent-guide-controls,.agent-guide-right{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.agent-guide-kicker{font-size:9px;letter-spacing:.7px;color:#a4cfff;font-weight:800}
+.agent-guide-position{color:#aec0d2;font-size:10px;white-space:nowrap}
+.agent-guide-progress{display:flex;gap:5px;margin-top:10px}
+.agent-guide-progress>span{height:4px;flex:1;border-radius:6px;background:#364d64}
+.agent-guide-progress>span.active{background:#80b8fa}
+.agent-guide-icon{
+  margin:12px auto 7px;background:#345471;border:1px solid #47729c;
+  width:39px;height:39px;border-radius:12px;display:grid;place-items:center;color:#d3eaff
+}
+.agent-guide-icon .ui-icon{width:21px;height:21px}
+.agent-guide h2{text-align:center;font-size:14px;line-height:1.35;margin:6px 0 7px}
+.agent-guide-description{font-size:11px;line-height:1.55;text-align:center;color:#d2e4f5;margin:0}
+.agent-guide-note{display:flex;align-items:flex-start;gap:6px;border-radius:9px;background:#182b3e;border:1px solid #39536b;padding:8px;margin:10px 0;color:#a5c2db;font-size:10px;line-height:1.45}
+.agent-guide-note .icon-slot{margin-top:1px}
+.agent-guide-controls{margin-top:10px}
+.agent-guide-right{justify-content:flex-end}
+.agent-guide-reopen{display:flex;justify-content:flex-end;margin:-4px 0 12px}
+.agent-guide button{white-space:normal;text-align:center}
+@media(max-width:520px){.agent-guide{padding:12px 11px}.agent-guide h2{font-size:13px}.agent-guide-controls{gap:4px}.agent-guide-controls .btn{padding:6px 7px}}

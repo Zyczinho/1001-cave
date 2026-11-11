@@ -10,6 +10,7 @@ process.stdin.on('end',async()=>{
     await fetch('http://127.0.0.1:47822/hook',{
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         session_id:payload.session_id,
+        coordinator_job_id:process.env.RATCHET_COORDINATOR_JOB||'',
         hook_event_name:payload.hook_event_name,
         cwd:payload.cwd||'',
         transcript_path:payload.transcript_path||''
