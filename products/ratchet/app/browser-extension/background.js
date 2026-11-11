@@ -51,7 +51,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     headers: HEADERS,
     body: JSON.stringify({
       state: msg.state, url: msg.url, title: msg.title,
-      visible: msg.visible === true, durationMs: Number(msg.durationMs) || 0
+      visible: msg.visible === true, durationMs: Number(msg.durationMs) || 0, lagMs: Number(msg.lagMs) || 0
     })
   }).catch(() => { /* Rachet is closed: nothing to do. */ });
 });

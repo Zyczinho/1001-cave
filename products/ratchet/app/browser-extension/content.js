@@ -12,26 +12,29 @@
   const HEARTBEAT_MS = 60000;   // while answering, confirm every minute (Rachet forgets after 3 min of silence)
   const address = () => location.href.split(/[?#]/)[0];
   const isChat = url => /\/c\/[A-Za-z0-9-]{8,}$/.test(url);
+  const watching = () => document.visibilityState === 'visible' && document.hasFocus();
   // workingUrl is the conversation that is answering. "done" and "closed" always go
   // to it, never to whatever chat happens to be on screen at that moment.
   let working = false, startedAt = 0, lastBusy = 0, lastBeat = 0, workingUrl = '';
+  // A finished chat you have not looked at yet; Rachet is told the moment you do.
+  let unseenUrl = '';
 
   const busy = () => STOP.some(selector => document.querySelector(selector));
   const send = (state, url, extra = {}) => {
     try {
       chrome.runtime.sendMessage({
         type: 'rachet-chat', state, url, title: document.title,
-        visible: document.visibilityState === 'visible' && document.hasFocus(), ...extra
+        visible: watching(), ...extra
       });
     } catch { /* Extension reloaded or Rachet closed: ChatGPT keeps working normally. */ }
   };
 
-  setInterval(() => {
+  const tick = () => {
     const now = Date.now(), here = address();
     if (busy()) {
       lastBusy = now;
       if (!working) {
-        working = true; startedAt = now; lastBeat = now; workingUrl = here;
+        working = true; startedAt = now; lastBeat = now; workingUrl = here; unseenUrl = '';
         send('working', here);
       } else if (here !== workingUrl) {
         // A new chat gets its /c/... address after the answer starts (same chat);
@@ -43,12 +46,33 @@
         lastBeat = now;
         send('working', here);
       }
-    } else if (working && now - lastBusy > QUIET_MS) {
+    } else if (working && now - lastBusy >= QUIET_MS) {
       working = false;
+      if (here === workingUrl && !watching()) unseenUrl = workingUrl;
       // Finished on screen = done. Left for another chat = we cannot know, say closed.
-      send(here === workingUrl ? 'done' : 'closed', workingUrl, { durationMs: lastBusy - startedAt });
+      // lagMs: how long after the stop button left this message goes out.
+      send(here === workingUrl ? 'done' : 'closed', workingUrl, { durationMs: lastBusy - startedAt, lagMs: now - lastBusy });
     }
-  }, 1000);
+  };
+  // The safety net. A browser slows timers in a background tab, down to once a minute.
+  setInterval(tick, 1000);
+
+  // Page changes are not slowed: the answer streaming and the stop button leaving
+  // arrive here at once, so "done" does not wait for the slow timer above.
+  let confirmTimer = 0;
+  new MutationObserver(() => {
+    if (busy()) { tick(); return; }
+    if (working && !confirmTimer) confirmTimer = setTimeout(() => { confirmTimer = 0; tick(); }, QUIET_MS);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  // You came back to the finished chat: its wait is over.
+  const noticed = () => {
+    if (!unseenUrl || !watching() || address() !== unseenUrl) return;
+    send('seen', unseenUrl);
+    unseenUrl = '';
+  };
+  addEventListener('focus', noticed);
+  document.addEventListener('visibilitychange', noticed);
 
   // Rachet asks "which chat is in this tab?" so a click can bring this tab forward.
   try {
