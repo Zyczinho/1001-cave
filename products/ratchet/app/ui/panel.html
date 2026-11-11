@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'"><title>Rachet</title><link rel="stylesheet" href="style.css"></head>
+<body class="panel-body">
+  <main class="shell" id="app">
+    <header class="header" id="dragbar">
+      <div class="brandmark" aria-hidden="true"><span class="mini-head"><i></i><i></i><b></b></span></div>
+      <div class="brandcopy"><div class="brand-name">rachet</div></div>
+      <span class="live-tag" id="backendStatus" aria-live="polite" title="Połączono"><span class="live-dot"></span><span class="sr-only">Połączono</span></span>
+      <div class="panel-menu-wrap">
+        <button class="icon-btn menu-toggle" id="appMenuToggle" type="button" aria-expanded="false" aria-controls="appMenu" aria-label="Menu Racheta" title="Menu"><span data-icon="more" data-size="18"></span></button>
+        <div class="app-menu" id="appMenu" hidden>
+          <button type="button" data-action="show-settings"><span data-icon="settings"></span> Ustawienia</button>
+          <button type="button" data-action="update-check"><span data-icon="refresh"></span> Sprawdź aktualizacje</button>
+          <button type="button" data-action="diagnose"><span data-icon="settings"></span> Zdiagnozuj Rachet</button>
+          <div class="menu-rule"></div>
+          <button type="button" class="menu-danger" data-action="quit"><span data-icon="power"></span> Zakończ Rachet</button>
+          <div class="menu-version">Rachet 0.2.9 RC · 1001 CAVE</div>
+        </div>
+      </div>
+      <button class="icon-btn close-btn" id="closePanel" title="Ukryj panel (Rachet dalej pracuje)" aria-label="Ukryj panel"><span data-icon="x"></span></button>
+    </header>
+    <nav class="tabs" aria-label="Sekcje">
+      <button data-tab="today" class="tab active">Dziś</button>
+      <button data-tab="calendar" class="tab">Kalendarz</button>
+      <button data-tab="agents" class="tab">Agenci<span class="tab-badge" id="agentsBadge" hidden></span></button>
+      <button data-tab="links" class="tab">Skróty</button>
+    </nav>
+    <section id="view" class="view"></section>
+    <div id="toast" role="status"></div>
+    <div class="overlay" id="modal" hidden><div class="modal-card"><div class="modal-head"><h2 id="modalTitle">Nowy element</h2><button class="icon-btn" data-action="modal-close" aria-label="Zamknij formularz"><span data-icon="x"></span></button></div><form id="itemForm"></form></div></div>
+    <div class="overlay" id="confirmModal" hidden role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+      <div class="confirm-card">
+        <h2 id="confirmTitle">Na pewno?</h2>
+        <p id="confirmText"></p>
+        <div class="confirm-actions">
+          <button type="button" class="btn secondary small" id="confirmCancel">Anuluj</button>
+          <button type="button" class="btn small" id="confirmAccept">Tak</button>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="browser-bridge.js"></script><script src="icons.js"></script><script src="panel.js"></script>
+</body></html>

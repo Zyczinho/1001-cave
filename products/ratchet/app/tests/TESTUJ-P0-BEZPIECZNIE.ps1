@@ -1,0 +1,100 @@
+# Ratchet P0: isolated Windows smoke/manual test. NEVER installs or updates the live Ratchet.
+param([switch]$Manual)
+# Works from a separate checkout of PR #23, not from %LOCALAPPDATA%\Ratchet\app.
+$ErrorActionPreference='Stop'
+$testScript=Join-Path $PSScriptRoot 'windows-ui-smoke.ps1'
+$appRoot=Split-Path -Parent $PSScriptRoot
+$liveApp=Join-Path $env:LOCALAPPDATA 'Ratchet\app'
+if ([IO.Path]::GetFullPath($appRoot).TrimEnd('\') -ieq [IO.Path]::GetFullPath($liveApp).TrimEnd('\')) {
+    throw 'Nie uruchamiaj testow w katalogu zainstalowanego Ratcheta. Wykonaj git clone PR #23 do osobnego folderu.'
+}
+if (-not (Test-Path -LiteralPath $testScript -PathType Leaf)) {throw 'Brak windows-ui-smoke.ps1'}
+$node=Get-Command node.exe -ErrorAction Stop
+# Select a fresh loopback-only port. Never terminate an older test copy.
+# Exclude 47823 (live app) and 47831 (reserved test hook).
+function Find-FreeTestPort {
+    $ports=@(47830) + @(47832..47880)
+    foreach($candidate in $ports) {
+        $listener=$null
+        try {
+            $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,[int]$candidate)
+            $listener.Server.ExclusiveAddressUse=$true
+            $listener.Start()
+            return [int]$candidate
+        } catch [System.Net.Sockets.SocketException] {
+            # Another process is already using this port. Keep it running.
+        } finally {
+            if($listener) {try {$listener.Stop()} catch {}}
+        }
+    }
+    throw 'Brak wolnego portu testowego 47830, 47832-47880. Nie zamykam zadnego procesu.'
+}
+$testPort=Find-FreeTestPort
+function Get-LiveRatchetPing {
+    try { return Invoke-RestMethod 'http://127.0.0.1:47823/api/ping' -TimeoutSec 2 -ErrorAction Stop }
+    catch { return $null }
+}
+$before=Get-LiveRatchetPing
+$original=@{
+    APPDATA=$env:APPDATA
+    LOCALAPPDATA=$env:LOCALAPPDATA
+    RATCHET_PORT=$env:RATCHET_PORT
+    RATCHET_HOOK_PORT=$env:RATCHET_HOOK_PORT
+    RATCHET_DISABLE_HOOKS=$env:RATCHET_DISABLE_HOOKS
+    GITHUB_ACTIONS=$env:GITHUB_ACTIONS
+}
+$id=[guid]::NewGuid().ToString('N').Substring(0,12)
+$base=Join-Path $env:TEMP ('ratchet-p0-safe-'+$id)
+New-Item -ItemType Directory -Path (Join-Path $base 'roaming') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $base 'local') -Force | Out-Null
+$code=0
+Write-Host ('Izolowany profil: '+$base)
+Write-Host 'Zainstalowany Ratchet: bez zatrzymywania, aktualizacji ani zmian profilu.' -ForegroundColor Cyan
+Write-Host ('Port testowy wybrany automatycznie: '+$testPort) -ForegroundColor Green
+try {
+    $env:APPDATA=Join-Path $base 'roaming'
+    $env:LOCALAPPDATA=Join-Path $base 'local'
+    $env:RATCHET_PORT=[string]$testPort
+    $env:RATCHET_HOOK_PORT='47831' # Hooki w testach pozostaja wylaczone.
+    $env:RATCHET_DISABLE_HOOKS='1'
+    # Do not execute CI-only Edge preference fixture on a user's actual browser.
+    $env:GITHUB_ACTIONS=''
+    if($Manual) {
+        Write-Host ('TRYB RECZNY: uruchamiam odrebna kuleczke Ratcheta na porcie '+$testPort+'.') -ForegroundColor Cyan
+        Write-Host 'Przetestuj licznik, sygnaly i powiadomienia. Zakoncz test przez PPM na kuleczce -> Zakoncz Ratchet.' -ForegroundColor Yellow
+        Write-Host 'Nie zamykaj oryginalnego Ratcheta. Test ma osobne porty i dane.'
+        $launcher=Join-Path $appRoot 'Uruchom-Ratchet-Bez-Electron.ps1'
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $launcher
+        if($LASTEXITCODE -ne 0){throw ('Testowa kuleczka nie uruchomila sie poprawnie (exit '+$LASTEXITCODE+').')}
+        Write-Host 'Zakonczono reczny test bez podmieniania zainstalowanego Ratcheta.' -ForegroundColor Green
+    } else {
+        $tests=@(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.test.cjs' -File | ForEach-Object { $_.FullName })
+        if(-not $tests.Count){throw 'Nie znaleziono testow Node'}
+        Write-Host ('TEST 1/2: Node ('+$tests.Count+' plikow)') -ForegroundColor Cyan
+        & $node.Source --test @tests
+        if($LASTEXITCODE -ne 0){throw ('Testy Node nie przeszly (exit '+$LASTEXITCODE+'). Test pulpitu nie zostal uruchomiony.')}
+        Write-Host 'TEST 2/2: WinForms + Edge + panel + powiadomienie' -ForegroundColor Cyan
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $testScript
+        if($LASTEXITCODE -ne 0){throw ('Smoke Windows nie przeszedl (exit '+$LASTEXITCODE+').')}
+        Write-Host 'TESTY ZAKONCZONE: PASS (automatyczny test pulpitu)' -ForegroundColor Green
+        Write-Host 'UWAGA: Windows moze wyciszyc balloon notification. Ten test potwierdza natywny dymek.' -ForegroundColor Yellow
+    }
+} catch {
+    $code=1
+    Write-Host ('STOP: '+$_.Exception.Message) -ForegroundColor Red
+    Write-Host ('Logi testowe sa w: '+$base) -ForegroundColor Yellow
+} finally {
+    $env:APPDATA=$original.APPDATA
+    $env:LOCALAPPDATA=$original.LOCALAPPDATA
+    $env:RATCHET_PORT=$original.RATCHET_PORT
+    $env:RATCHET_HOOK_PORT=$original.RATCHET_HOOK_PORT
+    $env:RATCHET_DISABLE_HOOKS=$original.RATCHET_DISABLE_HOOKS
+    $env:GITHUB_ACTIONS=$original.GITHUB_ACTIONS
+    $after=Get-LiveRatchetPing
+    if($before -and $after -and $before.pid -ne $after.pid){
+        Write-Host 'UWAGA: Proces Ratcheta na porcie 47823 zmienil PID w czasie testu. Wymaga sprawdzenia.' -ForegroundColor Yellow
+        $code=1
+    }
+    Write-Host ('Wyniki/logi izolowanego testu: '+$base)
+}
+if($code -ne 0){exit $code}

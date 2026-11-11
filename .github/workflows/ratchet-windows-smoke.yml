@@ -1,0 +1,217 @@
+name: Ratchet — Windows startup smoke
+# Native Windows gate for the Ratchet release candidate.
+on:
+  push:
+    branches:
+      - codex/ratchet-oneclick-diagnostics
+      - "claude/ratchet-*"
+    paths:
+      - "products/ratchet/**"
+      - ".github/workflows/ratchet-windows-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RATCHET_VERSION: "0.2.9"
+
+jobs:
+  windows-startup:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
+        working-directory: products/ratchet/app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check JavaScript tests
+        run: |
+          node --check server.cjs
+          node --test tests/*.test.cjs
+      - name: Parse PowerShell scripts (Windows PowerShell 5.1)
+        run: |
+          $files = @('Ratchet-Backend.ps1','Ratchet-Kuleczka.ps1','Uruchom-Ratchet-Bez-Electron.ps1','Apply-Ratchet-Update.ps1','Diagnostyka-Ratchet.ps1','Instaluj-Ratchet.ps1','Zatrzymaj-Ratchet.ps1','tests/windows-ui-smoke.ps1')
+          foreach ($f in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f).Path,[ref]$tokens,[ref]$errors) | Out-Null
+            if (@($errors).Count -gt 0) { throw "Parser error $f : $($errors | Out-String)" }
+            Write-Host "PARSE_OK: $f"
+          }
+      - name: Installer Desktop cleanup selects only Ratchet leftovers
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tests\desktop-cleanup.ps1
+      - name: One-click diagnostics run when backend is offline
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\Diagnostyka-Ratchet.ps1 -Quiet | Out-Null
+          $reports = Join-Path $env:LOCALAPPDATA 'Ratchet\diagnostics'
+          $newest = Get-ChildItem -LiteralPath $reports -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $newest) { throw 'No diagnostics folder' }
+          $json = Get-Content -LiteralPath (Join-Path $newest.FullName 'report.json') -Raw | ConvertFrom-Json
+          if ($json.sharing -ne 'LOCAL_ONLY_NOT_SENT') { throw 'Report must remain local' }
+          if (-not $json.reportId -or -not $json.backend.status -or -not $json.files) { throw 'Incomplete report' }
+          if ($null -eq $json.notifications) { throw 'Report lacks Windows notification settings' }
+          if (-not (Test-Path (Join-Path $newest.FullName 'summary.txt'))) { throw 'Missing summary' }
+          Write-Host "DIAGNOSTICS_OK: $($json.reportId) / backend $($json.backend.status)"
+      - name: Start backend via PowerShell and verify health
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . .\Ratchet-Backend.ps1
+          try {
+            $h = Start-RatchetBackend
+            if (-not $h) { throw "Start-RatchetBackend returned null" }
+            if (-not $h.ok -or $h.version -ne $env:RATCHET_VERSION) { throw "Wrong health response: $($h|ConvertTo-Json -Compress)" }
+            Write-Host "BACKEND_OK: $($h|ConvertTo-Json -Compress)"
+          } finally {
+            try { Invoke-RatchetAction 'quit' 3 } catch { Write-Host "Stop error: $($_.Exception.Message)" }
+          }
+      - name: Native orb and Edge panel lifecycle (with the user's Edge already running)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tests\windows-ui-smoke.ps1
+      - name: Build verified Windows RC package (one folder, exact commit)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:RATCHET_RC_DIR = Join-Path $env:RUNNER_TEMP 'ratchet-rc'
+          node -e "const x=require('./scripts/build-candidate.cjs'); const b=x.buildCandidate({outputDir:process.env.RATCHET_RC_DIR}); console.log('RC verified files:',b.files,'commit',b.commit); if(b.commit!==process.env.GITHUB_SHA) process.exit(3)"
+          $package = Join-Path $env:RATCHET_RC_DIR "Ratchet-$($env:RATCHET_VERSION)-RC"
+          $zip = Join-Path $env:RUNNER_TEMP "Ratchet-$($env:RATCHET_VERSION)-RC-Windows.zip"
+          # The ZIP holds ONE folder, so unpacking on a Desktop never spills program files.
+          Compress-Archive -Path $package -DestinationPath $zip -CompressionLevel Optimal
+          $desk = Join-Path $env:RUNNER_TEMP 'FakeDesktop'
+          New-Item -ItemType Directory -Path $desk -Force | Out-Null
+          'private user notes' | Set-Content (Join-Path $desk 'moje-notatki.txt')
+          New-Item -ItemType Directory -Path (Join-Path $desk 'MojProjekt') -Force | Out-Null
+          'secret' | Set-Content (Join-Path $desk 'MojProjekt\plan.txt')
+          Expand-Archive -LiteralPath $zip -DestinationPath $desk
+          $top = @(Get-ChildItem -LiteralPath $desk | Select-Object -ExpandProperty Name)
+          $expectedTop = @('MojProjekt','moje-notatki.txt',"Ratchet-$($env:RATCHET_VERSION)-RC")
+          $spilled = @($top | Where-Object { $expectedTop -notcontains $_ })
+          if ($top.Count -ne 3 -or $spilled.Count) { throw ('ZIP spilled files: ' + ($top -join ',')) }
+          Write-Host ('RC_ZIP_OK: ' + $zip)
+      - name: Install from the extracted ZIP next to private Desktop files
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $profileDir = Join-Path $env:APPDATA 'Ratchet'
+          New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+          # Existing user data with a planned task must survive every install and rollback.
+          '{"version":1,"settings":{"repo":"Zyczinho/city-route-app","notifications":true,"autoStart":false,"alwaysOnTop":true,"avatarSize":56},"schedule":[{"id":"ci-task","title":"Zadanie CI","time":"23:58","endTime":"23:59","date":null,"days":[0,1,2,3,4,5,6],"project":"","target":"","kind":"url","note":"","enabled":true,"snoozeUntil":null}],"links":[],"agents":[],"reminded":{},"activity":[]}' | Set-Content -LiteralPath (Join-Path $profileDir 'ratchet.json') -Encoding UTF8
+          $profileHash = (Get-FileHash (Join-Path $profileDir 'ratchet.json')).Hash
+          $installer = Join-Path $env:RUNNER_TEMP "FakeDesktop\Ratchet-$($env:RATCHET_VERSION)-RC\app\Instaluj-Ratchet.ps1"
+          # Field condition from the user's OneDrive Desktop: a shortcut name is locked
+          # ("access denied"). A folder with that name reproduces it; install must still succeed.
+          $desktop = [Environment]::GetFolderPath('DesktopDirectory')
+          New-Item -ItemType Directory -Path (Join-Path $desktop 'Rachet.lnk') -Force | Out-Null
+          # An old "Ratchet" shortcut to this program is moved to the backup, not left as a duplicate.
+          $oldWs = New-Object -ComObject WScript.Shell
+          $old = $oldWs.CreateShortcut((Join-Path $desktop 'Ratchet - Diagnostyka.lnk'))
+          $old.TargetPath = Join-Path $env:LOCALAPPDATA 'Ratchet\app\Ratchet.exe'; $old.Save()
+          # -Wait would wait for the long-lived orb descendant too: poll only installer PID.
+          $install = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$installer+'"'),'-Unattended') -PassThru
+          for($i=0;$i -lt 200;$i++){ Start-Sleep -Milliseconds 300; $install.Refresh(); if($install.HasExited){break} }
+          if(-not $install.HasExited){throw 'Installer did not exit within 60s'}
+          if($install.ExitCode -ne 0){
+            Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'Ratchet\install.log') -Tail 40 | Write-Host
+            throw ('Installer failed exit code '+$install.ExitCode)
+          }
+          $appRoot = Join-Path $env:LOCALAPPDATA 'Ratchet\app'
+          $health = Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/ping' -TimeoutSec 3
+          if(-not $health.ok -or $health.version -ne $env:RATCHET_VERSION){throw 'Installed RC health mismatch'}
+          if($health.commit -ne $env:GITHUB_SHA){throw ('Running build '+$health.commit+' is not the tested commit '+$env:GITHUB_SHA)}
+          if(([IO.Path]::GetFullPath($health.root).TrimEnd('\')) -ine $appRoot){throw ('Backend runs from '+$health.root)}
+          # Exactly the manifest files (+ the locally compiled launcher), nothing from the Desktop.
+          $manifest = Get-Content (Join-Path $appRoot 'ratchet-release-manifest.json') -Raw | ConvertFrom-Json
+          $expected = @($manifest.files.path) + @('ratchet-release-manifest.json','Ratchet.exe')
+          $actual = @(Get-ChildItem -LiteralPath $appRoot -Recurse -File | ForEach-Object { $_.FullName.Substring($appRoot.Length+1).Replace('\','/') })
+          $extra = @($actual | Where-Object { $expected -notcontains $_ })
+          if($extra.Count){throw ('Unexpected files in app folder: '+($extra -join ', '))}
+          foreach($f in $manifest.files){ if((Get-FileHash (Join-Path $appRoot $f.path)).Hash -ine $f.sha256){throw ('Installed hash mismatch '+$f.path)} }
+          $ws = New-Object -ComObject WScript.Shell
+          foreach($name in @('Rachet (1001 CAVE).lnk','Rachet - Diagnostyka.lnk')){
+            $lnk = $ws.CreateShortcut((Join-Path $desktop $name))
+            if($lnk.TargetPath -ine (Join-Path $appRoot 'Ratchet.exe')){throw ($name+' does not start Ratchet.exe: '+$lnk.TargetPath)}
+          }
+          $receipt = Get-Content (Join-Path $env:LOCALAPPDATA 'Ratchet\install-receipt.json') -Raw | ConvertFrom-Json
+          if($receipt.commit -ne $env:GITHUB_SHA -or -not $receipt.verifiedAt -or $receipt.launcher -ne 'Ratchet.exe'){throw 'Install receipt incomplete'}
+          if((Get-FileHash (Join-Path $profileDir 'ratchet.json')).Hash -ne $profileHash){throw 'Installer modified the user profile'}
+          if(Test-Path -LiteralPath (Join-Path $desktop 'Ratchet - Diagnostyka.lnk')){throw 'Old Ratchet shortcut was left on the Desktop'}
+          if(-not @(Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Ratchet\backups\*\desktop-shortcuts\Ratchet - Diagnostyka.lnk') -ErrorAction SilentlyContinue).Count){throw 'Old Ratchet shortcut was not kept in the backup'}
+          Remove-Item -LiteralPath (Join-Path $desktop 'Rachet.lnk') -Force
+          Write-Host 'RC_INSTALL_FROM_ZIP_OK: app folder = manifest + Ratchet.exe; 2 Rachet shortcuts (fallback name when locked); old shortcut backed up; profile untouched'
+      - name: Ratchet.exe starts the orb without any console window
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -TypeDefinition @'
+          using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
+          public static class CiConsoles {
+            private delegate bool P(IntPtr h, IntPtr l);
+            [DllImport("user32.dll")] private static extern bool EnumWindows(P cb, IntPtr l);
+            [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr h);
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr h, StringBuilder s, int m);
+            public static int Count() { int n=0; EnumWindows(delegate(IntPtr h, IntPtr l){ if(IsWindowVisible(h)){ StringBuilder c=new StringBuilder(256); GetClassName(h,c,256); string s=c.ToString(); if(s=="ConsoleWindowClass"||s=="CASCADIA_HOSTING_WINDOW_CLASS") n++; } return true; }, IntPtr.Zero); return n; }
+          }
+          '@
+          Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 3 | Out-Null
+          for($i=0;$i -lt 40;$i++){ Start-Sleep -Milliseconds 300; try{Invoke-RestMethod http://127.0.0.1:47823/api/ping -TimeoutSec 1 | Out-Null}catch{break} }
+          $before = [CiConsoles]::Count()
+          Start-Process -FilePath (Join-Path $env:LOCALAPPDATA 'Ratchet\app\Ratchet.exe')
+          $ok=$false
+          for($i=0;$i -lt 40;$i++){ Start-Sleep -Milliseconds 400; try{ $h=Invoke-RestMethod http://127.0.0.1:47823/api/ping -TimeoutSec 1; if($h.ok){$ok=$true;break} }catch{} }
+          if(-not $ok){throw 'Ratchet.exe did not start Ratchet'}
+          Start-Sleep -Seconds 2
+          $after = [CiConsoles]::Count()
+          if($after -gt $before){throw ('Visible console windows: before '+$before+', after '+$after)}
+          Write-Host ('LAUNCHER_NO_CONSOLE_OK consoles before/after: '+$before+'/'+$after)
+      - name: Broken update is rolled back automatically, data untouched
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $good = Join-Path $env:RUNNER_TEMP "FakeDesktop\Ratchet-$($env:RATCHET_VERSION)-RC"
+          $bad = Join-Path $env:RUNNER_TEMP 'BrokenPackage'
+          Copy-Item -LiteralPath $good -Destination $bad -Recurse
+          $server = Join-Path $bad 'app\server.cjs'
+          # A build that cannot start: the installer must restore the working version.
+          [IO.File]::WriteAllText($server, "process.exit(3);`n" + [IO.File]::ReadAllText($server))
+          $mf = Join-Path $bad 'app\ratchet-release-manifest.json'
+          $m = Get-Content $mf -Raw | ConvertFrom-Json
+          ($m.files | Where-Object { $_.path -eq 'server.cjs' }).sha256 = (Get-FileHash $server).Hash.ToLowerInvariant()
+          $m | ConvertTo-Json -Depth 5 | Set-Content $mf -Encoding UTF8
+          $profileFile = Join-Path $env:APPDATA 'Ratchet\ratchet.json'
+          $profileHash = (Get-FileHash $profileFile).Hash
+          $p = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $bad 'app\Instaluj-Ratchet.ps1')+'"'),'-Unattended') -PassThru
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          while($sw.Elapsed.TotalSeconds -lt 180){ Start-Sleep -Milliseconds 500; $p.Refresh(); if($p.HasExited){break} }
+          Write-Host ('Broken install finished after ' + [int]$sw.Elapsed.TotalSeconds + ' s')
+          if(-not $p.HasExited){throw 'Broken install did not finish'}
+          if($p.ExitCode -eq 0){throw 'Broken build was reported as installed'}
+          $health=$null
+          for($i=0;$i -lt 60;$i++){ Start-Sleep -Milliseconds 500; try{ $health=Invoke-RestMethod http://127.0.0.1:47823/api/ping -TimeoutSec 1; if($health.ok){break} }catch{} }
+          if(-not $health -or $health.commit -ne $env:GITHUB_SHA){throw 'Previous working version was not restored and restarted'}
+          $appServer = Join-Path $env:LOCALAPPDATA 'Ratchet\app\server.cjs'
+          if([IO.File]::ReadAllText($appServer).StartsWith('process.exit(3)')){throw 'Broken server.cjs left in the app folder'}
+          if((Get-FileHash $profileFile).Hash -ne $profileHash){throw 'Rollback modified the user profile'}
+          Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'Ratchet\install.log') -Tail 6 | Write-Host
+          Write-Host 'ROLLBACK_OK: previous build restored and running, profile untouched'
+          Invoke-RestMethod -Uri 'http://127.0.0.1:47823/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-Ratchet-Local'='1'} -Body '{"action":"quit","data":{}}' -TimeoutSec 3 | Out-Null
+      - name: Publish downloadable TEST artifact (not stable channel)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ratchet-${{ env.RATCHET_VERSION }}-RC-Windows-${{ github.sha }}
+          path: ${{ runner.temp }}\Ratchet-${{ env.RATCHET_VERSION }}-RC-Windows.zip
+          retention-days: 30
+          if-no-files-found: error
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          $root=Join-Path $env:LOCALAPPDATA 'Ratchet'
+          Write-Host "APP_DATA: $root"
+          foreach($name in @('launcher-boot.log','install.log')){
+            $f = Join-Path $root $name
+            if(Test-Path -LiteralPath $f){Write-Host "== $name";Get-Content -LiteralPath $f -Tail 45 | Write-Host}
+          }
+          Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'panel-edge' } | Select-Object FullName,Length,LastWriteTime | Format-Table -AutoSize
+          Get-ChildItem -LiteralPath (Join-Path $root 'logs') -Filter '*.log' -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "`nLOG: $($_.FullName)"; Get-Content -LiteralPath $_.FullName -Tail 70 -ErrorAction SilentlyContinue }

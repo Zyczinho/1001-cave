@@ -1,0 +1,24 @@
+Rachet — ChatGPT skończył (wtyczka do Microsoft Edge)
+
+Co robi
+- Gdy ChatGPT skończy odpowiadać w karcie, której akurat nie oglądasz, Rachet
+  pokazuje "Gotowe: <projekt> — wejdź i zobacz". Kliknięcie pokazuje kartę, w której ta rozmowa jest
+  już otwarta. Nową kartę otwiera tylko wtedy, gdy takiej karty nie ma.
+- Milczy, gdy patrzysz na tę kartę albo odpowiedź trwała krócej niż 15 sekund.
+- W Rachecie, w zakładce Agenci, rozmowa widnieje jako "Pracuje" albo "Gotowe".
+
+Czego nie robi
+- Nie czyta treści rozmów. Sprawdza tylko, czy na ekranie jest przycisk
+  "Zatrzymaj", tytuł karty i adres.
+- Działa tylko przy otwartej karcie chatgpt.com.
+- Gdy OpenAI zmieni wygląd ChatGPT, może przestać działać do czasu poprawki.
+
+Instalacja (raz)
+1. W Edge wpisz w pasku adresu: edge://extensions
+2. Włącz "Tryb dewelopera" (przełącznik po lewej lub u dołu).
+3. Kliknij "Załaduj rozpakowane" i wskaż folder:
+   %LOCALAPPDATA%\Ratchet\app\browser-extension
+4. Odśwież otwarte karty ChatGPT (F5).
+
+Po aktualizacji Racheta: edge://extensions -> przy tej wtyczce "Załaduj ponownie".
+Wyłączenie: edge://extensions -> przełącznik przy wtyczce albo "Usuń".
