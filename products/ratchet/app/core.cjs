@@ -175,7 +175,23 @@ function sameProject(a, b) {
   const x = projectName(a).toLowerCase();
   return !!x && x === projectName(b).toLowerCase();
 }
-function agentHookOutcome(event, {agents = [], id = '', prev = null, cwd = '', now = Date.now()} = {}) {
+// Claude Code sends Notification for several reasons. Only a permission prompt or a
+// question (elicitation) needs the person. "idle_prompt" just means a finished session
+// has waited a minute for the next message, and "auth_success" is informational:
+// neither is a task, so neither may say "Potrzebuję Cię".
+const QUIET_NOTIFICATIONS = new Set(['idle_prompt', 'auth_success']);
+function needsPerson(notificationType = '', message = '') {
+  if (QUIET_NOTIFICATIONS.has(notificationType)) return false;
+  if (notificationType) return true;
+  // Older Claude Code versions send no type; the idle message is recognisable.
+  return !/waiting for your input/i.test(message);
+}
+function agentHookOutcome(event, {agents = [], id = '', prev = null, cwd = '', now = Date.now(), notificationType = '', message = ''} = {}) {
+  if (event === 'Notification' && !needsPerson(notificationType, message)) {
+    // Keep whatever the session already was (normally "ready" after Stop) and stay silent.
+    const kept = prev?.status && prev.status !== 'working' ? prev.status : 'ready';
+    return {status: kept, note: prev?.note && kept === prev.status ? prev.note : 'Skończył — wejdź i zobacz', alert: null};
+  }
   const status = event === 'StopFailure' ? 'blocked'
     : event === 'Notification' ? 'needs_attention'
     : event === 'Stop' ? 'ready'
@@ -235,8 +251,14 @@ function browserChatOutcome(signal = {}, {agents = [], now = Date.now()} = {}) {
 // A row "works" while any of its sessions works; a browser session that stops
 // confirming (closed tab, lost signal) stops counting after 3 minutes.
 const STALE_MS = {browser: 3 * 60 * 1000, hook: BUSY_WINDOW_MS};
+// An unanswered "needs you" fades after 8 hours: by then the session is gone or the
+// person has moved on, and a permanent orange row only teaches them to ignore it.
+const ATTENTION_MS = 8 * 3600 * 1000;
 function sessionLive(s, now = Date.now()) {
-  return s.status !== 'working' || now - Date.parse(s.updatedAt || 0) < (STALE_MS[s.source] || BUSY_WINDOW_MS);
+  const age = now - Date.parse(s.updatedAt || 0);
+  if (s.status === 'working') return age < (STALE_MS[s.source] || BUSY_WINDOW_MS);
+  if (s.status === 'needs_attention' || s.status === 'blocked') return age < ATTENTION_MS;
+  return true;
 }
 function rowStatus(sessions = [], now = Date.now()) {
   const live = sessions.map(s => sessionLive(s, now) ? s.status : 'idle');
