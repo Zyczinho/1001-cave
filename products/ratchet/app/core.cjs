@@ -20,6 +20,7 @@ const INIT = {
   coordinator: {enabled:false,jobs:[]},
   reminded: {},
   activity: [],
+  waits: [],
   orbPosition: null
 };
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -35,6 +36,7 @@ function normalizeStore(obj) {
   def.settings.panelSize = normalizePanelSize(def.settings.panelSize);
   if (obj.reminded && typeof obj.reminded === 'object') def.reminded = obj.reminded;
   if (Array.isArray(obj.activity)) def.activity = obj.activity.slice(0, 100);
+  def.waits = normalizeWaits(obj.waits);
   def.coordinator=normalizeCoordinator(obj.coordinator);
   if (obj.orbPosition && Number.isFinite(obj.orbPosition.x) && Number.isFinite(obj.orbPosition.y)) def.orbPosition = obj.orbPosition;
   return def;
@@ -262,6 +264,65 @@ function rowStatus(sessions = [], now = Date.now()) {
 function rowKey(source, name) {
   return 'project:' + source + ':' + String(name || '').toLowerCase().slice(0, 80);
 }
+// How long finished work waited for the person. A wait opens when Rachet raises "done"
+// or "needs you" for one session or chat, and closes when the person gets there: a
+// click on the alert, a look at the finished chat, or the next prompt in that session.
+// Only what was observed is stored; nothing here is an estimate.
+const MAX_WAITS = 500;
+const ABANDONED_MS = 8 * 3600 * 1000; // longer than this is "left for later", not waiting
+const MAX_LAG_MS = 120000;
+const stamp = value => { const t = Date.parse(value); return Number.isFinite(t) ? new Date(t).toISOString() : ''; };
+function normalizeWaits(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(w => w && typeof w === 'object' && w.key && w.row && stamp(w.readyAt)).slice(0, MAX_WAITS).map(w => ({
+    key: String(w.key).slice(0, 120), row: String(w.row).slice(0, 120), title: String(w.title || '').slice(0, 80),
+    source: w.source === 'browser' ? 'browser' : 'hook', readyAt: stamp(w.readyAt), seenAt: stamp(w.seenAt),
+    lagMs: Math.max(0, Math.min(MAX_LAG_MS, Math.round(Number(w.lagMs) || 0)))
+  }));
+}
+// lagMs is how late the alert was noticed; the wait starts when the work really ended.
+function openWait(waits, {key, row, title = '', source = 'hook', at = Date.now(), lagMs = 0} = {}) {
+  if (!key || !row || waits.some(w => w.key === key && !w.seenAt)) return null;
+  const lag = Math.max(0, Math.min(MAX_LAG_MS, Math.round(Number(lagMs) || 0)));
+  const wait = {key, row, title: String(title).slice(0, 80), source: source === 'browser' ? 'browser' : 'hook',
+    readyAt: new Date(at - lag).toISOString(), seenAt: '', lagMs: lag};
+  waits.unshift(wait);
+  if (waits.length > MAX_WAITS) waits.length = MAX_WAITS;
+  return wait;
+}
+// Close by session/chat (key) or, for a click on a project row, every open wait of that row.
+function closeWaits(waits, {key = '', row = ''} = {}, at = Date.now()) {
+  let closed = 0;
+  for (const w of waits) {
+    if (w.seenAt || !(key ? w.key === key : row && w.row === row)) continue;
+    w.seenAt = new Date(Math.max(at, Date.parse(w.readyAt))).toISOString();
+    closed++;
+  }
+  return closed;
+}
+const localDay = time => { const d = new Date(time), p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
+// One line per day, newest first. "minutes" counts only waits that ended within 8 hours;
+// longer or never-ended ones are listed apart so they cannot inflate the total.
+function waitSummary(waits = [], {now = Date.now(), days = 7} = {}) {
+  const byDay = new Map();
+  for (const w of waits) {
+    const ready = Date.parse(w.readyAt);
+    if (!Number.isFinite(ready) || now - ready > days * 86400000) continue;
+    const day = localDay(ready);
+    const line = byDay.get(day) || {day, answered: 0, minutes: 0, longestMinutes: 0, open: 0, leftForLater: 0, lateAlerts: 0};
+    const ms = (w.seenAt ? Date.parse(w.seenAt) : now) - ready;
+    if (ms > ABANDONED_MS) line.leftForLater++;
+    else if (!w.seenAt) line.open++;
+    else {
+      line.answered++; line.minutes += ms / 60000;
+      line.longestMinutes = Math.max(line.longestMinutes, ms / 60000);
+    }
+    if (w.lagMs > 10000) line.lateAlerts++;
+    byDay.set(day, line);
+  }
+  return [...byDay.values()].sort((a, b) => b.day.localeCompare(a.day))
+    .map(l => ({...l, minutes: Math.round(l.minutes * 10) / 10, longestMinutes: Math.round(l.longestMinutes * 10) / 10}));
+}
 // "Show this chat" for the browser extension. The extension keeps one request open
 // (a long poll); a click answers it at once, so the extension can bring the tab that
 // already holds the conversation to the front instead of Rachet opening a new one.
@@ -301,4 +362,4 @@ class BrowserFocus {
     return Object.assign(promise, {cancel: () => finish('', true)});
   }
 }
-module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
+module.exports = {BrowserFocus,normalizeWaits,openWait,closeWaits,waitSummary,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};

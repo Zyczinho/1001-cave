@@ -7,7 +7,7 @@ const os = require('node:os');
 const {spawn} = require('node:child_process');
 const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, browserChatOutcome, BrowserFocus, openWait, closeWaits, waitSummary, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
 const sessions = new Map();
 function upsertRow(row, {title, tool, source, kind, target, note}) {
@@ -125,7 +125,7 @@ function health() {
   const working=a.some(x=>x.status==='working')||coordinator.some(x=>x.status==='running')||runs.some(x=>x.status!=='completed');
   return failed||blocked?'blocked':attention?'needs_attention':working?'working':runs.some(x=>x.conclusion==='success')?'ready':'idle';
 }
-function snapshot() {return {state,github,githubError,platform:process.platform};}
+function snapshot() {return {state,github,githubError,platform:process.platform,waitDays:waitSummary(state.waits)};}
 async function refreshGithub(force=false) {
   if(!force && Date.now()-lastFetch<10*60_000) return {github,githubError};
   const repo=state.settings.repo||'';
@@ -300,6 +300,7 @@ async function handleAction(key,data) {
     // An agent alert leads to the agent: the orb brings the Claude window forward,
     // or opens the project folder when Claude is not running.
     if(entry?.agentId){
+      if(closeWaits(state.waits,{row:entry.agentId}))save();
       const agent=state.agents.find(x=>x.id===entry.agentId);
       // A ChatGPT chat reopens exactly that conversation (validated chatgpt.com URL only).
       if(agent?.source==='browser'&&parseChatUrl(agent.target))return showChat(agent.target);
@@ -315,6 +316,7 @@ async function handleAction(key,data) {
     // The panel cannot raise another app's window; the orb does it on its next tick.
     const agent=state.agents.find(x=>x.id===String(data.id||''));
     if(!agent)throw Error('Nie ma takiego agenta');
+    if(closeWaits(state.waits,{row:agent.id}))save();
     focusFolder=agent.kind==='folder'?agent.target:'';focusRequests++;
     return {focusRequested:true};
   }
@@ -412,10 +414,22 @@ async function appRequest(req,res) {
     if(!fromExtension(req)) return fail(res,'Nieautoryzowane żądanie',403);
     try {
       const body=await bodyOf(req);
+      if(body.state==='seen'){
+        // You looked at the finished chat: its wait ends. Nothing else changes.
+        const chat=parseChatUrl(body.url);
+        if(!chat)throw Error('Nieobsługiwany adres rozmowy ChatGPT');
+        const seen=closeWaits(state.waits,{key:'chatgpt:'+chat.conversation});
+        if(seen)save();
+        return json(res,{ok:true,seen});
+      }
       const out=browserChatOutcome(body,{agents:[...sessions.values()]});
+      const before=sessions.get(out.id)?.status;
       const name=parseChatUrl(out.url).project||'ChatGPT',row=rowKey('chatgpt',name);
       sessions.set(out.id,{id:out.id,source:'browser',status:out.status,target:out.url,note:out.title,updatedAt:new Date().toISOString(),row});
       upsertRow(row,{title:name,tool:'ChatGPT',source:'browser',kind:'url',target:out.url,note:out.title});
+      // A new answer starting means you were there and asked for it.
+      if(out.status==='working'&&before!=='working')closeWaits(state.waits,{key:out.id});
+      if(out.alert)openWait(state.waits,{key:out.id,row,title:name,source:'browser',lagMs:body.lagMs});
       save();
       // The alert opens the conversation that finished, even if the row moves on.
       if(out.alert)activity(out.alert.text,'reminder','',out.alert.phase,{agentId:row,target:out.url});
@@ -464,12 +478,17 @@ function startHookServer() {
         notificationType:String(data.notification_type||'').slice(0,40),message:String(data.message||'').slice(0,200)});
       sessions.set(id,{id,source:'hook',status:outcome.status,target:cwd,note:outcome.note,updatedAt:new Date().toISOString(),row});
       upsertRow(row,{title:name,tool:'Claude Code',source:'hook',kind:'folder',target:cwd,note:outcome.note});
-      save();
+      // Back to work after "done" or "needs you" means you answered that session.
+      if(outcome.status==='working'&&prev&&prev.status!=='working')closeWaits(state.waits,{key:id});
       const coordId=String(data.coordinator_job_id||'').slice(0,80);
       const coordinated=coordId&&state.coordinator.jobs.some(j=>j.id===coordId&&(j.status==='running'||j.status==='queued'));
       // Coordinator-owned stages report through the runner, not duplicate human alerts.
       // agentHookOutcome stays silent while other agents in the same project still work.
-      if(!coordinated&&outcome.alert)activity(outcome.alert.text,'reminder','',outcome.alert.phase,{agentId:row});
+      if(!coordinated&&outcome.alert){
+        openWait(state.waits,{key:id,row,title:name,source:'hook'});
+        activity(outcome.alert.text,'reminder','',outcome.alert.phase,{agentId:row});
+      }
+      save();
       res.writeHead(204);res.end();
     }).catch(()=>{res.writeHead(400);res.end();});
   });
