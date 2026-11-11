@@ -50,5 +50,16 @@
     }
   }, 1000);
 
+  // Rachet asks "which chat is in this tab?" so a click can bring this tab forward.
+  try {
+    chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+      if (msg && msg.type === 'rachet-where') reply({ url: address() });
+    });
+  } catch { /* Extension reloaded: this tab answers again after F5. */ }
+  // Wakes the extension so it keeps listening for a click in Rachet.
+  const hello = () => { try { chrome.runtime.sendMessage({ type: 'rachet-hello' }); } catch { /* as above */ } };
+  hello();
+  setInterval(hello, 20000);
+
   addEventListener('pagehide', () => { if (working) send('closed', workingUrl); });
 })();

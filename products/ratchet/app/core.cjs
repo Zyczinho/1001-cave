@@ -268,4 +268,43 @@ function rowStatus(sessions = [], now = Date.now()) {
 function rowKey(source, name) {
   return 'project:' + source + ':' + String(name || '').toLowerCase().slice(0, 80);
 }
-module.exports = {defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
+// "Show this chat" for the browser extension. The extension keeps one request open
+// (a long poll); a click answers it at once, so the extension can bring the tab that
+// already holds the conversation to the front instead of Rachet opening a new one.
+class BrowserFocus {
+  constructor({now = Date.now, holdMs = 20000, freshMs = 5000} = {}) {
+    this.now = now; this.holdMs = holdMs; this.freshMs = freshMs;
+    this.waiters = []; this.pending = null; this.lastPoll = -Infinity;
+  }
+  // The extension is waiting right now, or was a moment ago (it is between two polls).
+  connected() { return this.waiters.length > 0 || this.now() - this.lastPoll < this.freshMs; }
+  // False means no extension is listening: the caller opens the address itself.
+  request(url) {
+    if (!this.connected()) return false;
+    const waiter = this.waiters[0];
+    if (waiter) waiter(url); else this.pending = {url, at: this.now()};
+    return true;
+  }
+  // Resolves with a chat address to show, or '' when nothing was asked in holdMs.
+  wait() {
+    this.lastPoll = this.now();
+    const pending = this.pending; this.pending = null;
+    if (pending && this.now() - pending.at < this.freshMs) return Object.assign(Promise.resolve(pending.url), {cancel() {}});
+    let finish;
+    const promise = new Promise(resolve => {
+      const timer = setTimeout(() => finish(''), this.holdMs);
+      timer.unref?.();
+      finish = (url, gone = false) => {
+        const at = this.waiters.indexOf(finish);
+        if (at < 0) return;
+        this.waiters.splice(at, 1); clearTimeout(timer);
+        if (!gone) this.lastPoll = this.now();
+        resolve(url);
+      };
+      this.waiters.push(finish);
+    });
+    // The browser closed the request: this waiter no longer counts as a listener.
+    return Object.assign(promise, {cancel: () => finish('', true)});
+  }
+}
+module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};

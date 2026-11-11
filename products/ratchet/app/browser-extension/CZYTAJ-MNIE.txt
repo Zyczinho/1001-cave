@@ -2,7 +2,8 @@ Rachet — ChatGPT skończył (wtyczka do Microsoft Edge)
 
 Co robi
 - Gdy ChatGPT skończy odpowiadać w karcie, której akurat nie oglądasz, Rachet
-  pokazuje "Gotowe: <projekt> — wejdź i zobacz". Kliknięcie otwiera tę rozmowę.
+  pokazuje "Gotowe: <projekt> — wejdź i zobacz". Kliknięcie pokazuje kartę, w której ta rozmowa jest
+  już otwarta. Nową kartę otwiera tylko wtedy, gdy takiej karty nie ma.
 - Milczy, gdy patrzysz na tę kartę albo odpowiedź trwała krócej niż 15 sekund.
 - W Rachecie, w zakładce Agenci, rozmowa widnieje jako "Pracuje" albo "Gotowe".
 

@@ -9,7 +9,7 @@ const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, browserChatOutcome, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
 const sessions = new Map();
 function upsertRow(row, {title, tool, source, kind, target, note}) {
@@ -180,6 +180,13 @@ function bodyOf(req) {
     req.on('error',reject);
   });
 }
+const browserFocus=new BrowserFocus();
+// A ChatGPT chat: the extension brings the tab that already holds it to the front.
+// Without the extension Rachet opens the address, which makes a new tab.
+function showChat(url) {
+  if(browserFocus.request(url)) return Promise.resolve({focus:'browser'});
+  return openTarget('url',url);
+}
 function openTarget(kind,target) {
   const t=validateTarget(kind,target);
   if(process.platform!=='win32') return Promise.resolve({wouldOpen:t});
@@ -336,15 +343,15 @@ async function handleAction(key,data) {
     if(entry?.agentId){
       const agent=state.agents.find(x=>x.id===entry.agentId);
       // A ChatGPT chat reopens exactly that conversation (validated chatgpt.com URL only).
-      if(agent?.source==='browser'&&parseChatUrl(agent.target))return openTarget('url',agent.target);
+      if(agent?.source==='browser'&&parseChatUrl(agent.target))return showChat(agent.target);
       return {focus:'claude',folder:agent?.kind==='folder'?agent.target:''};
     }
     // Notification actions may open only verified ChatGPT conversation URLs, never arbitrary links.
     if(entry?.target && (/^https:\/\/chatgpt\.com\/c\/[\w-]+\/?$/.test(entry.target)||parseChatUrl(entry.target)))
-      return openTarget('url',entry.target);
+      return parseChatUrl(entry.target)?showChat(entry.target):openTarget('url',entry.target);
     panelRequests++;return {panelRequested:true};
   }
-  if(key==='open-target')return openTarget(data.kind,data.target);
+  if(key==='open-target')return data.kind==='url'&&parseChatUrl(data.target)?showChat(data.target):openTarget(data.kind,data.target);
   if(key==='agent:focus'){
     // The panel cannot raise another app's window; the orb does it on its next tick.
     const agent=state.agents.find(x=>x.id===String(data.id||''));
@@ -427,6 +434,10 @@ function staticResponse(url,res){
     res.end(data);
   } catch {res.writeHead(404);res.end('Nie znaleziono pliku');}
 }
+// Only a browser extension on this computer, sending the Rachet marker and JSON.
+function fromExtension(req) {
+  return /^(?:chrome-)?extension:\/\/[a-p]{32}$/.test(String(req.headers.origin||''))&&req.headers['x-ratchet-local']==='1'&&(req.headers['content-type']||'').startsWith('application/json');
+}
 async function appRequest(req,res) {
   if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) return fail(res,'Tylko localhost',403);
   const url=new URL(req.url,`http://127.0.0.1:${PORT}`);
@@ -439,9 +450,7 @@ async function appRequest(req,res) {
   // Narrow door for the Rachet Edge extension: it can only report a ChatGPT chat
   // working/done/closed. It cannot reach any other action (open, quit, settings...).
   if(req.method==='POST'&&url.pathname==='/api/browser-signal'){
-    const origin=String(req.headers.origin||'');
-    if(!/^(?:chrome-)?extension:\/\/[a-p]{32}$/.test(origin)||req.headers['x-ratchet-local']!=='1'||!(req.headers['content-type']||'').startsWith('application/json'))
-      return fail(res,'Nieautoryzowane żądanie',403);
+    if(!fromExtension(req)) return fail(res,'Nieautoryzowane żądanie',403);
     try {
       const body=await bodyOf(req);
       const out=browserChatOutcome(body,{agents:[...sessions.values()]});
@@ -454,6 +463,13 @@ async function appRequest(req,res) {
       const status=state.agents.find(x=>x.id===row)?.status;
       return json(res,{ok:true,row,status,notified:!!out.alert});
     } catch(e) {return fail(res,e.message||'Niepoprawny sygnał');}
+  }
+  // The extension waits here for "show this chat". It gets a chat address and nothing else.
+  if(req.method==='POST'&&url.pathname==='/api/browser-focus'){
+    if(!fromExtension(req)) return fail(res,'Nieautoryzowane żądanie',403);
+    const waiting=browserFocus.wait();
+    res.on('close',()=>waiting.cancel());
+    return json(res,{url:await waiting});
   }
   if(req.method==='POST'&&url.pathname==='/api/action'){
     if(!acceptPost(req)) return fail(res,'Nieautoryzowane żądanie',403);
