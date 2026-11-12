@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const os = require('node:os');
-const {spawn,execFileSync} = require('node:child_process');
+const {spawn,execFile,execFileSync} = require('node:child_process');
 const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 // "Sprawdź pracę": the reviewing agent may only read files, so Rachet itself collects
 // what changed in the folder (read-only git commands, no shell) and hands it over.
@@ -24,7 +24,7 @@ const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,readEvents,daySummary,claudeType,chatgptType}=require('./journal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, GUARDS, guardsFor, guardVerdict, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
 const sessions = new Map();
 // The row's topic is the topic of the session or chat that spoke last.
@@ -174,7 +174,9 @@ function today(now=Date.now()){
   dayCache={at:now,value};
   return value;
 }
-function snapshot() {return {state,github,githubError,platform:process.platform,chatgptWorkspaceReady:chatgptWatcher.isConfigured(),today:today()};}
+function snapshot() {return {state,github,githubError,platform:process.platform,chatgptWorkspaceReady:chatgptWatcher.isConfigured(),today:today(),
+  // Guards a Claude row can switch on (pilot: City Route photos).
+  guardOptions:Object.fromEntries(state.agents.filter(a=>a.source==='hook').map(a=>[a.id,guardsFor(a.title).map(g=>({id:g.id,label:g.label,maxRounds:g.maxRounds}))]).filter(([,g])=>g.length))};}
 async function refreshGithub(force=false) {
   if(!force && Date.now()-lastFetch<10*60_000) return {github,githubError};
   const repo=state.settings.repo||'';
@@ -399,6 +401,23 @@ async function handleAction(key,data) {
     panelRequests++;return {panelRequested:true};
   }
   if(key==='open-target')return data.kind==='url'&&parseChatUrl(data.target)?showChat(data.target):openTarget(data.kind,data.target);
+  if(key==='guard:start'){
+    // The guard goes to the session of this project that spoke last: the one you work in now.
+    const id=String(data.id||''),agent=state.agents.find(x=>x.id===id&&x.source==='hook');
+    const guard=agent&&guardsFor(agent.title).find(g=>g.id===String(data.guard||''));
+    if(!guard)throw Error('Dla tego projektu nie ma takiego strażnika');
+    const session=[...sessions.values()].filter(s=>s.row===id&&s.source==='hook')
+      .sort((a,b)=>Date.parse(b.updatedAt||0)-Date.parse(a.updatedAt||0))[0];
+    if(!session)throw Error('Rachet nie widzi jeszcze tej sesji. Napisz coś w sesji Claude i spróbuj ponownie.');
+    for(const [k,g] of Object.entries(state.guards))if(g.row===id)delete state.guards[k];
+    state.guards[session.id]={guard:guard.id,row:id,rounds:0,startedAt:new Date().toISOString()};
+    save();return {guard:guard.id,session:session.id};
+  }
+  if(key==='guard:stop'){
+    const id=String(data.id||'');
+    for(const [k,g] of Object.entries(state.guards))if(g.row===id)delete state.guards[k];
+    save();return true;
+  }
   if(key==='agent:finish'){
     // "Zakończ": the row leaves the list and stays away until that work starts again.
     // Only rows Rachet made itself; manual agents are removed through edit.
@@ -567,11 +586,23 @@ function sessionTitle(file){
     }finally{fs.closeSync(fd);}
   }catch{return '';}
 }
+// Runs a guard's proof script with this Node, no shell, in the session's folder.
+// Resolves {code, output}; code 2 also covers "could not run" (never blocks the agent).
+function runGuard(guard,cwd){
+  return new Promise(resolve=>{
+    if(!guard)return resolve({code:2,output:'Nieznany strażnik.'});
+    execFile(process.execPath,[path.join(__dirname,guard.script),cwd],{cwd,timeout:90000,windowsHide:true,maxBuffer:1024*1024},
+      (err,stdout,stderr)=>{
+        const code=err?(typeof err.code==='number'?err.code:2):0;
+        resolve({code,output:String(stdout||'').trim()||String(stderr||'').trim()||(err&&err.message)||''});
+      });
+  });
+}
 function startHookServer() {
   hookServer=http.createServer((req,res)=>{
     if(req.method!=='POST'||req.url!=='/hook')return res.writeHead(404).end();
     if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress))return res.writeHead(403).end();
-    bodyOf(req).then(data=>{
+    bodyOf(req).then(async data=>{
       const event=String(data.hook_event_name||'').slice(0,70);
       const session=String(data.session_id||'').slice(0,100);
       if(!session||!['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','Stop','StopFailure','Notification','SessionEnd'].includes(event))throw Error('Niepoprawne zdarzenie');
@@ -580,7 +611,28 @@ function startHookServer() {
       const name=projectName(cwd)||'Claude Code',row=rowKey('claude',name);
       const outcome=agentHookOutcome(event,{agents:[...sessions.values()],id,prev,cwd,
         notificationType:String(data.notification_type||'').slice(0,40),message:String(data.message||'').slice(0,200)});
-      journal.record({src:'claude',project:name,session,type:claudeType(event,outcome.status)});
+      // Guard: a session with a guard says "done" -> run the proof before it may stop.
+      let guardReply=null;
+      const binding=event==='Stop'?state.guards[id]:null;
+      if(binding){
+        const guard=GUARDS.find(g=>g.id===binding.guard);
+        const label=(prev?.topic||name);
+        const result=await runGuard(guard,cwd);
+        const v=guardVerdict({...result,rounds:binding.rounds,maxRounds:guard.maxRounds,label});
+        if(v.verdict==='block'){
+          binding.rounds=v.rounds;
+          // The agent keeps working: no "done" alert, the row stays "Pracuje".
+          outcome.status='working';outcome.note=v.note;outcome.alert=null;
+          guardReply={decision:'block',reason:v.reason};
+          activity(v.note,'info','','guard',{agentId:row});
+        }else{
+          delete state.guards[id];
+          outcome.note=v.verdict==='pass'?'Sprawdzone przez strażnika':v.verdict==='give_up'?'Strażnik: wciąż niegotowe':'Strażnik nie mógł sprawdzić';
+          if(v.verdict==='give_up')outcome.status='needs_attention';
+          outcome.alert={text:v.alert,phase:'guard-'+v.verdict};
+        }
+      }
+      journal.record({src:'claude',project:name,session,type:claudeType(guardReply?'PreToolUse':event,outcome.status)});
       // Tool calls come often; the title is re-read only when it can have changed.
       const topic=['SessionStart','UserPromptSubmit','Stop'].includes(event)||!prev?.topic
         ?sessionTitle(String(data.transcript_path||''))||prev?.topic||'':prev.topic;
@@ -592,6 +644,8 @@ function startHookServer() {
       // Coordinator-owned stages report through the runner, not duplicate human alerts.
       // agentHookOutcome stays silent while other agents in the same project still work.
       if(!coordinated&&outcome.alert)activity(outcome.alert.text,'reminder','',outcome.alert.phase,{agentId:row});
+      // Only a guard "block" has a body; claude-hook.cjs prints it for Claude Code.
+      if(guardReply){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify(guardReply));}
       res.writeHead(204);res.end();
     }).catch(()=>{res.writeHead(400);res.end();});
   });
