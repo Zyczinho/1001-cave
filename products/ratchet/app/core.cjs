@@ -28,6 +28,7 @@ const INIT = {
   hiddenRows: {},
   // Guards switched on for one Claude session: "claude:<session>" -> {guard, row, rounds, startedAt}.
   guards: {},
+  verifications: [],
   orbPosition: null
 };
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -51,6 +52,7 @@ function normalizeStore(obj) {
       .filter(([id, g]) => id.startsWith('claude:') && GUARDS.some(x => x.id === g?.guard))
       .map(([id, g]) => [id, {guard: g.guard, row: String(g.row || ''), rounds: Math.max(0, Math.min(10, Math.floor(Number(g.rounds) || 0))), startedAt: String(g.startedAt || '')}])
       .slice(-20));
+  if (Array.isArray(obj.verifications)) def.verifications = obj.verifications.slice(0, 30).map(normalizeVerification);
   def.coordinator=normalizeCoordinator(obj.coordinator);
   def.chatgptRuns=normalizeChatGPTRuns(obj.chatgptRuns);
   def.chatgptSignals=normalizeSignals(obj.chatgptSignals);
@@ -332,19 +334,46 @@ const REST_MS = 12 * 3600 * 1000;
 // and calls the person. Proof scripts live in Rachet (straznik/), outside the agent's repo.
 const GUARDS = [
   {id: 'city-route-google-photos', project: 'city-route-app', label: 'Zdjęcia Google we wszystkich miejscach',
-    script: 'straznik/city-route-google-photos.cjs', maxRounds: 3},
+    script: 'straznik/city-route-google-photos.cjs', maxRounds: 3, note: 'Sprawdzenie tylko czyta pliki, bez kosztów.'},
+  // External e2e runner (City Route PR #230). Two failed repairs, then the person.
+  {id: 'city-route-e2e', project: 'city-route-app', label: 'Scenariusze e2e (zapis trasy po odświeżeniu)',
+    script: 'straznik/city-route-e2e.cjs', maxRounds: 2, timeoutMs: 110000,
+    note: 'Sprawdzenie buduje aplikację i uruchamia przeglądarkę na tym komputerze (ok. 20 s), bez modelu AI i bez kosztów. Wymaga commitu.'},
 ];
+// A proof may end with one line `DOWOD-JSON {...}`: the evidence Rachet keeps (run id,
+// commit, artifact paths). It is cut off before the report reaches the agent.
+function splitEvidence(output = '') {
+  const lines = String(output || '').split(/\r?\n/);
+  const at = lines.findIndex(l => l.startsWith('DOWOD-JSON '));
+  if (at < 0) return {text: String(output || '').trim(), evidence: null};
+  let evidence = null;
+  try { evidence = JSON.parse(lines[at].slice(11)); } catch {}
+  lines.splice(at, 1);
+  return {text: lines.join('\n').trim(), evidence: evidence && typeof evidence === 'object' && !Array.isArray(evidence) ? evidence : null};
+}
+// Kept proof results (last 30): what was checked, the verdict and the evidence to open.
+function normalizeVerification(v = {}) {
+  const t = (s, n) => String(s ?? '').slice(0, n);
+  const e = v.evidence && typeof v.evidence === 'object' ? v.evidence : {};
+  return {row: t(v.row, 120), guard: t(v.guard, 60), verdict: ['pass', 'block', 'give_up', 'error'].includes(v.verdict) ? v.verdict : 'error',
+    at: t(v.at, 40), summary: t(v.summary, 300),
+    evidence: {runner: t(e.runner, 20), runId: t(e.runId, 80), commit: t(e.commit, 40), branch: t(e.branch, 120), status: t(e.status, 20),
+      executed: Number(e.executed) || 0, passed: Number(e.passed) || 0, failed: Number(e.failed) || 0, modelTokens: Number(e.modelTokens) || 0,
+      reportPath: t(e.reportPath, 1000), artifacts: (Array.isArray(e.artifacts) ? e.artifacts : []).slice(0, 20).map(a => ({kind: t(a?.kind, 20), path: t(a?.path, 1000)}))}};
+}
 function guardsFor(projectTitle) {
   const name = String(projectTitle || '').toLowerCase();
   return GUARDS.filter(g => g.project === name);
 }
 // code: exit code of the proof (0 done, 1 not yet, anything else = could not check).
 // rounds: how many times the agent was already sent back.
+// Three outcomes the person can tell apart: verified (pass), not yet (block / give_up)
+// and "cannot verify" (error), which is never shown as done: it asks for the person.
 function guardVerdict({code, output = '', rounds = 0, maxRounds = 3, label = ''}) {
   const report = String(output || '').trim().slice(0, 3000);
   const first = report.split('\n')[0].slice(0, 160);
-  if (code === 0) return {verdict: 'pass', alert: 'Gotowe i sprawdzone: ' + label + ' — strażnik potwierdził. ' + first};
-  if (code !== 1) return {verdict: 'error', alert: 'Strażnik nie mógł sprawdzić: ' + label + '. ' + (first || 'Brak odpowiedzi skryptu.')};
+  if (code === 0) return {verdict: 'pass', alert: 'Zweryfikowane: ' + label + ' — ' + first.replace(/^Zweryfikowane:\s*/, '')};
+  if (code !== 1) return {verdict: 'error', alert: 'Potrzebuję Cię: ' + label + ' — nie da się zweryfikować. ' + (first || 'Brak odpowiedzi skryptu.')};
   if (rounds >= maxRounds) return {verdict: 'give_up', alert: 'Potrzebuję Cię: ' + label + ' — strażnik ' + maxRounds + ' razy odesłał agenta, wciąż: ' + first};
   const round = rounds + 1;
   return {verdict: 'block', rounds: round, note: 'Strażnik ' + round + '/' + maxRounds + ': ' + first,
@@ -414,4 +443,4 @@ class BrowserFocus {
     return Object.assign(promise, {cancel: () => finish('', true)});
   }
 }
-module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,transcriptTitle,topicFromNote,rowWakes,GUARDS,guardsFor,guardVerdict,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
+module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,transcriptTitle,topicFromNote,rowWakes,GUARDS,guardsFor,guardVerdict,splitEvidence,normalizeVerification,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};

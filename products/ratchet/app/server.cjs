@@ -24,7 +24,7 @@ const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,readEvents,daySummary,claudeType,chatgptType}=require('./journal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, GUARDS, guardsFor, guardVerdict, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, GUARDS, guardsFor, guardVerdict, splitEvidence, normalizeVerification, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
 const sessions = new Map();
 // The row's topic is the topic of the session or chat that spoke last.
@@ -176,7 +176,7 @@ function today(now=Date.now()){
 }
 function snapshot() {return {state,github,githubError,platform:process.platform,chatgptWorkspaceReady:chatgptWatcher.isConfigured(),today:today(),
   // Guards a Claude row can switch on (pilot: City Route photos).
-  guardOptions:Object.fromEntries(state.agents.filter(a=>a.source==='hook').map(a=>[a.id,guardsFor(a.title).map(g=>({id:g.id,label:g.label,maxRounds:g.maxRounds}))]).filter(([,g])=>g.length))};}
+  guardOptions:Object.fromEntries(state.agents.filter(a=>a.source==='hook').map(a=>[a.id,guardsFor(a.title).map(g=>({id:g.id,label:g.label,maxRounds:g.maxRounds,note:g.note||''}))]).filter(([,g])=>g.length))};}
 async function refreshGithub(force=false) {
   if(!force && Date.now()-lastFetch<10*60_000) return {github,githubError};
   const repo=state.settings.repo||'';
@@ -591,7 +591,7 @@ function sessionTitle(file){
 function runGuard(guard,cwd){
   return new Promise(resolve=>{
     if(!guard)return resolve({code:2,output:'Nieznany strażnik.'});
-    execFile(process.execPath,[path.join(__dirname,guard.script),cwd],{cwd,timeout:90000,windowsHide:true,maxBuffer:1024*1024},
+    execFile(process.execPath,[path.join(__dirname,guard.script),cwd],{cwd,timeout:guard.timeoutMs||90000,windowsHide:true,maxBuffer:1024*1024},
       (err,stdout,stderr)=>{
         const code=err?(typeof err.code==='number'?err.code:2):0;
         resolve({code,output:String(stdout||'').trim()||String(stderr||'').trim()||(err&&err.message)||''});
@@ -618,18 +618,24 @@ function startHookServer() {
         const guard=GUARDS.find(g=>g.id===binding.guard);
         const label=(prev?.topic||name);
         const result=await runGuard(guard,cwd);
-        const v=guardVerdict({...result,rounds:binding.rounds,maxRounds:guard.maxRounds,label});
+        // The evidence line stays with Rachet; the agent only sees the report text.
+        const {text,evidence}=splitEvidence(result.output);
+        const v=guardVerdict({code:result.code,output:text,rounds:binding.rounds,maxRounds:guard.maxRounds,label});
+        state.verifications.unshift(normalizeVerification({row,guard:guard.id,verdict:v.verdict,at:new Date().toISOString(),summary:text.split('\n')[0],evidence}));
+        state.verifications=state.verifications.slice(0,30);
+        const proof=evidence?.reportPath?{evidence:path.dirname(evidence.reportPath)}:{};
         if(v.verdict==='block'){
           binding.rounds=v.rounds;
           // The agent keeps working: no "done" alert, the row stays "Pracuje".
           outcome.status='working';outcome.note=v.note;outcome.alert=null;
           guardReply={decision:'block',reason:v.reason};
-          activity(v.note,'info','','guard',{agentId:row});
+          activity(v.note,'info','','guard',{agentId:row,...proof});
         }else{
           delete state.guards[id];
-          outcome.note=v.verdict==='pass'?'Sprawdzone przez strażnika':v.verdict==='give_up'?'Strażnik: wciąż niegotowe':'Strażnik nie mógł sprawdzić';
-          if(v.verdict==='give_up')outcome.status='needs_attention';
-          outcome.alert={text:v.alert,phase:'guard-'+v.verdict};
+          outcome.note=v.verdict==='pass'?'Zweryfikowane':v.verdict==='give_up'?'Strażnik: wciąż niegotowe':'Nie da się zweryfikować';
+          // Not verified is never "Gotowe": both ask for the person.
+          if(v.verdict!=='pass')outcome.status='needs_attention';
+          outcome.alert={text:v.alert,phase:'guard-'+v.verdict,...proof};
         }
       }
       journal.record({src:'claude',project:name,session,type:claudeType(guardReply?'PreToolUse':event,outcome.status)});
@@ -643,7 +649,11 @@ function startHookServer() {
       const coordinated=coordId&&state.coordinator.jobs.some(j=>j.id===coordId&&(j.status==='running'||j.status==='queued'));
       // Coordinator-owned stages report through the runner, not duplicate human alerts.
       // agentHookOutcome stays silent while other agents in the same project still work.
-      if(!coordinated&&outcome.alert)activity(outcome.alert.text,'reminder','',outcome.alert.phase,{agentId:row});
+      if(!coordinated&&outcome.alert){
+        const entry=activity(outcome.alert.text,'reminder','',outcome.alert.phase,{agentId:row});
+        // A guard alert carries the folder with its evidence (report, screenshots) to open.
+        if(outcome.alert.evidence){entry.evidence=outcome.alert.evidence;save();}
+      }
       // Only a guard "block" has a body; claude-hook.cjs prints it for Claude Code.
       if(guardReply){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify(guardReply));}
       res.writeHead(204);res.end();
