@@ -159,6 +159,7 @@ function renderToday(){
   html+='<div class="list-head"><h3>Dziś'+(tasks.length?' <span>· '+tasks.filter(doneToday).length+' z '+tasks.length+' zrobione</span>':'')+'</h3><button class="btn tiny secondary" data-action="calendar-add" data-date="'+dateKey()+'">+ Dodaj</button></div>';
   html+=tasks.length?'<div class="rows">'+tasks.map(t=>taskRow(t)).join('')+'</div>'
     :'<p class="list-empty">Pusto. Kliknij „+ Dodaj”.</p>';
+  html+=renderDayTime();
   const recent=state().activity.slice(0,5);
   if(recent.length){
     html+=more('signals','Ostatnie sygnały · '+state().activity.length,
@@ -168,6 +169,19 @@ function renderToday(){
   return html;
 }
 
+// Today's time, counted by Rachet from its local event log (journal.cjs, daySummary).
+function duration(ms){
+  const min=Math.round((ms||0)/60000);
+  return min<60?min+' min':Math.floor(min/60)+' h'+(min%60?' '+min%60+' min':'');
+}
+function renderDayTime(){
+  const d=snapshot.today;
+  if(!d||!d.since)return '';
+  const tile=(value,label)=>'<div class="metric"><b>'+esc(String(value))+'</b><span>'+esc(label)+'</span></div>';
+  return '<div class="list-head"><h3>Czas dziś <span>· od '+formatTime(d.since)+'</span></h3></div>'
+    +'<div class="day-stats">'+tile(d.projects,'projekty')+tile(d.switches,'przełączenia')
+    +tile(duration(d.workMs),'agenci pracowali')+tile(duration(d.waitMs),'czekali na Ciebie')+'</div>';
+}
 function tasksOnCalendarDay(key){
   // Work in local calendar days so recurring schedules don't shift due to UTC offsets.
   const [year,month,day]=key.split('-').map(Number);

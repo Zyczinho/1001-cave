@@ -86,4 +86,44 @@ function readEvents(dir, {from, to} = {}) {
   return out.sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
 }
 
-module.exports = {Journal, readEvents, claudeType, chatgptType, TYPES, WORK_EVERY_MS};
+// E2: one summary of the day, counted from that day's entries (oldest first).
+// - projects: projects you wrote to (your prompts), Claude and ChatGPT counted apart;
+// - switches: times your next prompt went to a different project than the one before;
+// - workMs: agent time, summed per session, from your prompt or its work until it is
+//   done, waits for you, fails or ends; a silence over 10 minutes is not counted;
+// - waitMs: time agents waited for your decision, from "needs you" or an error to your
+//   next message in that session (at most 8 hours, the same fade as the panel).
+const GAP_MS = 10 * 60 * 1000;
+const WAIT_CAP_MS = 8 * 3600 * 1000;
+function daySummary(events = [], now = Date.now()) {
+  const projects = new Set(), sessions = new Map();
+  let switches = 0, lastProject = null, workMs = 0, waitMs = 0, since = null;
+  const at = e => Date.parse(e.ts);
+  for (const e of events) {
+    const t = at(e), key = e.src + ':' + e.session, project = e.src + ':' + e.project;
+    since ??= e.ts;
+    const s = sessions.get(key) || {workFrom: null, last: null, waitFrom: null};
+    // A long silence inside a working stretch closes it at the last sign of life.
+    if (s.workFrom !== null && t - s.last > GAP_MS) { workMs += s.last - s.workFrom; s.workFrom = null; }
+    if (e.type === 'prompt') {
+      projects.add(project);
+      if (lastProject !== null && lastProject !== project) switches++;
+      lastProject = project;
+    }
+    if (s.waitFrom !== null && ['prompt', 'work', 'start', 'end'].includes(e.type)) {
+      waitMs += Math.min(t - s.waitFrom, WAIT_CAP_MS); s.waitFrom = null;
+    }
+    if (e.type === 'prompt' || e.type === 'work') { s.workFrom ??= t; }
+    else if (['done', 'needs_you', 'error', 'end'].includes(e.type) && s.workFrom !== null) { workMs += t - s.workFrom; s.workFrom = null; }
+    if ((e.type === 'needs_you' || e.type === 'error') && s.waitFrom === null) s.waitFrom = t;
+    s.last = t;
+    sessions.set(key, s);
+  }
+  for (const s of sessions.values()) {
+    if (s.workFrom !== null) workMs += (now - s.last <= GAP_MS ? now : s.last) - s.workFrom;
+    if (s.waitFrom !== null) waitMs += Math.min(now - s.waitFrom, WAIT_CAP_MS);
+  }
+  return {since, projects: projects.size, switches, workMs: Math.max(0, workMs), waitMs: Math.max(0, waitMs)};
+}
+
+module.exports = {Journal, readEvents, daySummary, claudeType, chatgptType, TYPES, WORK_EVERY_MS};

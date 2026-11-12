@@ -85,3 +85,28 @@ test('server: Claude hooks and ChatGPT tab signals land in the local journal',as
     assert.doesNotMatch(raw,/tajny prompt|CV/,'no prompt text or chat titles are stored');
   } finally { proc.kill(); }
 });
+
+test('E2 day summary: projects, switches, agent time and time agents waited for you',()=>{
+  const {daySummary}=require('../journal.cjs');
+  const T=m=>new Date(Date.parse('2026-11-12T08:00:00Z')+m*60000).toISOString();
+  const e=(m,src,project,session,type)=>({ts:T(m),src,project,session,type});
+  const events=[
+    e(0,'claude','city-route','a','prompt'),     // A works 0..20
+    e(1,'claude','city-route','a','work'),
+    e(10,'claude','city-route','a','work'),
+    e(19,'claude','city-route','a','work'),
+    e(20,'claude','city-route','a','needs_you'), // A waits 20..50
+    e(25,'chatgpt','szukamy-pracy','b','prompt'),// switch 1; B works 25..30
+    e(30,'chatgpt','szukamy-pracy','b','done'),
+    e(50,'claude','city-route','a','prompt'),    // switch 2; A works 50..55, then silence
+    e(55,'claude','city-route','a','work'),
+    e(120,'claude','box2box','c','prompt'),      // switch 3; C still working at "now"
+  ];
+  const r=daySummary(events,Date.parse(T(125)));
+  assert.equal(r.since,T(0));
+  assert.equal(r.projects,3);
+  assert.equal(r.switches,3);
+  assert.equal(r.workMs,(20+5+5+5)*60000,'a silence over 10 minutes is not agent work');
+  assert.equal(r.waitMs,30*60000);
+  assert.deepEqual(daySummary([],Date.now()),{since:null,projects:0,switches:0,workMs:0,waitMs:0});
+});
