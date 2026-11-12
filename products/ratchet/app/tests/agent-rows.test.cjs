@@ -59,3 +59,16 @@ test('panel: grey line says where, white line says what',()=>{
   assert.match(src,/esc\(place\)/);
   assert.match(src,/esc\(topic\|\|a\.title\)/);
 });
+
+test('rows saved before topics get one: ChatGPT from the kept chat title',()=>{
+  const {topicFromNote}=require('../core.cjs');
+  assert.equal(topicFromNote('szukamy-pracy · Zarobki na stanowisku','szukamy-pracy'),'Zarobki na stanowisku');
+  assert.equal(topicFromNote('Plan dnia','ChatGPT'),'Plan dnia','a chat outside a project');
+  assert.equal(topicFromNote('1001-cave','1001-cave'),'','the project name alone is not a topic');
+  assert.equal(topicFromNote('ChatGPT','ChatGPT'),'');
+});
+
+test('panel: every automatic row has the place in grey and a topic in white',()=>{
+  const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','ui','panel.js'),'utf8');
+  assert.match(src,/const topic=tool\?\(a\.topic\|\|'Bez tematu'\):''/);
+});
