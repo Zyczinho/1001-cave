@@ -10,14 +10,15 @@ const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,claudeType,chatgptType}=require('./journal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
 const sessions = new Map();
-function upsertRow(row, {title, tool, source, kind, target, note}) {
+// The row's topic is the topic of the session or chat that spoke last.
+function upsertRow(row, {title, tool, source, kind, target, note, topic}) {
   const members = [...sessions.values()].filter(s => s.row === row);
   const index = state.agents.findIndex(x => x.id === row), prev = index >= 0 ? state.agents[index] : null;
   const clean = normalizeItem('agents', {...prev, id: row, title, tool, status: rowStatus(members), source, kind,
-    target: target || prev?.target || '', note: note || prev?.note || '', updatedAt: new Date().toISOString()});
+    target: target || prev?.target || '', note: note || prev?.note || '', topic: topic || prev?.topic || '', updatedAt: new Date().toISOString()});
   if (index >= 0) state.agents[index] = clean; else state.agents.unshift(clean);
   state.agents = state.agents.slice(0, 100);
 }
@@ -464,8 +465,8 @@ async function appRequest(req,res) {
       const out=browserChatOutcome(body,{agents:[...sessions.values()],project});
       const name=project||'ChatGPT',row=rowKey('chatgpt',name);
       journal.record({src:'chatgpt',project:name,session:out.id.slice(8),type:chatgptType(body.state,sessions.get(out.id)?.status)});
-      sessions.set(out.id,{id:out.id,source:'browser',status:out.status,target:out.url,note:out.title,updatedAt:new Date().toISOString(),row});
-      upsertRow(row,{title:name,tool:'ChatGPT',source:'browser',kind:'url',target:out.url,note:out.title});
+      sessions.set(out.id,{id:out.id,source:'browser',status:out.status,target:out.url,note:out.title,topic:out.topic,updatedAt:new Date().toISOString(),row});
+      upsertRow(row,{title:name,tool:'ChatGPT',source:'browser',kind:'url',target:out.url,note:out.title,topic:out.topic});
       save();
       // The alert opens the conversation that finished, even if the row moves on.
       if(out.alert)activity(out.alert.text,'reminder','',out.alert.phase,{agentId:row,target:out.url});
@@ -499,6 +500,21 @@ function projectRoot(cwd){
   }
   return cwd;
 }
+// The Claude session title, read from the end of the session file (the title repeats
+// through the file). Only session files under ~/.claude/projects are read, nothing else.
+const CLAUDE_PROJECTS=path.join(os.homedir(),'.claude','projects');
+function sessionTitle(file){
+  try{
+    const full=path.resolve(file);
+    if(!file||path.extname(full).toLowerCase()!=='.jsonl'||!full.toLowerCase().startsWith(CLAUDE_PROJECTS.toLowerCase()+path.sep))return '';
+    const size=fs.statSync(full).size,chunk=256*1024,fd=fs.openSync(full,'r');
+    try{
+      const read=(at,len)=>{const b=Buffer.alloc(len);fs.readSync(fd,b,0,len,at);return b.toString('utf8');};
+      return transcriptTitle(read(Math.max(0,size-chunk),Math.min(size,chunk)))
+        ||(size>chunk?transcriptTitle(read(0,chunk)):'');
+    }finally{fs.closeSync(fd);}
+  }catch{return '';}
+}
 function startHookServer() {
   hookServer=http.createServer((req,res)=>{
     if(req.method!=='POST'||req.url!=='/hook')return res.writeHead(404).end();
@@ -513,8 +529,11 @@ function startHookServer() {
       const outcome=agentHookOutcome(event,{agents:[...sessions.values()],id,prev,cwd,
         notificationType:String(data.notification_type||'').slice(0,40),message:String(data.message||'').slice(0,200)});
       journal.record({src:'claude',project:name,session,type:claudeType(event,outcome.status)});
-      sessions.set(id,{id,source:'hook',status:outcome.status,target:cwd,note:outcome.note,updatedAt:new Date().toISOString(),row});
-      upsertRow(row,{title:name,tool:'Claude Code',source:'hook',kind:'folder',target:cwd,note:outcome.note});
+      // Tool calls come often; the title is re-read only when it can have changed.
+      const topic=['SessionStart','UserPromptSubmit','Stop'].includes(event)||!prev?.topic
+        ?sessionTitle(String(data.transcript_path||''))||prev?.topic||'':prev.topic;
+      sessions.set(id,{id,source:'hook',status:outcome.status,target:cwd,note:outcome.note,topic,updatedAt:new Date().toISOString(),row});
+      upsertRow(row,{title:name,tool:'Claude Code',source:'hook',kind:'folder',target:cwd,note:outcome.note,topic});
       save();
       const coordId=String(data.coordinator_job_id||'').slice(0,80);
       const coordinated=coordId&&state.coordinator.jobs.some(j=>j.id===coordId&&(j.status==='running'||j.status==='queued'));
