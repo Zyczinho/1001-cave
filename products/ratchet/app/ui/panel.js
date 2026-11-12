@@ -222,8 +222,10 @@ function renderAgent(a){
   const open=a.source==='hook'?' data-action="agent-focus" data-id="'+esc(a.id)+'" title="Przejdź do Claude"'
     :a.target?' data-action="open" data-kind="'+esc(a.kind||'url')+'" data-target="'+esc(a.target)+'" title="Otwórz"'
     :' data-action="edit" data-collection="agents" data-id="'+esc(a.id)+'" title="Edytuj"';
+  // The same project can run in Claude and in ChatGPT; the tool tells the two rows apart.
+  const tool=a.source==='hook'?'Claude':a.source==='browser'?'ChatGPT':'';
   return '<article class="row agent-row"><span class="s-dot '+color+'" aria-hidden="true"></span>'
-    +'<button class="row-main"'+open+'><span class="row-title">'+esc(a.title)+'</span><span class="row-meta">'+esc(label)+(a.updatedAt?' · '+formatTime(a.updatedAt):'')+'</span></button>'
+    +'<button class="row-main"'+open+'><span class="row-title">'+esc(a.title)+'</span><span class="row-meta">'+esc(label)+(tool?' · '+tool:'')+(a.updatedAt?' · '+formatTime(a.updatedAt):'')+'</span></button>'
     +'<button class="row-act quiet-act" data-action="edit" data-collection="agents" data-id="'+esc(a.id)+'" title="Edytuj" aria-label="Edytuj: '+esc(a.title)+'">'+I('edit')+'</button></article>';
 }
 function renderFilteredAgents(){
