@@ -72,3 +72,13 @@ test('panel: every automatic row has the place in grey and a topic in white',()=
   const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','ui','panel.js'),'utf8');
   assert.match(src,/const topic=tool\?\(a\.topic\|\|'Bez tematu'\):''/);
 });
+
+test('"Zakończ" keeps a row away until its work starts again or needs the person',()=>{
+  const {rowWakes,normalizeStore}=require('../core.cjs');
+  for(const s of ['working','needs_attention','blocked'])assert.equal(rowWakes(s),true,s);
+  for(const s of ['ready','idle',undefined])assert.equal(rowWakes(s),false,String(s));
+  const store=normalizeStore({hiddenRows:{'project:claude:box2box':'2026-11-12T16:00:00Z','manual-1':'x',bad:5}});
+  assert.deepEqual(store.hiddenRows,{'project:claude:box2box':'2026-11-12T16:00:00Z'},'remembered across restarts, only Rachet rows');
+  const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','server.cjs'),'utf8');
+  assert.match(src,/if \(state\.hiddenRows\[row\]\) \{\s*if \(!rowWakes\(status\)\) return;/);
+});

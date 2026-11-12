@@ -27,6 +27,7 @@ if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.
     scheduleAction:(id,actionName)=>action('schedule:action',{id,action:actionName}),
     open:(kind,target)=>action('open-target',{kind,target}),
     focusAgent:id=>action('agent:focus',{id}),
+    finishAgent:id=>action('agent:finish',{id}),
     chatgptSignalRemove:id=>action('chatgpt:signal-remove',{id}),
     chatgptCreate:data=>action('chatgpt:create',data),
     chatgptRefresh:()=>action('chatgpt:refresh'),
