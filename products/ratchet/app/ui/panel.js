@@ -65,7 +65,6 @@ const bridge=window.ratchet||{
   scheduleAction:async(id,action)=>{const t=state().schedule.find(x=>x.id===id);if(action==='snooze')t.snoozeUntil=new Date(Date.now()+600000).toISOString();if(action==='start'&&t.target)window.open(t.target,'_blank','noopener,noreferrer');persistDemo();},
   focusAgent:async()=>toast('Przejście do Claude działa w aplikacji Windows'),
   finishAgent:async id=>{state().agents=state().agents.filter(x=>x.id!==id);persistDemo();},
-  dayReview:async()=>{throw Error('Podsumowanie dnia działa w aplikacji Windows.');},
   guardStart:async()=>{throw Error('Strażnik działa w aplikacji Windows.');},
   guardStop:async()=>{},
   open:async(kind,target)=>{if(kind==='folder')throw Error('Otwieranie folderów działa w aplikacji Windows');if(!/^https?:\/\//.test(target))throw Error('Niepoprawny link');window.open(target,'_blank','noopener,noreferrer');},
@@ -181,33 +180,15 @@ function duration(ms){
   const min=Math.round((ms||0)/60000);
   return min<60?min+' min':Math.floor(min/60)+' h'+(min%60?' '+min%60+' min':'');
 }
-// "Podsumuj dzień": on request, facts only (day-review.cjs). Kept until the panel reloads.
-let dayReviewData=null;
-function renderDayReview(){
-  const r=dayReviewData?.review;
-  if(!r)return '';
-  // Short and plain: a goal, a state and one sentence per project; details stay folded.
-  const state={done:['osiągnięty','good'],progress:['w toku','warm'],unknown:['nieznany','']};
-  const details=p=>[...p.done,...p.results].length?'<details class="coordinator-report"><summary>Szczegóły</summary>'
-    +[...p.done,...p.results].map(x=>'<p class="hint">'+esc(x)+'</p>').join('')+'</details>':'';
-  return '<div class="list-head"><h3>Podsumowanie dnia</h3><span><button class="btn tiny secondary" data-action="day-review-copy">'+I('copy')+' Kopiuj</button> <button class="btn tiny ghost" data-action="day-review-close">Zamknij</button></span></div>'
-    +'<p class="task-note">'+esc(r.overview)+'</p>'
-    +(r.projects.length?r.projects.map(p=>{const [label,tone]=state[p.status];
-      return '<article class="agent-card"><div class="task-title">'+esc(p.display)+' <span class="hint">· '+esc(duration(p.workMs))+'</span></div>'
-      +'<p class="task-note"><strong>Cel:</strong> '+esc(p.goal)+'</p>'
-      +'<p class="task-note"><span class="pill '+tone+'">'+label+'</span> '+esc(p.result)+'</p>'+details(p)+'</article>';}).join('')
-      :'<p class="list-empty">Dziś Rachet nie widział jeszcze pracy agentów.</p>')
-    +(r.brief.length?'<p class="hint">Krótko: '+esc(r.brief.map(p=>p.display).join(', '))+'.</p>':'')
-    +'<p class="task-note"><strong>Wniosek:</strong> '+esc(r.lesson)+'</p>';
-}
+// Day summaries are written in Claude chat (owner's choice, 12.11); the panel only shows
+// today's counts. The facts behind a summary stay available as the day:review action.
 function renderDayTime(){
   const d=snapshot.today;
-  if(!d||!d.since)return renderDayReview();
+  if(!d||!d.since)return '';
   const tile=(value,label)=>'<div class="metric"><b>'+esc(String(value))+'</b><span>'+esc(label)+'</span></div>';
-  return '<div class="list-head"><h3>Czas dziś <span>· od '+formatTime(d.since)+'</span></h3><button class="btn tiny secondary" data-action="day-review">Podsumuj dzień</button></div>'
+  return '<div class="list-head"><h3>Czas dziś <span>· od '+formatTime(d.since)+'</span></h3></div>'
     +'<div class="day-stats">'+tile(d.projects,'projekty')+tile(d.switches,'przełączenia')
-    +tile(duration(d.workMs),'agenci pracowali')+tile(duration(d.waitMs),'czekali na Ciebie')+'</div>'
-    +renderDayReview();
+    +tile(duration(d.workMs),'agenci pracowali')+tile(duration(d.waitMs),'czekali na Ciebie')+'</div>';
 }
 function tasksOnCalendarDay(key){
   // Work in local calendar days so recurring schedules don't shift due to UTC offsets.
@@ -686,9 +667,6 @@ async function handleAction(el){
   if(act==='open'){await bridge.open(el.dataset.kind,el.dataset.target);toast('Otwieram ↗');}
   if(act==='agent-focus'){await bridge.focusAgent(id);toast('Przechodzę do Claude ↗');}
   if(act==='agent-finish'){await bridge.finishAgent(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zakończone. Wróci, gdy znów zaczniesz ✓');}
-  if(act==='day-review'){dayReviewData=await bridge.dayReview();render();}
-  if(act==='day-review-close'){dayReviewData=null;render();}
-  if(act==='day-review-copy'&&dayReviewData?.text){await navigator.clipboard.writeText(dayReviewData.text);toast('Podsumowanie skopiowane ✓');}
   if(act==='guard-toggle'){
     if(el.dataset.on){await bridge.guardStop(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik wyłączony');return;}
     // A project can have several proofs: they are offered one by one, the first "yes" wins.
