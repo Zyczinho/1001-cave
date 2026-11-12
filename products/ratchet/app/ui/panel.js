@@ -166,7 +166,10 @@ function renderToday(){
   const recent=state().activity.slice(0,5);
   if(recent.length){
     html+=more('signals','Ostatnie sygnały · '+state().activity.length,
-      recent.map(a=>'<div class="signal"><span>'+esc(a.text)+'<small>'+formatTime(a.at)+'</small></span><button class="plain-icon" data-action="activity-remove" data-id="'+esc(a.id)+'" title="Usuń sygnał" aria-label="Usuń sygnał">'+I('x')+'</button></div>').join('')
+      recent.map(a=>'<div class="signal"><span>'+esc(a.text)+'<small>'+formatTime(a.at)+'</small></span>'
+        // A guard result keeps its evidence (e2e report, screenshots): one click opens the folder.
+        +(a.evidence?'<button class="plain-icon" data-action="open" data-kind="folder" data-target="'+esc(a.evidence)+'" title="Otwórz dowód" aria-label="Otwórz dowód">'+I('folder')+'</button>':'')
+        +'<button class="plain-icon" data-action="activity-remove" data-id="'+esc(a.id)+'" title="Usuń sygnał" aria-label="Usuń sygnał">'+I('x')+'</button></div>').join('')
       +'<button class="btn tiny ghost" data-action="activity-clear">Wyczyść wszystkie</button>');
   }
   return html;
@@ -247,9 +250,12 @@ function renderAgent(a){
   const place=[tool,tool&&String(a.title).toLowerCase()!==tool.toLowerCase()?a.title:''].filter(Boolean).join(' · ');
   // Guard (pilot): a shield on Claude rows whose project has a proof. On = the agent
   // may not finish until the proof passes (see guardVerdict in core.cjs).
-  const guardOption=(snapshot.guardOptions?.[a.id]||[])[0];
+  const guardOptions=snapshot.guardOptions?.[a.id]||[],guardOption=guardOptions[0];
   const guardOn=Object.values(state().guards||{}).find(g=>g.row===a.id);
-  const guardNote=guardOn?' · Strażnik '+guardOn.rounds+'/'+(guardOption?.maxRounds||3):'';
+  // "Zweryfikowane" only when the latest proof for this project passed and the agent is done.
+  const lastProof=(state().verifications||[]).find(v=>v.row===a.id);
+  const guardNote=guardOn?' · Strażnik '+guardOn.rounds+'/'+((guardOptions.find(g=>g.id===guardOn.guard)||guardOption)?.maxRounds||3)
+    :lastProof?.verdict==='pass'&&a.status==='ready'?' · Zweryfikowane':'';
   return '<article class="row agent-row"><span class="s-dot '+color+'" aria-hidden="true"></span>'
     +'<button class="row-main"'+open+'>'+(place?'<span class="row-meta">'+esc(place)+'</span>':'')
     +'<span class="row-title">'+esc(topic||a.title)+'</span><span class="row-meta">'+esc(label)+esc(guardNote)+(a.updatedAt?' · '+formatTime(a.updatedAt):'')+'</span></button>'
@@ -661,9 +667,14 @@ async function handleAction(el){
   if(act==='agent-finish'){await bridge.finishAgent(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zakończone. Wróci, gdy znów zaczniesz ✓');}
   if(act==='guard-toggle'){
     if(el.dataset.on){await bridge.guardStop(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik wyłączony');return;}
-    const option=(snapshot.guardOptions?.[id]||[]).find(g=>g.id===el.dataset.guard);
-    if(!await compactConfirm('Włączyć strażnika dla sesji, w której teraz pracujesz? Gdy agent powie „gotowe”, Rachet sprawdzi: '+(option?.label||'warunek zadania')+'. Jeśli warunek nie jest spełniony, odeśle agenta do pracy (najwyżej '+(option?.maxRounds||3)+' razy), potem da Ci znać. Sprawdzenie czyta tylko pliki, bez kosztów.'))return;
-    await bridge.guardStart(id,el.dataset.guard);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik pilnuje tej sesji 🛡');
+    // A project can have several proofs: they are offered one by one, the first "yes" wins.
+    let option=null;
+    for(const g of snapshot.guardOptions?.[id]||[]){
+      if(await compactConfirm('Włączyć strażnika „'+g.label+'” dla sesji, w której teraz pracujesz? Gdy agent powie „gotowe”, Rachet to sprawdzi. Jeśli warunek nie jest spełniony, odeśle agenta do pracy (najwyżej '+g.maxRounds+' razy), potem da Ci znać. '+(g.note||'')))
+      {option=g;break;}
+    }
+    if(!option)return;
+    await bridge.guardStart(id,option.id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik pilnuje tej sesji 🛡');
   }
   if(act==='github-refresh'){toast('Sprawdzam GitHub…');const result=await bridge.refreshGithub();snapshot={...snapshot,...result};render();if(result.githubError)toast(result.githubError);else toast('GitHub zaktualizowany');}
   if(act==='handoff'){await bridge.handoff();toast('Handoff skopiowany do schowka ✓');}

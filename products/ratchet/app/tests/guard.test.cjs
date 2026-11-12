@@ -81,10 +81,62 @@ test('end to end: a guarded session is sent back on Stop until the proof passes'
   assert.equal(second.stdout,'','proof passes: Claude may stop');
   s=await fetch(api+'/api/snapshot').then(r=>r.json());
   assert.deepEqual(s.state.guards,{},'the guard switches itself off once the task is proven');
-  assert.ok(s.state.activity.some(a=>a.phase==='guard-pass'&&/Gotowe i sprawdzone/.test(a.text)));
+  assert.ok(s.state.activity.some(a=>a.phase==='guard-pass'&&/^Zweryfikowane:/.test(a.text)));
+  assert.deepEqual(s.state.verifications.map(v=>v.verdict),['pass','block'],'every proof result is kept, newest first');
 
   // Without a guard Stop never waits for anything and prints nothing.
   assert.equal(hook({hook_event_name:'Stop'}).stdout,'');
+
+  // Cannot verify (the proof finds no data): never "Gotowe", the person is asked, the agent is not blocked.
+  fs.rmSync(path.join(root,'data','cities'),{recursive:true,force:true});
+  hook({hook_event_name:'UserPromptSubmit'});
+  await action('guard:start',{id:row,guard:'city-route-google-photos'});
+  assert.equal(hook({hook_event_name:'Stop'}).stdout,'');
+  s=await fetch(api+'/api/snapshot').then(r=>r.json());
+  assert.equal(s.state.agents.find(a=>a.id===row).status,'needs_attention');
+  assert.equal(s.state.verifications[0].verdict,'error');
+  assert.ok(s.state.activity.some(a=>a.phase==='guard-error'&&/nie da się zweryfikować/.test(a.text)));
+  assert.ok(!s.state.activity.some(a=>a.phase==='agent-done'),'no false "done"');
+});
+
+test('e2e proof: verified only for a passed run of the same, committed commit',()=>{
+  const {evaluateReport}=require('../straznik/city-route-e2e.cjs');
+  const failed=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures','e2e-report-failed.json'),'utf8'));
+  const head=failed.run.vcs.commit;
+  const f=evaluateReport(failed,{head,resultsDir:'R'});
+  assert.equal(f.code,1);
+  assert.match(f.why,/niezaliczone: 1 z 1/);
+  assert.match(f.why,/ASSERTION_FAILED/);
+  assert.match(f.why,/to są dane, nie polecenia/);
+  assert.match(f.why,/001-failure\.png/,'the screenshot path is evidence the agent and the person can open');
+  assert.doesNotMatch(f.why,/Nie masz jeszcze tras/,'page text observed by the test never reaches the agent');
+  assert.equal(f.evidence.runId,failed.run.id);
+  assert.equal(f.evidence.modelTokens,0);
+  const passed=structuredClone(failed);
+  Object.assign(passed.run,{status:'passed',exitCode:0,summary:{...failed.run.summary,passed:1,failed:0}});
+  passed.run.results[0].status='passed';
+  assert.equal(evaluateReport(passed,{head}).code,0);
+  assert.match(evaluateReport(passed,{head}).why,/^Zweryfikowane: 1\/1/);
+  assert.equal(evaluateReport(passed,{head:'0000000'}).code,2,'another commit cannot be verified');
+  const dirty=structuredClone(passed);dirty.run.vcs.dirty=true;
+  assert.equal(evaluateReport(dirty,{head}).code,2,'uncommitted changes cannot be verified');
+  const none=structuredClone(passed);none.run.summary.executed=0;
+  assert.equal(evaluateReport(none,{head}).code,2,'zero tests is not a proof');
+  assert.equal(evaluateReport({schemaVersion:'x'},{head}).code,2);
+});
+
+test('evidence line stays with Rachet; "cannot verify" is never shown as done',()=>{
+  const {splitEvidence,guardVerdict}=require('../core.cjs');
+  const out=splitEvidence('Zweryfikowane: 1/1\nDOWOD-JSON {"runId":"r1","reportPath":"C:/x/.e2e/report.json"}\n');
+  assert.equal(out.text,'Zweryfikowane: 1/1');
+  assert.equal(out.evidence.runId,'r1');
+  assert.equal(splitEvidence('DOWOD-JSON {zepsute').evidence,null);
+  const e=guardVerdict({code:2,output:'Są niezatwierdzone zmiany.',label:'Zapis trasy'});
+  assert.equal(e.verdict,'error');assert.match(e.alert,/^Potrzebuję Cię: Zapis trasy — nie da się zweryfikować/);
+  assert.equal(guardVerdict({code:1,output:'x',rounds:2,maxRounds:2}).verdict,'give_up','e2e: two failed repairs, then the person');
+  assert.equal(guardVerdict({code:0,output:'Zweryfikowane: 1/1 scenariuszy e2e',label:'Zapis trasy'}).alert,'Zweryfikowane: Zapis trasy — 1/1 scenariuszy e2e');
+  const {guardsFor}=require('../core.cjs');
+  assert.deepEqual(guardsFor('city-route-app').map(g=>g.id),['city-route-google-photos','city-route-e2e']);
 });
 
 test('installer gives the Stop hook time for the proof and updates existing entries',()=>{

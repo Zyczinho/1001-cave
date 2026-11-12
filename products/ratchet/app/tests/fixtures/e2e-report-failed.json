@@ -1,0 +1,616 @@
+{
+  "schemaVersion": "report-1",
+  "run": {
+    "id": "01a1d15a-5f77-74af-b9ab-db2030ab1396",
+    "specVersion": "0.1",
+    "runner": {
+      "name": "e2e",
+      "version": "0.23.0"
+    },
+    "status": "failed",
+    "exitCode": 1,
+    "startedAt": "2026-11-12T20:02:04.068Z",
+    "finishedAt": "2026-11-12T20:02:13.229Z",
+    "project": {
+      "id": "city-route-app",
+      "configDigest": "f75d1ae2c61a2a05069e04458866ad24fc5f5c66afb2905226210ba5e91af0ba"
+    },
+    "environment": {
+      "ci": false,
+      "trustNoticeShown": false,
+      "os": "win32 10.0.26200",
+      "arch": "x64",
+      "runtime": "node v26.1.0"
+    },
+    "vcs": {
+      "commit": "9f45f70b9bde9bf9ffc88ccf9473d6ca600b2a70",
+      "branch": "claude/e2e-route-save",
+      "dirty": false
+    },
+    "targets": [
+      {
+        "id": "web",
+        "index": 0,
+        "platform": "web",
+        "baseOrigin": "http://127.0.0.1:4180",
+        "environment": "test",
+        "engine": {
+          "name": "web",
+          "version": "0.15.5",
+          "spiVersion": 1
+        },
+        "capabilities": [
+          "actions",
+          "artifacts",
+          "browser",
+          "keyboard",
+          "location",
+          "observation",
+          "pointer",
+          "state"
+        ],
+        "artifactCapabilities": [
+          "screenshot",
+          "video"
+        ],
+        "stateCapability": true
+      }
+    ],
+    "serialGroups": [],
+    "results": [
+      {
+        "id": "5d8e3a01874b6fe239b541d718906ea84b69387f26aabc483ecaae9cd312ad3c",
+        "testId": "tests/e2e/route-save.e2e.ts::zapisana%20trasa%20jest%20widoczna%20po%20od%C5%9Bwie%C5%BCeniu%20strony",
+        "kind": "test",
+        "declarationIndex": 0,
+        "titlePath": [
+          "zapisana trasa jest widoczna po odświeżeniu strony"
+        ],
+        "file": "tests/e2e/route-save.e2e.ts",
+        "source": {
+          "file": "tests/e2e/route-save.e2e.ts",
+          "line": 13,
+          "column": 1
+        },
+        "targetId": "web",
+        "platform": "web",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": true,
+        "status": "failed",
+        "attempts": [
+          {
+            "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083",
+            "index": 0,
+            "status": "failed",
+            "startedAt": "2026-11-12T20:02:04.921Z",
+            "durationMs": 8136,
+            "artifacts": [
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:artifact:0",
+                "kind": "log",
+                "mediaType": "text/plain",
+                "redaction": "complete",
+                "producer": {
+                  "kind": "attempt"
+                },
+                "path": "route-save-zapisana-trasa-jest-widoczna-po-5d8e3a01874b6fe2/attempt-1/screen-at-failure.txt",
+                "size": 1471,
+                "sha256": "e41ea674055dfd401e8360ba09b0f0770a27224c854f1f58cdfb6474981cc3a7"
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:artifact:1",
+                "kind": "screenshot",
+                "mediaType": "image/png",
+                "redaction": "complete",
+                "producer": {
+                  "kind": "attempt"
+                },
+                "path": "route-save-zapisana-trasa-jest-widoczna-po-5d8e3a01874b6fe2/attempt-1/screenshots/001-failure.png",
+                "size": 39211,
+                "sha256": "8f335a82fc0e816e0110bb11bb8c3bd683c2b4719652c35db33f2b4fb6a00cc9"
+              }
+            ],
+            "error": {
+              "category": "test",
+              "code": "ASSERTION_FAILED",
+              "message": "expect.toContainText failed\nlocator: locator(\"[data-saved-routes-cards]\")\nexpected: text containing \"Trasa e2e 1794513727016\"\nobserved: text \"Nie masz jeszcze tras zapisanych na tym urządzeniu. Trasy zapisane na koncie zostaną dołączone po zalogowaniu.\" (match count 1)",
+              "retryable": false,
+              "phase": "body",
+              "details": {
+                "locator": "locator(\"[data-saved-routes-cards]\")",
+                "expected": "text containing \"Trasa e2e 1794513727016\"",
+                "observed": "text \"Nie masz jeszcze tras zapisanych na tym urządzeniu. Trasy zapisane na koncie zostaną dołączone po zalogowaniu.\"",
+                "matches": 1
+              },
+              "source": {
+                "file": "node_modules/e2e/dist/expect/async.js",
+                "line": 117,
+                "column": 28
+              }
+            },
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "environment": {
+              "browser": "chromium 156.0.8078.4",
+              "user agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36"
+            },
+            "failure": {
+              "url": "http://127.0.0.1:4180/#social-saved",
+              "viewport": {
+                "width": 375,
+                "height": 812
+              },
+              "nodes": 32,
+              "screen": "01a1d15a-65f9-7a29-8d11-291b09c0f083:artifact:0",
+              "screenshot": "01a1d15a-65f9-7a29-8d11-291b09c0f083:artifact:1"
+            },
+            "steps": [
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:0",
+                "index": 0,
+                "kind": "resource",
+                "api": "browser.route",
+                "label": "/supabase\\.co/",
+                "status": "passed",
+                "startedAt": "2026-11-12T20:02:05.673Z",
+                "durationMs": 3,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:1",
+                "index": 1,
+                "kind": "resource",
+                "api": "browser.addInitScript",
+                "label": "function",
+                "status": "passed",
+                "startedAt": "2026-11-12T20:02:05.678Z",
+                "durationMs": 2,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:2",
+                "index": 2,
+                "kind": "app",
+                "api": "app.open",
+                "label": "/#my-route",
+                "status": "passed",
+                "startedAt": "2026-11-12T20:02:05.680Z",
+                "durationMs": 1284,
+                "events": [],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:4180/#my-route",
+                  "nodes": 83,
+                  "changes": []
+                },
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:3",
+                "index": 3,
+                "kind": "assertion",
+                "api": "expect.toHaveCount",
+                "label": "locator(\".stops li[data-stop]\")",
+                "status": "passed",
+                "startedAt": "2026-11-12T20:02:06.968Z",
+                "durationMs": 48,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-11-12T20:02:06.968Z",
+                    "durationMs": 48,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:4",
+                "index": 4,
+                "kind": "locator",
+                "api": "locator.click",
+                "label": "locator(\"button[data-action=\\\"save-basket\\\"]\")",
+                "status": "passed",
+                "startedAt": "2026-11-12T20:02:07.016Z",
+                "durationMs": 99,
+                "events": [
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-11-12T20:02:07.017Z",
+                    "durationMs": 98,
+                    "status": "passed",
+                    "detail": "tap button \"Zapisz trasę\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:4180/#my-route",
+                  "nodes": 92,
+                  "since": 2,
+                  "changes": [
+                    "added dialog \"Zapisz swoją trasę\"",
+                    "added heading \"Zapisz swoją trasę\"",
+                    "added text=\"Trasa zostanie w Twoich zapisanych trasach na tym urządzeniu.\"",
+                    "added text=\"Nazwa trasy\"",
+                    "added textbox \"Nazwa trasy\" value=\"Moja trasa\"",
+                    "added text=\"Opis (opcjonalnie)\"",
+                    "added textbox \"Opis (opcjonalnie)\" value=\"Rynek Starego Miasta · Zamek Królewski i Plac Zamkowy · Barbakan Warszawski\"",
+                    "added button \"Anuluj\"",
+                    "added button \"Zapisz w Moich trasach\""
+                  ]
+                },
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:5",
+                "index": 5,
+                "kind": "locator",
+                "api": "locator.fill",
+                "label": "locator(\"#route-save-name\")",
+                "status": "passed",
+                "startedAt": "2026-11-12T20:02:07.117Z",
+                "durationMs": 54,
+                "events": [
+                  {
+                    "kind": "engine",
+                    "name": "fill",
+                    "startedAt": "2026-11-12T20:02:07.117Z",
+                    "durationMs": 54,
+                    "status": "passed",
+                    "detail": "fill textbox \"Nazwa trasy\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:4180/#my-route",
+                  "nodes": 92,
+                  "since": 4,
+                  "changes": [
+                    "changed textbox \"Nazwa trasy\" value=\"Trasa e2e 1794513727016\" (was: textbox \"Nazwa trasy\" value=\"Moja trasa\")"
+                  ]
+                },
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:6",
+                "index": 6,
+                "kind": "locator",
+                "api": "locator.click",
+                "label": "locator(\".route-save-submit\")",
+                "status": "passed",
+                "startedAt": "2026-11-12T20:02:07.172Z",
+                "durationMs": 272,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-11-12T20:02:07.260Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "navigated to http://127.0.0.1:4180/#routes"
+                  },
+                  {
+                    "kind": "engine",
+                    "name": "tap",
+                    "startedAt": "2026-11-12T20:02:07.172Z",
+                    "durationMs": 272,
+                    "status": "passed",
+                    "detail": "tap button \"Zapisz w Moich trasach\""
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:4180/#routes",
+                  "nodes": 170,
+                  "since": 5,
+                  "changes": [
+                    "added text=\"Trasy · Warszawa\"",
+                    "added heading \"Wybierz gotową trasę.\"",
+                    "added text=\"Gotowe spacery po Warszawa. Wybierz, ruszaj, a aplikacja poprowadzi Cię przystanek po przystanku. Jak to działa?\"",
+                    "added link \"Jak to działa?\" href=\"/#…\"",
+                    "added text=\"Szukaj trasy, miejsca albo klimatu\"",
+                    "added searchbox \"Szukaj trasy, miejsca albo klimatu\"",
+                    "added button \"Wszystkie\" [pressed]",
+                    "added button \"Na pierwszy raz\"",
+                    "added button \"Zieleń\"",
+                    "added button \"Nad wodą\"",
+                    "added button \"Z jedzeniem\"",
+                    "added button \"Lokalnie\""
+                  ],
+                  "more": 194
+                },
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:7",
+                "index": 7,
+                "kind": "resource",
+                "api": "browser.reload",
+                "label": "",
+                "status": "passed",
+                "startedAt": "2026-11-12T20:02:07.445Z",
+                "durationMs": 373,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:8",
+                "index": 8,
+                "kind": "app",
+                "api": "app.open",
+                "label": "/#social-saved",
+                "status": "passed",
+                "startedAt": "2026-11-12T20:02:07.819Z",
+                "durationMs": 109,
+                "events": [],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:4180/#social-saved",
+                  "nodes": 32,
+                  "since": 6,
+                  "changes": [
+                    "added link \"Moje kolekcje\" href=\"/#…\"",
+                    "added text=\"Profil · Warszawa\"",
+                    "added heading \"Zapisane trasy\"",
+                    "added text=\"Twoje, redakcyjne i społecznościowe trasy w jednym miejscu. Zapisy z tego urządzenia są dostępne również bez internetu.\"",
+                    "added text=\"Nie masz jeszcze tras zapisanych na tym urządzeniu. Trasy zapisane na koncie zostaną dołączone po zalogowaniu.\"",
+                    "added text=\"Sprawdzam trasy zapisane na koncie…\"",
+                    "removed text=\"Trasy · Warszawa\"",
+                    "removed heading \"Wybierz gotową trasę.\"",
+                    "removed text=\"Gotowe spacery po Warszawa. Wybierz, ruszaj, a aplikacja poprowadzi Cię przystanek po przystanku. Jak to działa?\"",
+                    "removed link \"Jak to działa?\" href=\"/#…\"",
+                    "removed text=\"Szukaj trasy, miejsca albo klimatu\"",
+                    "removed searchbox \"Szukaj trasy, miejsca albo klimatu\""
+                  ],
+                  "more": 138
+                },
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1d15a-65f9-7a29-8d11-291b09c0f083:9",
+                "index": 9,
+                "kind": "assertion",
+                "api": "expect.toContainText",
+                "label": "locator(\"[data-saved-routes-cards]\")",
+                "status": "failed",
+                "startedAt": "2026-11-12T20:02:07.929Z",
+                "durationMs": 5007,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-11-12T20:02:07.929Z",
+                    "durationMs": 5006,
+                    "status": "failed",
+                    "count": 45,
+                    "detail": "text \"Nie masz jeszcze tras zapisanych na tym urządzeniu. Trasy zapisane na kon… x45"
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "node_modules/e2e/dist/run/steps.js",
+                  "line": 30,
+                  "column": 16
+                },
+                "error": {
+                  "category": "test",
+                  "code": "ASSERTION_FAILED",
+                  "message": "expect.toContainText failed\nlocator: locator(\"[data-saved-routes-cards]\")\nexpected: text containing \"Trasa e2e 1794513727016\"\nobserved: text \"Nie masz jeszcze tras zapisanych na tym urządzeniu. Trasy zapisane na koncie zostaną dołączone po zalogowaniu.\" (match count 1)",
+                  "retryable": false,
+                  "details": {
+                    "locator": "locator(\"[data-saved-routes-cards]\")",
+                    "expected": "text containing \"Trasa e2e 1794513727016\"",
+                    "observed": "text \"Nie masz jeszcze tras zapisanych na tym urządzeniu. Trasy zapisane na koncie zostaną dołączone po zalogowaniu.\"",
+                    "matches": 1
+                  },
+                  "source": {
+                    "file": "node_modules/e2e/dist/expect/async.js",
+                    "line": 117,
+                    "column": 28
+                  }
+                }
+              }
+            ],
+            "appLog": [
+              {
+                "source": "error",
+                "level": "error",
+                "text": "SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document. at <anonymous>:23:2",
+                "at": "2026-11-12T20:02:05.819Z",
+                "step": 2
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/catalogue_places net::ERR_FAILED",
+                "at": "2026-11-12T20:02:06.176Z",
+                "step": 2
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/catalogue_routes net::ERR_FAILED",
+                "at": "2026-11-12T20:02:06.178Z",
+                "step": 2
+              },
+              {
+                "source": "network",
+                "level": "warning",
+                "text": "POST http://127.0.0.1:4180/api/metric 404 Not Found",
+                "at": "2026-11-12T20:02:06.274Z",
+                "step": 2
+              },
+              {
+                "source": "network",
+                "level": "warning",
+                "text": "GET http://127.0.0.1:4180/api/photo-capabilities 404 Not Found",
+                "at": "2026-11-12T20:02:06.917Z",
+                "step": 2
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/city_route_place_scores net::ERR_FAILED",
+                "at": "2026-11-12T20:02:06.927Z",
+                "step": 2
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/catalogue_places net::ERR_FAILED",
+                "at": "2026-11-12T20:02:07.408Z",
+                "step": 6
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/community_routes net::ERR_FAILED",
+                "at": "2026-11-12T20:02:07.417Z",
+                "step": 6
+              },
+              {
+                "source": "console",
+                "level": "warning",
+                "text": "Social feed SocialRoutesError: network at toSocialError (http://127.0.0.1:4180/social-routes-client.js:22:10) at call (http://127.0.0.1:4180/social-routes-client.js:118:25) at async Object.loadCommunityRoutes (http://127.0.0.1:4180/social-routes-client.js:129:23) at async refreshFeed (http://127.0.…",
+                "at": "2026-11-12T20:02:07.418Z",
+                "step": 6
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/catalogue_places net::ERR_FAILED",
+                "at": "2026-11-12T20:02:07.631Z",
+                "step": 7
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/catalogue_routes net::ERR_FAILED",
+                "at": "2026-11-12T20:02:07.632Z",
+                "step": 7
+              },
+              {
+                "source": "network",
+                "level": "warning",
+                "text": "POST http://127.0.0.1:4180/api/metric 404 Not Found",
+                "at": "2026-11-12T20:02:07.664Z",
+                "step": 7
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/city_route_place_scores net::ERR_FAILED",
+                "at": "2026-11-12T20:02:07.830Z",
+                "step": 8
+              },
+              {
+                "source": "network",
+                "level": "warning",
+                "text": "GET http://127.0.0.1:4180/api/photo-capabilities 404 Not Found",
+                "at": "2026-11-12T20:02:07.830Z",
+                "step": 8
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/catalogue_places net::ERR_FAILED",
+                "at": "2026-11-12T20:02:07.840Z",
+                "step": 8
+              },
+              {
+                "source": "network",
+                "level": "error",
+                "text": "POST https://ycfhpvtsnsmzdmpvliif.supabase.co/rest/v1/rpc/community_routes net::ERR_FAILED",
+                "at": "2026-11-12T20:02:07.925Z",
+                "step": 8
+              },
+              {
+                "source": "console",
+                "level": "warning",
+                "text": "Social feed SocialRoutesError: network at toSocialError (http://127.0.0.1:4180/social-routes-client.js:22:10) at call (http://127.0.0.1:4180/social-routes-client.js:118:25) at async Object.loadCommunityRoutes (http://127.0.0.1:4180/social-routes-client.js:129:23) at async refreshFeed (http://127.0.…",
+                "at": "2026-11-12T20:02:07.925Z",
+                "step": 8
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "errors": [],
+    "summary": {
+      "discovered": 1,
+      "selected": 1,
+      "executed": 1,
+      "passed": 0,
+      "failed": 1,
+      "interrupted": 0,
+      "flaky": 0,
+      "skipped": 0
+    },
+    "limits": {
+      "maxAgentContextBytes": 16384,
+      "maxLedgerBytes": 8192,
+      "maxObservationBytes": 262144,
+      "maxEventsPerStep": 1000,
+      "maxModelTokensPerCall": 64000
+    },
+    "usage": {
+      "discoveredResults": 1,
+      "maxAgentContextBytes": 0,
+      "maxLedgerBytes": 0,
+      "maxObservationBytes": 0,
+      "artifactBytes": 40682,
+      "downloads": 0,
+      "events": 6,
+      "modelTokens": 0,
+      "maxModelCallsInStep": 0,
+      "maxActionStepsInStep": 0
+    }
+  }
+}
