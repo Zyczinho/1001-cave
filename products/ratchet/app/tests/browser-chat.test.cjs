@@ -14,7 +14,7 @@ const now=Date.parse('2026-11-10T22:00:00Z');
 const working=(url,id)=>({id,source:'browser',status:'working',target:url,updatedAt:new Date(now-60000).toISOString()});
 
 test('ChatGPT chat addresses: projects give a name, other sites and pages are refused',()=>{
-  assert.deepEqual(parseChatUrl(PROJECT_CHAT),{url:PROJECT_CHAT,project:'1001-cave',conversation:'6af32fb0-3f14-83ed-8d8c-0fb848808289'});
+  assert.deepEqual(parseChatUrl(PROJECT_CHAT),{url:PROJECT_CHAT,project:'1001-cave',projectId:'6ae875411f64819199b53f8db8549b47',conversation:'6af32fb0-3f14-83ed-8d8c-0fb848808289'});
   assert.equal(parseChatUrl(PLAIN_CHAT).project,'');
   for(const bad of ['https://chatgpt.com.evil.io/c/6af32fb0-3f14','https://chatgpt.com/g/g-p-6ae875411f64819199b53f8db8549b47-1001-cave/project','http://chatgpt.com/c/6af32fb0-3f14-83ed','javascript:alert(1)//chatgpt.com/c/12345678'])
     assert.equal(parseChatUrl(bad),null,bad);

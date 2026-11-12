@@ -10,7 +10,7 @@ const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,claudeType,chatgptType}=require('./journal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
 const sessions = new Map();
 function upsertRow(row, {title, tool, source, kind, target, note}) {
@@ -34,6 +34,9 @@ function sweepRows(now = Date.now()) {
       : !sessionLive(agent, now) ? 'idle' : agent.status;
     if (status !== agent.status) { agent.status = status; changed = true; }
   }
+  // Scratch chats, nameless ChatGPT project rows and long-resting rows (see core.cjs).
+  const tidy = tidyAgentRows(state.agents, now);
+  if (tidy.length !== state.agents.length || tidy.some((a, i) => a !== state.agents[i])) { state.agents = tidy; changed = true; }
   return changed;
 }
 
@@ -456,8 +459,10 @@ async function appRequest(req,res) {
     if(!fromExtension(req)) return fail(res,'Nieautoryzowane żądanie',403);
     try {
       const body=await bodyOf(req);
-      const out=browserChatOutcome(body,{agents:[...sessions.values()]});
-      const name=parseChatUrl(out.url).project||'ChatGPT',row=rowKey('chatgpt',name);
+      // An address without the project name still belongs to its named project row.
+      const project=chatProjectName(body.url,[...state.agents,...sessions.values()].map(a=>a.target));
+      const out=browserChatOutcome(body,{agents:[...sessions.values()],project});
+      const name=project||'ChatGPT',row=rowKey('chatgpt',name);
       journal.record({src:'chatgpt',project:name,session:out.id.slice(8),type:chatgptType(body.state,sessions.get(out.id)?.status)});
       sessions.set(out.id,{id:out.id,source:'browser',status:out.status,target:out.url,note:out.title,updatedAt:new Date().toISOString(),row});
       upsertRow(row,{title:name,tool:'ChatGPT',source:'browser',kind:'url',target:out.url,note:out.title});
@@ -528,7 +533,7 @@ function main(){
   const before=state.agents.length;
   // Session rows are recognised by their id too: 0.2.9 builds saved ChatGPT rows as "manual".
   state.agents=state.agents.filter(a=>a.id.startsWith('project:')||!(['hook','browser'].includes(a.source)||/^(?:claude|chatgpt):/.test(a.id)));
-  if(state.agents.length!==before)save();
+  if(sweepRows()||state.agents.length!==before)save();
   setInterval(()=>{if(sweepRows())save();},60000).unref();coordinatorRunner.reconcile();checkSchedule();
   appServer=http.createServer((req,res)=>{appRequest(req,res).catch(e=>fail(res,e.message,500));});
   appServer.on('error',e=>{console.error('[ratchet] Server:',e.message);process.exit(1);});

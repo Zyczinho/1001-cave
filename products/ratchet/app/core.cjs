@@ -165,8 +165,12 @@ const BUSY_WINDOW_MS = 30 * 60 * 1000;
 // The person thinks in projects, not folders: a Claude Code worktree
 // (<repo>\.claude\worktrees\<name>) belongs to <repo>. The server passes the git root
 // (see projectRoot in server.cjs), so a subfolder like "app" is never the name.
+// Claude chats started without a folder live in throwaway "scratch" folders, one per
+// chat. They are not projects, so they share one row instead of one row per chat.
+const SCRATCH_NAME = 'Szybkie czaty Claude';
 function projectName(cwd) {
   const parts = String(cwd || '').split(/[\\/]+/).filter(Boolean);
+  if (parts.some(p => p.toLowerCase() === 'scratch-workspaces') || /^scratch-\d{4}-\d{2}-\d{2}-/i.test(parts[parts.length - 1] || '')) return SCRATCH_NAME;
   const w = parts.findIndex((p, i) => p.toLowerCase() === '.claude' && String(parts[i + 1] || '').toLowerCase() === 'worktrees');
   if (w > 0) return parts[w - 1];
   return parts.length ? parts[parts.length - 1] : '';
@@ -218,13 +222,27 @@ function agentHookOutcome(event, {agents = [], id = '', prev = null, cwd = '', n
 }
 // ChatGPT in the browser, reported by the Rachet Edge extension. Only conversation
 // URLs on chatgpt.com are accepted; a ChatGPT project URL gives the project name.
-const CHATGPT_CHAT = /^https:\/\/chatgpt\.com\/(?:g\/g-p-[0-9a-f]{32}(?:-([A-Za-z0-9-]{1,80}))?\/)?c\/([A-Za-z0-9-]{8,80})$/;
+// ChatGPT sometimes drops the name from a project address (g-p-<id>/c/...). The id is
+// what identifies the project; the name is only known from addresses that carry it.
+const CHATGPT_CHAT = /^https:\/\/chatgpt\.com\/(?:g\/g-p-([0-9a-f]{32})(?:-([A-Za-z0-9-]{1,80}))?\/)?c\/([A-Za-z0-9-]{8,80})$/;
 function parseChatUrl(url) {
   const m = CHATGPT_CHAT.exec(String(url || ''));
-  return m ? {url: m[0], project: m[1] || '', conversation: m[2]} : null;
+  return m ? {url: m[0], project: m[2] || '', projectId: m[1] || '', conversation: m[3]} : null;
+}
+// The project name for a chat address, borrowed from any known address of the same
+// project when this one has no name, so one project never becomes two rows.
+function chatProjectName(url, knownTargets = []) {
+  const chat = parseChatUrl(url);
+  if (!chat) return '';
+  if (chat.project || !chat.projectId) return chat.project;
+  for (const t of knownTargets) {
+    const other = parseChatUrl(t);
+    if (other?.projectId === chat.projectId && other.project) return other.project;
+  }
+  return '';
 }
 const MIN_ANSWER_MS = 15000;
-function browserChatOutcome(signal = {}, {agents = [], now = Date.now()} = {}) {
+function browserChatOutcome(signal = {}, {agents = [], now = Date.now(), project = ''} = {}) {
   const chat = parseChatUrl(signal.url);
   if (!chat) throw Error('Nieobsługiwany adres rozmowy ChatGPT');
   const state = ['working', 'done', 'closed'].includes(signal.state) ? signal.state : null;
@@ -232,8 +250,9 @@ function browserChatOutcome(signal = {}, {agents = [], now = Date.now()} = {}) {
   const id = 'chatgpt:' + chat.conversation;
   const prev = agents.find(a => a.id === id) || null;
   const chatTitle = String(signal.title || '').replace(/\s*[|–-]\s*ChatGPT\s*$/i, '').replace(/^ChatGPT$/i, '').trim().slice(0, 80);
-  const label = chat.project || chatTitle || 'ChatGPT';
-  const title = (chat.project && chatTitle ? chat.project + ' · ' + chatTitle : label).slice(0, 120);
+  const projectLabel = chat.project || project;
+  const label = projectLabel || chatTitle || 'ChatGPT';
+  const title = (projectLabel && chatTitle ? projectLabel + ' · ' + chatTitle : label).slice(0, 120);
   const status = state === 'working' ? 'working' : state === 'done' ? 'ready' : (prev?.status === 'working' ? 'idle' : prev?.status || 'idle');
   const note = state === 'working' ? 'Pracuje' : state === 'done' ? 'Skończył — wejdź i zobacz' : prev?.note || 'Karta zamknięta';
   let alert = null;
@@ -241,8 +260,8 @@ function browserChatOutcome(signal = {}, {agents = [], now = Date.now()} = {}) {
   // Silent when you are looking at that tab or the answer was quick; silent while
   // another chat of the same ChatGPT project is still working.
   if (state === 'done' && prev?.status === 'working' && signal.visible !== true && duration >= MIN_ANSWER_MS) {
-    const othersBusy = chat.project && agents.some(a => a.id !== id && a.source === 'browser' && a.status === 'working'
-      && parseChatUrl(a.target)?.project === chat.project && sessionLive(a, now));
+    const othersBusy = chat.projectId && agents.some(a => a.id !== id && a.source === 'browser' && a.status === 'working'
+      && parseChatUrl(a.target)?.projectId === chat.projectId && sessionLive(a, now));
     if (!othersBusy) alert = {phase: 'chatgpt-done', text: 'Gotowe: ' + label + ' — wejdź i zobacz.'};
   }
   return {id, url: chat.url, title, status, note, alert};
@@ -267,6 +286,33 @@ function rowStatus(sessions = [], now = Date.now()) {
 }
 function rowKey(source, name) {
   return 'project:' + source + ':' + String(name || '').toLowerCase().slice(0, 80);
+}
+// Rows Rachet made itself are tidied on start and once a minute:
+// - every scratch-chat row from older versions becomes the one shared row;
+// - a ChatGPT row saved under a chat title, because the address lacked the project
+//   name, goes when the same project already has its named row;
+// - a row resting for over 3 days disappears; it comes back the moment work resumes.
+const REST_MS = 3 * 24 * 3600 * 1000;
+function tidyAgentRows(agents = [], now = Date.now()) {
+  const auto = a => String(a.id || '').startsWith('project:') && ['hook', 'browser'].includes(a.source);
+  const time = a => Date.parse(a.updatedAt || 0) || 0;
+  const resting = a => a.status === 'idle' && now - time(a) > REST_MS;
+  const scratch = agents.filter(a => auto(a) && a.source === 'hook' && projectName(a.target) === SCRATCH_NAME);
+  const named = new Set(agents.filter(a => auto(a) && a.source === 'browser' && parseChatUrl(a.target)?.project)
+    .map(a => parseChatUrl(a.target).projectId));
+  const out = agents.filter(a => {
+    if (!auto(a)) return true;
+    if (scratch.includes(a)) return false;
+    const chat = a.source === 'browser' ? parseChatUrl(a.target) : null;
+    if (chat?.projectId && !chat.project && named.has(chat.projectId)) return false;
+    return !resting(a);
+  });
+  if (scratch.length) {
+    const newest = scratch.reduce((x, y) => time(y) > time(x) ? y : x);
+    const merged = {...newest, id: rowKey('claude', SCRATCH_NAME), title: SCRATCH_NAME};
+    if (!resting(merged)) out.unshift(merged);
+  }
+  return out;
 }
 // "Show this chat" for the browser extension. The extension keeps one request open
 // (a long poll); a click answers it at once, so the extension can bring the tab that
@@ -307,4 +353,4 @@ class BrowserFocus {
     return Object.assign(promise, {cancel: () => finish('', true)});
   }
 }
-module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
+module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
