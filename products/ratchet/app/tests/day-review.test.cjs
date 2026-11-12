@@ -40,11 +40,31 @@ test('review: goal, done, result and time per project; loose names are matched',
   assert.equal(cave.workMs,6*60000);
   const cr=review.projects.find(p=>p.name==='city-route-app');
   assert.deepEqual(cr.results,['Zweryfikowane: 1/1 scenariuszy e2e','e2e — SCALONE'],'"City Route" matched by letters');
-  assert.ok(review.projects.some(p=>p.name==='bez folderu'&&p.workMs===3*60000),'old scratch names count as one place');
+  assert.ok(review.brief.some(p=>p.name==='bez folderu'&&p.workMs===3*60000),'old scratch names count as one place; short ones go to "Krótko"');
   assert.deepEqual(review.other,[{project:'Inny',text:'x — y'}]);
+  // Plain words: the register's name, one goal, a state and one sentence, no PR numbers.
+  assert.equal(cave.display,'Rachet (1001-cave)');
+  assert.equal(cave.goal,'Ratchet duplikaty');
+  assert.equal(cave.status,'done');
+  assert.equal(cave.result,'1 zmiana scalona, 1 wdrożona.');
+  assert.equal(cr.result,'Sprawdzone testem.');
   const text=reviewText(review);
-  assert.match(text,/^Podsumowanie dnia 2026-11-12/);
-  assert.match(text,/1001-cave \(Claude, 6 min\)\nCel: Ratchet duplikaty\nZrobione: Scalone: #39/);
+  assert.match(text,/^Podsumowanie dnia 2026-11-12\n2 projekty, 1 przełączenie między nimi\./);
+  assert.match(text,/Rachet \(1001-cave\) · 6 min\nCel: Ratchet duplikaty\nRezultat: osiągnięty\. 1 zmiana scalona, 1 wdrożona\./);
+  assert.match(text,/Krótko: Szybkie czaty Claude\./);
+  assert.match(text,/Wniosek: Dzień zamknięty/);
+  assert.doesNotMatch(text,/#39|commit/,'no PR numbers or commits in the summary');
+});
+
+test('review: unknown results lead the takeaway; more goals are counted, not listed',()=>{
+  const chat=(h,type)=>({ts:T(h),src:'chatgpt',project:'ChatGPT',session:'c1',type});
+  const r=buildDayReview({date,now,events:[chat(0,'prompt'),chat(1/12,'work'),chat(1/6,'done')],register:[],git:{},verifications:[],
+    dayLog:['A','B','C'].map(t=>({date,src:'chatgpt',project:'ChatGPT',topic:t}))});
+  const p=r.projects[0];
+  assert.equal(p.display,'ChatGPT (rozmowy)');
+  assert.equal(p.goal,'C (+2 inne rozmowy)');
+  assert.equal(p.status,'unknown');
+  assert.match(r.lesson,/^Bez zmierzonego wyniku: ChatGPT \(rozmowy\)\. Rano zapisz/);
 });
 
 test('server: Claude sessions count only with a message from today, never by file date',()=>{

@@ -186,13 +186,19 @@ let dayReviewData=null;
 function renderDayReview(){
   const r=dayReviewData?.review;
   if(!r)return '';
-  const line=(label,items,none)=>'<p class="task-note"><strong>'+label+':</strong> '+esc(items.length?items.join('; '):none)+'</p>';
+  // Short and plain: a goal, a state and one sentence per project; details stay folded.
+  const state={done:['osiągnięty','good'],progress:['w toku','warm'],unknown:['nieznany','']};
+  const details=p=>[...p.done,...p.results].length?'<details class="coordinator-report"><summary>Szczegóły</summary>'
+    +[...p.done,...p.results].map(x=>'<p class="hint">'+esc(x)+'</p>').join('')+'</details>':'';
   return '<div class="list-head"><h3>Podsumowanie dnia</h3><span><button class="btn tiny secondary" data-action="day-review-copy">'+I('copy')+' Kopiuj</button> <button class="btn tiny ghost" data-action="day-review-close">Zamknij</button></span></div>'
-    +(r.projects.length?r.projects.map(p=>'<article class="agent-card"><div class="task-title">'+esc(p.name)+'</div>'
-      +'<p class="hint">'+esc((p.tools.join(', ')||'—')+' · '+duration(p.workMs))+'</p>'
-      +line('Cel',p.goals,'brak zapisanego celu')+line('Zrobione',p.done,'brak commitów')+line('Rezultat',p.results,'niezweryfikowane')+'</article>').join('')
+    +'<p class="task-note">'+esc(r.overview)+'</p>'
+    +(r.projects.length?r.projects.map(p=>{const [label,tone]=state[p.status];
+      return '<article class="agent-card"><div class="task-title">'+esc(p.display)+' <span class="hint">· '+esc(duration(p.workMs))+'</span></div>'
+      +'<p class="task-note"><strong>Cel:</strong> '+esc(p.goal)+'</p>'
+      +'<p class="task-note"><span class="pill '+tone+'">'+label+'</span> '+esc(p.result)+'</p>'+details(p)+'</article>';}).join('')
       :'<p class="list-empty">Dziś Rachet nie widział jeszcze pracy agentów.</p>')
-    +r.other.map(o=>'<p class="hint">'+esc(o.project+': '+o.text)+'</p>').join('');
+    +(r.brief.length?'<p class="hint">Krótko: '+esc(r.brief.map(p=>p.display).join(', '))+'.</p>':'')
+    +'<p class="task-note"><strong>Wniosek:</strong> '+esc(r.lesson)+'</p>';
 }
 function renderDayTime(){
   const d=snapshot.today;
