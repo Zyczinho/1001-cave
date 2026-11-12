@@ -24,6 +24,8 @@ const INIT = {
   chatgptSignals: [],
   reminded: {},
   activity: [],
+  // Agent rows the person ended with "Zakończ": row id -> when (see rowWakes).
+  hiddenRows: {},
   orbPosition: null
 };
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -39,6 +41,9 @@ function normalizeStore(obj) {
   def.settings.panelSize = normalizePanelSize(def.settings.panelSize);
   if (obj.reminded && typeof obj.reminded === 'object') def.reminded = obj.reminded;
   if (Array.isArray(obj.activity)) def.activity = obj.activity.slice(0, 100);
+  if (obj.hiddenRows && typeof obj.hiddenRows === 'object' && !Array.isArray(obj.hiddenRows))
+    def.hiddenRows = Object.fromEntries(Object.entries(obj.hiddenRows)
+      .filter(([id, at]) => id.startsWith('project:') && typeof at === 'string').slice(-200));
   def.coordinator=normalizeCoordinator(obj.coordinator);
   def.chatgptRuns=normalizeChatGPTRuns(obj.chatgptRuns);
   def.chatgptSignals=normalizeSignals(obj.chatgptSignals);
@@ -310,8 +315,13 @@ function rowKey(source, name) {
 // - every scratch-chat row from older versions becomes the one shared row;
 // - a ChatGPT row saved under a chat title, because the address lacked the project
 //   name, goes when the same project already has its named row;
-// - a row resting for over 3 days disappears; it comes back the moment work resumes.
-const REST_MS = 3 * 24 * 3600 * 1000;
+// - a row resting for over 12 hours disappears; it comes back the moment work resumes.
+const REST_MS = 12 * 3600 * 1000;
+// A row ended with "Zakończ" stays away until its work starts again or it needs the
+// person. Closing a tab, ending a session or "still done" never brings it back.
+function rowWakes(status) {
+  return ['working', 'needs_attention', 'blocked'].includes(status);
+}
 function tidyAgentRows(agents = [], now = Date.now()) {
   const auto = a => String(a.id || '').startsWith('project:') && ['hook', 'browser'].includes(a.source);
   const time = a => Date.parse(a.updatedAt || 0) || 0;
@@ -372,4 +382,4 @@ class BrowserFocus {
     return Object.assign(promise, {cancel: () => finish('', true)});
   }
 }
-module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,transcriptTitle,topicFromNote,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
+module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,transcriptTitle,topicFromNote,rowWakes,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};

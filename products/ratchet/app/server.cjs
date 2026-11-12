@@ -10,11 +10,17 @@ const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,claudeType,chatgptType}=require('./journal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
 const sessions = new Map();
 // The row's topic is the topic of the session or chat that spoke last.
-function upsertRow(row, {title, tool, source, kind, target, note, topic}) {
+// `status` is that session's own status: a row ended with "Zakończ" returns only when
+// the session that spoke starts working or needs the person (rowWakes in core.cjs).
+function upsertRow(row, {title, tool, source, kind, target, note, topic, status}) {
+  if (state.hiddenRows[row]) {
+    if (!rowWakes(status)) return;
+    delete state.hiddenRows[row];
+  }
   const members = [...sessions.values()].filter(s => s.row === row);
   const index = state.agents.findIndex(x => x.id === row), prev = index >= 0 ? state.agents[index] : null;
   const clean = normalizeItem('agents', {...prev, id: row, title, tool, status: rowStatus(members), source, kind,
@@ -359,6 +365,18 @@ async function handleAction(key,data) {
     panelRequests++;return {panelRequested:true};
   }
   if(key==='open-target')return data.kind==='url'&&parseChatUrl(data.target)?showChat(data.target):openTarget(data.kind,data.target);
+  if(key==='agent:finish'){
+    // "Zakończ": the row leaves the list and stays away until that work starts again.
+    // Only rows Rachet made itself; manual agents are removed through edit.
+    const id=String(data.id||'');
+    const agent=state.agents.find(x=>x.id===id&&id.startsWith('project:'));
+    if(!agent)throw Error('Nie ma takiego agenta');
+    state.agents=state.agents.filter(x=>x!==agent);
+    state.hiddenRows[id]=new Date().toISOString();
+    const ids=Object.keys(state.hiddenRows);
+    for(const old of ids.slice(0,Math.max(0,ids.length-200)))delete state.hiddenRows[old];
+    save();return true;
+  }
   if(key==='agent:focus'){
     // The panel cannot raise another app's window; the orb does it on its next tick.
     const agent=state.agents.find(x=>x.id===String(data.id||''));
@@ -466,7 +484,7 @@ async function appRequest(req,res) {
       const name=project||'ChatGPT',row=rowKey('chatgpt',name);
       journal.record({src:'chatgpt',project:name,session:out.id.slice(8),type:chatgptType(body.state,sessions.get(out.id)?.status)});
       sessions.set(out.id,{id:out.id,source:'browser',status:out.status,target:out.url,note:out.title,topic:out.topic,updatedAt:new Date().toISOString(),row});
-      upsertRow(row,{title:name,tool:'ChatGPT',source:'browser',kind:'url',target:out.url,note:out.title,topic:out.topic});
+      upsertRow(row,{title:name,tool:'ChatGPT',source:'browser',kind:'url',target:out.url,note:out.title,topic:out.topic,status:out.status});
       save();
       // The alert opens the conversation that finished, even if the row moves on.
       if(out.alert)activity(out.alert.text,'reminder','',out.alert.phase,{agentId:row,target:out.url});
@@ -533,7 +551,7 @@ function startHookServer() {
       const topic=['SessionStart','UserPromptSubmit','Stop'].includes(event)||!prev?.topic
         ?sessionTitle(String(data.transcript_path||''))||prev?.topic||'':prev.topic;
       sessions.set(id,{id,source:'hook',status:outcome.status,target:cwd,note:outcome.note,topic,updatedAt:new Date().toISOString(),row});
-      upsertRow(row,{title:name,tool:'Claude Code',source:'hook',kind:'folder',target:cwd,note:outcome.note,topic});
+      upsertRow(row,{title:name,tool:'Claude Code',source:'hook',kind:'folder',target:cwd,note:outcome.note,topic,status:outcome.status});
       save();
       const coordId=String(data.coordinator_job_id||'').slice(0,80);
       const coordinated=coordId&&state.coordinator.jobs.some(j=>j.id===coordId&&(j.status==='running'||j.status==='queued'));
