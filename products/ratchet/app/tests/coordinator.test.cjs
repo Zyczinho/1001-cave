@@ -24,8 +24,11 @@ test('opt-in; concrete project folder and user goal are mandatory',()=>{
 test('restricted, bounded CLI arguments and no shell',()=>{
   const a=makeJob(params);
   const spec=executionSpec(a);
-  assert.equal(spec.command,'claude');
-  assert.ok(spec.args.includes('--restricted'));
+  assert.match(spec.command,/claude(\.exe)?$/i);
+  // Only flags Claude Code has: "--restricted" / "--permission-prompts" stopped every stage.
+  assert.ok(!spec.args.includes('--restricted')&&!spec.args.includes('--permission-prompts'));
+  assert.deepEqual(spec.args.slice(spec.args.indexOf('--permission-mode'),spec.args.indexOf('--permission-mode')+2),['--permission-mode','dontAsk']);
+  assert.deepEqual(spec.args.slice(spec.args.indexOf('--allowedTools')+1,spec.args.indexOf('--allowedTools')+2),['Read,Glob,Grep']);
   assert.ok(spec.args.includes('--no-session-persistence'));
   assert.ok(spec.args.includes('--max-budget-usd'));
   assert.deepEqual(spec.args.slice(spec.args.indexOf('--tools')+1,spec.args.indexOf('--tools')+2),['Read,Glob,Grep']);
@@ -53,7 +56,7 @@ test('automatic handoff passes first agent output into second run; only terminal
   runner.tick();
   await next();
   assert.equal(calls.length,2,'second agent should launch without human copy/paste');
-  assert.equal(calls[0].command,'claude');
+  assert.match(calls[0].command,/claude(\.exe)?$/i);
   assert.equal(calls[1].command,'codex');
   assert.match(calls[1].args.at(-1),/uwaga na import zdjęć/);
   assert.equal(calls[0].options.shell,false);
@@ -104,3 +107,24 @@ test('duplicate Quit command is removed from Settings but stays in three-dot men
   assert.match(html,/data-action="show-settings"/);
 });
 test.after(()=>fs.rmSync(project,{recursive:true,force:true}));
+
+test('Windows: Claude is found as a real .exe, never a bare name the no-shell start cannot run',()=>{
+  const {claudeCommand}=require('../coordinator.cjs');
+  const W=path.win32,appdata=W.join('C:','Users','me','AppData','Roaming');
+  const npmExe=W.join(appdata,'npm','node_modules','@anthropic-ai','claude-code','bin','claude.exe');
+  const env={APPDATA:appdata,USERPROFILE:W.join('C:','Users','me'),PATH:W.join('C:','Windows')};
+  assert.equal(claudeCommand({env,platform:'win32',exists:f=>f===npmExe}),npmExe);
+  const own=W.join('D:','claude.exe');
+  assert.equal(claudeCommand({env:{...env,RATCHET_CLAUDE_PATH:own},platform:'win32',exists:f=>f===own}),own);
+  assert.equal(claudeCommand({env,platform:'linux',exists:()=>false}),'claude');
+});
+
+test('"Sprawdź pracę": the folder changes Rachet saw go into the agent prompt',()=>{
+  const {promptFor}=require('../coordinator.cjs');
+  const job=makeJob({...params,context:'Gałąź:\nclaude/x\n\nNiezapisane zmiany (git status):\n M app.js'});
+  assert.match(promptFor(job),/What Rachet saw in this folder \(git\):\nGałąź:\nclaude\/x/);
+  assert.equal(normalizeCoordinator({jobs:[job]}).jobs[0].context,job.context,'kept across restarts');
+  const src=fs.readFileSync(path.join(__dirname,'..','server.cjs'),'utf8');
+  assert.match(src,/key==='coordinator:check'/);
+  assert.match(src,/execFileSync\('git',args,\{cwd:dir/);
+});

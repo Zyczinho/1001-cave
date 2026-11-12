@@ -71,6 +71,7 @@ const bridge=window.ratchet||{
   chatgptResume:async()=>{throw Error('Wymagany token Workspace Agents.');},
   chatgptRemove:async id=>{state().chatgptRuns=(state().chatgptRuns||[]).filter(j=>j.id!==id);persistDemo();return true;},
   coordinatorCreate:async data=>{throw Error('Uruchamianie agentów działa w aplikacji Windows.');},
+  coordinatorCheck:async()=>{throw Error('Sprawdzanie pracy działa w aplikacji Windows.');},
   coordinatorEnable:async enabled=>{state().coordinator.enabled=enabled;persistDemo();return {enabled};},
   coordinatorRetry:async()=>{throw Error('Uruchamianie agentów działa w aplikacji Windows.');},
   coordinatorRemove:async id=>{state().coordinator.jobs=state().coordinator.jobs.filter(j=>j.id!==id);persistDemo();},
@@ -364,8 +365,16 @@ function renderChatGPTWorkspace(){
 function renderCoordinator(){
   const c=state().coordinator||{enabled:false,jobs:[]};
   const running=(c.jobs||[]).filter(j=>j.status==='running').length;
-  let html='<div class="group-title"><h3>Koordynator · Beta</h3><span class="quiet">'+running+'/2 pracuje</span></div>';
-  html+='<div class="coordinator-box"><div class="coordinator-top"><div><strong>Przekazywanie agent → agent</strong><p class="hint">2 etapy: analiza Claude Code → recenzja Claude Code lub Codex CLI. Odczyt repo, bez zapisu, commitów i wdrożeń.</p></div>'
+  // One click: a Claude project from the Agenci list is checked by a second agent.
+  // Folder, title and the list of changes fill themselves (coordinator:check).
+  const projects=state().agents.filter(a=>a.source==='hook'&&a.kind==='folder'&&a.title!=='bez folderu').slice(0,6);
+  let html='<p class="hint">Drugi Claude czyta zmiany w folderze projektu (bez zapisu, commitów i wdrożeń), szuka błędów i ryzyk, a drugi etap sprawdza jego wnioski. Raport przyjdzie jako powiadomienie. Koszt: do ok. $0.70 z limitu Claude za jedno sprawdzenie.</p>';
+  html+=projects.length?'<div class="rows">'+projects.map(a=>'<article class="row agent-row"><div class="row-main"><span class="row-meta">Claude · '+esc(a.title)+'</span><span class="row-title">'+esc(a.topic||a.title)+'</span></div>'
+      +'<button class="btn tiny secondary" data-action="coordinator-check" data-id="'+esc(a.id)+'">Sprawdź</button></article>').join('')+'</div>'
+    :'<p class="list-empty">Brak projektów Claude do sprawdzenia. Pojawią się, gdy agent popracuje w jakimś folderze.</p>';
+  if(running)html+='<p class="hint">'+running+'/2 sprawdzenia trwają.</p>';
+  // The full form stays for custom tasks, folded so it does not get in the way.
+  html+='<details class="coordinator-report"><summary>Własne zadanie</summary><div class="coordinator-box"><div class="coordinator-top"><div><strong>Przekazywanie agent → agent</strong><p class="hint">2 etapy: analiza Claude Code → recenzja Claude Code lub Codex CLI. Odczyt repo, bez zapisu, commitów i wdrożeń.</p></div>'
     +'<button class="btn small '+(c.enabled?'danger':'secondary')+'" data-action="coordinator-toggle" data-enabled="'+String(!c.enabled)+'">'+(c.enabled?'Wyłącz nowe':'Włącz')+'</button></div>';
   html+='<form id="coordinatorForm" class="coordinator-form">'
     +'<input name="title" aria-label="Tytuł zadania" placeholder="Np. Audyt zdjęć City Route" maxlength="120" required>'
@@ -373,7 +382,7 @@ function renderCoordinator(){
     +'<input name="projectRoot" aria-label="Folder projektu Windows" placeholder="C:\\Users\\...\\city-route-app" required>'
     +'<select name="reviewer" aria-label="Drugi wykonawca"><option value="claude">Recenzja: drugi Claude Code</option><option value="codex">Recenzja: Codex CLI (jeśli zainstalowany)</option></select>'
     +'<button class="btn small full" type="submit">+ Zleć analizę i recenzję</button></form>'
-    +'<p class="hint">Tryb wykonawczy domyślnie wyłączony. Claude ma szacowany limit $0.35 na etap (może zostać przekroczony). Codex zużywa limity swojego konta i nie ma limitu USD w Rachecie. Maks. 2 zadania równolegle. Nie steruje otwartymi rozmowami ChatGPT.</p></div>';
+    +'<p class="hint">Tryb wykonawczy domyślnie wyłączony. Claude ma szacowany limit $0.35 na etap (może zostać przekroczony). Codex zużywa limity swojego konta i nie ma limitu USD w Rachecie. Maks. 2 zadania równolegle. Nie steruje otwartymi rozmowami ChatGPT.</p></div></details>';
   for(const job of (c.jobs||[]).slice(0,8)){
     const names={queued:'Oczekuje',running:'Agent analizuje',attention:'Wymaga uwagi',done:'Analizy gotowe',cancelled:'Anulowano'};
     const steps=job.stages||[];
@@ -410,9 +419,12 @@ function renderAgents(){
   if(gh?.overlapping?.length)html+='<div class="alert">'+I('alert')+' <div>'+gh.overlapping.length+' '+(gh.overlapping.length===1?'para PR-ów zmienia':'pary PR-ów zmieniają')+' te same pliki. <button class="btn tiny ghost" data-action="metric" data-metric="risk">Pokaż</button></div></div>';
   if(gh?.prs?.length)html+=more('prs','Otwarte PR-y · '+gh.prs.length,gh.prs.map(p=>{const fail=gh.runs.filter(r=>r.head_sha===p.head_sha).some(r=>r.conclusion==='failure');return '<div class="signal"><span>#'+p.number+' '+esc(p.title)+(fail?'<small class="bad-text">CI błąd</small>':'')+'</span><button class="plain-icon" data-action="open" data-kind="url" data-target="'+esc(p.html_url)+'" title="Otwórz" aria-label="Otwórz PR #'+p.number+'">'+I('external')+'</button></div>';}).join(''));
   // Advanced tools stay folded: they are optional and cost money or need tokens.
-  html+=more('coordinator','Koordynator agentów (beta)',renderCoordinator());
-  html+=more('chatgpt','ChatGPT Workspace',renderChatGPTWorkspace()+renderChatGPTSignals());
-  html+=more('handoff','Przekaż kontekst agentowi','<p class="hint">Sesje, PR-y, CI i ryzyka w jednym tekście do schowka.</p><button class="btn small full" data-action="handoff">'+I('copy')+' Skopiuj</button>');
+  html+=more('coordinator','Sprawdź pracę agenta',renderCoordinator());
+  // ChatGPT Workspace needs a Workspace Agent token; without one it is only noise, so it
+  // shows up again only once it is set up.
+  if(snapshot.chatgptWorkspaceReady)html+=more('chatgpt','ChatGPT Workspace',renderChatGPTWorkspace()+renderChatGPTSignals());
+  // Only copies text to the clipboard: nothing is sent, started or changed.
+  html+=more('handoff','Skopiuj stan dla nowego agenta','<p class="hint">Kopiuje do schowka jeden tekst: sesje, PR-y, CI i ryzyka. Niczego nie wysyła, nie uruchamia i nie zmienia. Wklej go na początku nowej rozmowy z agentem, żeby nie tłumaczyć wszystkiego od zera.</p><button class="btn small full" data-action="handoff">'+I('copy')+' Skopiuj do schowka</button>');
   if(agentGuideSeen)html+=renderAgentGuide();
   return html;
 }
@@ -578,6 +590,16 @@ async function handleAction(el){
     await bridge.coordinatorEnable(enabled);
     if(!DEMO)snapshot=await bridge.snapshot();
     render();toast(enabled?'Koordynator uruchomiony':'Nowe zadania wstrzymane');
+  }
+  if(act==='coordinator-check'){
+    // The cost question is asked once, on the first check; after that one click is enough.
+    if(!state().coordinator?.enabled){
+      if(!await compactConfirm('Sprawdzenie uruchamia na tym komputerze dwa etapy Claude: do ok. $0.70 z Twojego limitu za każde sprawdzenie. Agenci tylko czytają pliki, niczego nie zmieniają. Włączyć?'))return;
+      await bridge.coordinatorEnable(true);
+    }
+    await bridge.coordinatorCheck(id);
+    if(!DEMO)snapshot=await bridge.snapshot();
+    render();toast('Sprawdzam. Dam znać, gdy raport będzie gotowy.');
   }
   if(act==='coordinator-retry'){
     await bridge.coordinatorRetry(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Ponowienie zlecone (maks. raz)');

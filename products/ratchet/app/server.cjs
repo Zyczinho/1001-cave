@@ -4,8 +4,22 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const os = require('node:os');
-const {spawn} = require('node:child_process');
+const {spawn,execFileSync} = require('node:child_process');
 const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
+// "Sprawdź pracę": the reviewing agent may only read files, so Rachet itself collects
+// what changed in the folder (read-only git commands, no shell) and hands it over.
+function folderChanges(dir){
+  const git=args=>{try{return execFileSync('git',args,{cwd:dir,encoding:'utf8',timeout:5000,windowsHide:true,stdio:['ignore','pipe','ignore']}).trim();}catch{return '';}};
+  const base=git(['rev-parse','--verify','--quiet','origin/main'])?'origin/main':'';
+  const parts=[
+    ['Gałąź',git(['branch','--show-current'])],
+    ['Niezapisane zmiany (git status)',git(['status','--short'])],
+    ['Ostatnie commity',git(['log','--oneline','-8'])],
+    ['Pliki zmienione względem '+(base||'poprzednich commitów'),base?git(['diff','--stat',base+'...HEAD']):git(['diff','--stat','HEAD~3'])]
+  ].filter(([,v])=>v);
+  return parts.map(([k,v])=>k+':\n'+v).join('\n\n').slice(0,6000);
+}
+const CHECK_GOAL='Sprawdź pracę wykonaną w tym folderze (zmiany opisane niżej). Znajdź błędy, rzeczy niedokończone, brakujące testy i ryzyka przed scaleniem. Przy każdym znalezisku podaj plik i powód. Na końcu jedno zdanie: czy to jest gotowe do scalenia.';
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,claudeType,chatgptType}=require('./journal.cjs');
@@ -239,6 +253,16 @@ async function handleAction(key,data) {
   if(key==='coordinator:create'){
     if(state.coordinator.jobs.length>=30)throw Error('Limit 30 zadań — najpierw usuń stare.');
     const job=makeJob(data);
+    state.coordinator.jobs.unshift(job);save();
+    coordinatorRunner.tick();return job;
+  }
+  if(key==='coordinator:check'){
+    // One click from a Claude project: folder, title and the list of changes fill themselves.
+    const agent=state.agents.find(x=>x.id===String(data.id||'')&&x.source==='hook'&&x.kind==='folder');
+    if(!agent)throw Error('Nie ma takiego projektu Claude');
+    if(!state.coordinator.enabled)throw Error('Najpierw włącz Koordynatora');
+    if(state.coordinator.jobs.length>=30)throw Error('Limit 30 zadań — najpierw usuń stare.');
+    const job=makeJob({title:'Sprawdź: '+(agent.topic||agent.title),goal:CHECK_GOAL,projectRoot:agent.target,context:folderChanges(agent.target)});
     state.coordinator.jobs.unshift(job);save();
     coordinatorRunner.tick();return job;
   }

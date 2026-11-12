@@ -33,6 +33,7 @@ if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.
     chatgptResume:id=>action('chatgpt:resume',{id}),
     chatgptRemove:id=>action('chatgpt:remove',{id}),
     coordinatorCreate:data=>action('coordinator:create',data),
+    coordinatorCheck:id=>action('coordinator:check',{id}),
     coordinatorEnable:enabled=>action('coordinator:enable',{enabled}),
     coordinatorRetry:id=>action('coordinator:retry',{id}),
     coordinatorRemove:id=>action('coordinator:remove',{id}),
