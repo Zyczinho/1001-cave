@@ -56,7 +56,8 @@ function buildDayReview({date, events = [], dayLog = [], verifications = [], reg
   const projects = new Map();
   const get = (name, tool) => {
     const k = key(name);
-    if (!projects.has(k)) projects.set(k, {name, tools: new Set(), goals: [], done: [], results: [], workMs: 0});
+    if (!projects.has(k)) projects.set(k, {name, alias: '', tools: new Set(), goals: [], done: [], results: [], workMs: 0,
+      merged: 0, commits: 0, deployed: 0, verified: 0, guardOpen: 0});
     const p = projects.get(k); if (tool) p.tools.add(tool); return p;
   };
   for (const e of dayLog.filter(e => e.date === date)) {
@@ -67,6 +68,7 @@ function buildDayReview({date, events = [], dayLog = [], verifications = [], reg
     const p = projects.get(k); if (!p) continue;
     for (const m of g.merged || []) p.done.push('Scalone: ' + m);
     const commits = (g.commits || []).length;
+    p.merged += (g.merged || []).length; p.commits += commits;
     if (commits) p.done.push(`${commits} ${commits === 1 ? 'commit' : commits < 5 ? 'commity' : 'commitów'} dziś`);
   }
   // Agent time per project, from the event log.
@@ -84,31 +86,68 @@ function buildDayReview({date, events = [], dayLog = [], verifications = [], reg
     const p = projects.get(key(name)); if (!p) continue;
     const text = labels[v.verdict] + (v.summary ? ': ' + clip(v.summary.replace(/^Zweryfikowane:\s*/, ''), 140) : '');
     if (!p.results.includes(text)) p.results.push(text);
+    if (v.verdict === 'pass') p.verified++; else p.guardOpen++;
   }
   const other = [];
   for (const r of register) {
     const p = registerProject(r);
     const text = `${r.what} — ${r.state}` + (r.link ? ` (${r.link})` : '');
-    if (p) { if (!p.results.includes(text)) p.results.push(text); } else other.push({project: r.project, text});
+    if (p) {
+      if (!p.results.includes(text)) { p.results.push(text); if (/WDRO|ZAAKCEPT|WYSŁAN/i.test(r.state)) p.deployed++; }
+      // The register's own name for a folder ("Rachet" for 1001-cave) is what the person says.
+      if (!p.alias && r.project && letters(r.project) !== letters(p.name)) p.alias = r.project;
+    } else other.push({project: r.project, text});
   }
-  const list = [...projects.values()].map(p => ({...p, tools: [...p.tools]}))
+  const list = [...projects.values()].map(p => ({...p, tools: [...p.tools], ...describe(p)}))
     .filter(p => p.goals.length || p.done.length || p.results.length || p.workMs >= 60000)
     .sort((a, b) => b.workMs - a.workMs);
-  return {date, totals: daySummary(events, now), projects: list, other};
+  const totals = daySummary(events, now);
+  // Short projects (under 5 minutes, nothing measurable) are one line, not a card each.
+  const main = list.filter(p => p.workMs >= 5 * 60000 || p.status !== 'unknown');
+  const brief = list.filter(p => !main.includes(p));
+  return {date, totals, projects: main, brief, other, overview: overview(totals), lesson: lesson(main, totals)};
+}
+
+// Plain words, no numbers of PRs or commits: a goal, a state and one sentence.
+const plural = (n, one, few, many) => n === 1 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many;
+function describe(p) {
+  const display = p.name === 'bez folderu' ? 'Szybkie czaty Claude' : p.name === 'ChatGPT' ? 'ChatGPT (rozmowy)' : p.alias ? `${p.alias} (${p.name})` : p.name;
+  const goal = p.goals.length ? p.goals[p.goals.length - 1] + (p.goals.length > 1 ? ` (+${p.goals.length - 1} ${plural(p.goals.length - 1, 'inna rozmowa', 'inne rozmowy', 'innych rozmów')})` : '') : 'cel nie był zapisany';
+  const bits = [];
+  if (p.merged) bits.push(`${p.merged} ${plural(p.merged, 'zmiana scalona', 'zmiany scalone', 'zmian scalonych')}`);
+  if (p.deployed) bits.push(`${p.deployed} ${plural(p.deployed, 'wdrożona', 'wdrożone', 'wdrożonych')}`);
+  if (p.verified) bits.push('sprawdzone testem');
+  let status, result;
+  if (p.guardOpen && !p.verified) { status = 'progress'; result = 'Sprawdzenie jeszcze nie przeszło.'; }
+  else if (p.merged || p.deployed || p.verified) { status = 'done'; result = bits.join(', ').replace(/^./, c => c.toUpperCase()) + '.'; }
+  else if (p.commits) { status = 'progress'; result = 'Są zmiany w kodzie, jeszcze nie scalone.'; }
+  else { status = 'unknown'; result = 'Rozmowy bez zmian w kodzie: wyniku nie da się zmierzyć.'; }
+  return {display, goal, status, result};
+}
+function overview(t) {
+  return `${t.projects} ${plural(t.projects, 'projekt', 'projekty', 'projektów')}, ${t.switches} ${plural(t.switches, 'przełączenie', 'przełączenia', 'przełączeń')} między nimi. `
+    + `Agenci pracowali ok. ${minutes(t.workMs)}` + (t.waitMs >= 60000 ? `, czekali na Ciebie ok. ${minutes(t.waitMs)}.` : '.');
+}
+// One rule-based takeaway, the most useful first.
+function lesson(projects, t) {
+  const unknown = projects.filter(p => p.status === 'unknown').map(p => p.display);
+  if (unknown.length) return `Bez zmierzonego wyniku: ${unknown.slice(0, 3).join(', ')}. Rano zapisz przy nich, po czym poznasz, że są zrobione.`;
+  const hours = t.workMs / 3600e3;
+  if (t.switches >= 20 && hours > 0 && t.switches / Math.max(hours, 1) > 8) return `Dużo przełączeń (${t.switches}). Jutro spróbuj trzymać się 1–2 projektów naraz.`;
+  if (t.waitMs >= 30 * 60000) return `Agenci czekali na Ciebie ok. ${minutes(t.waitMs)}: warto szybciej odpowiadać albo dawać im pełniejsze zadania.`;
+  return 'Dzień zamknięty: każdy projekt ma wynik.';
 }
 
 const minutes = ms => { const m = Math.round((ms || 0) / 60000); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + m % 60 + ' min' : ''); };
 // Plain text for the clipboard (a daily note, a message, a journal).
+const STATE = {done: 'osiągnięty', progress: 'w toku', unknown: 'nieznany'};
 function reviewText(r) {
-  const lines = [`Podsumowanie dnia ${r.date}`,
-    `${r.totals.projects} projekty · ${r.totals.switches} przełączeń · agenci pracowali ${minutes(r.totals.workMs)} · czekali na Ciebie ${minutes(r.totals.waitMs)}`];
+  const lines = [`Podsumowanie dnia ${r.date}`, r.overview];
   for (const p of r.projects) {
-    lines.push('', `${p.name} (${p.tools.join(', ') || '—'}, ${minutes(p.workMs)})`);
-    lines.push('Cel: ' + (p.goals.length ? p.goals.join('; ') : 'brak zapisanego celu'));
-    lines.push('Zrobione: ' + (p.done.length ? p.done.join('; ') : 'brak commitów'));
-    lines.push('Rezultat: ' + (p.results.length ? p.results.join('; ') : 'niezweryfikowane'));
+    lines.push('', `${p.display} · ${minutes(p.workMs)}`, `Cel: ${p.goal}`, `Rezultat: ${STATE[p.status]}. ${p.result}`);
   }
-  for (const o of r.other) lines.push('', `${o.project}: ${o.text}`);
+  if (r.brief.length) lines.push('', 'Krótko: ' + r.brief.map(p => p.display).join(', ') + '.');
+  lines.push('', 'Wniosek: ' + r.lesson);
   return lines.join('\n');
 }
 
