@@ -266,6 +266,14 @@ function browserChatOutcome(signal = {}, {agents = [], now = Date.now(), project
   }
   return {id, url: chat.url, title, topic: chatTitle, status, note, alert};
 }
+// A ChatGPT row's note holds "project · chat title" (or just the chat title for chats
+// outside a project). The chat title is the topic; the project name alone is not.
+function topicFromNote(note = '', place = '') {
+  const text = String(note || '').trim();
+  const at = text.indexOf(' · ');
+  if (at >= 0) return text.slice(at + 3).trim();
+  return text && !['chatgpt', String(place).toLowerCase()].includes(text.toLowerCase()) ? text : '';
+}
 // The topic of a Claude session is the title Claude gives it (the name in the Claude
 // app's session list). Claude writes it into the session file again and again, so the
 // last one in a chunk of the file is the current name.
@@ -364,4 +372,4 @@ class BrowserFocus {
     return Object.assign(promise, {cancel: () => finish('', true)});
   }
 }
-module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,transcriptTitle,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
+module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,transcriptTitle,topicFromNote,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};

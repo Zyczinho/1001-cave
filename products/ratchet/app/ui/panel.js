@@ -222,11 +222,11 @@ function renderAgent(a){
   const open=a.source==='hook'?' data-action="agent-focus" data-id="'+esc(a.id)+'" title="Przejdź do Claude"'
     :a.target?' data-action="open" data-kind="'+esc(a.kind||'url')+'" data-target="'+esc(a.target)+'" title="Otwórz"'
     :' data-action="edit" data-collection="agents" data-id="'+esc(a.id)+'" title="Edytuj"';
-  // Grey above: where it runs (tool · folder or ChatGPT project). White: what it is about,
-  // the session or chat title. Without a known topic the place itself is the white line.
+  // Every automatic row reads the same way. Grey above: where it runs (tool · folder or
+  // ChatGPT project). White: what it is about (session or chat title), never the folder.
   const tool=a.source==='hook'?'Claude':a.source==='browser'?'ChatGPT':'';
-  const topic=tool&&a.topic&&a.topic.toLowerCase()!==String(a.title).toLowerCase()?a.topic:'';
-  const place=[tool,topic&&a.title.toLowerCase()!==tool.toLowerCase()?a.title:''].filter(Boolean).join(' · ');
+  const topic=tool?(a.topic||'Bez tematu'):'';
+  const place=[tool,tool&&String(a.title).toLowerCase()!==tool.toLowerCase()?a.title:''].filter(Boolean).join(' · ');
   return '<article class="row agent-row"><span class="s-dot '+color+'" aria-hidden="true"></span>'
     +'<button class="row-main"'+open+'>'+(place?'<span class="row-meta">'+esc(place)+'</span>':'')
     +'<span class="row-title">'+esc(topic||a.title)+'</span><span class="row-meta">'+esc(label)+(a.updatedAt?' · '+formatTime(a.updatedAt):'')+'</span></button>'

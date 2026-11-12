@@ -10,7 +10,7 @@ const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,claudeType,chatgptType}=require('./journal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
 const sessions = new Map();
 // The row's topic is the topic of the session or chat that spoke last.
@@ -546,13 +546,35 @@ function startHookServer() {
   hookServer.on('error',e=>console.warn('[ratchet] Hook server:',e.message));
   hookServer.listen(CLAUDE_PORT,'127.0.0.1');
 }
+// Rows saved before topics existed get one on start, so every row reads the same way:
+// ChatGPT from the chat title already kept in the note, Claude from the newest session
+// file of that folder (Claude names the folder by replacing every non-letter with "-").
+function fillTopics(){
+  let changed=false;
+  for(const a of state.agents){
+    if(a.topic||!a.id.startsWith('project:'))continue;
+    let topic='';
+    if(a.source==='browser')topic=topicFromNote(a.note,a.title);
+    else if(a.source==='hook'&&a.target){
+      try{
+        const dir=path.join(CLAUDE_PROJECTS,a.target.replace(/[^A-Za-z0-9]/g,'-'));
+        const newest=fs.readdirSync(dir).filter(f=>f.endsWith('.jsonl'))
+          .map(f=>({f,t:fs.statSync(path.join(dir,f)).mtimeMs})).sort((x,y)=>y.t-x.t)[0];
+        if(newest)topic=sessionTitle(path.join(dir,newest.f));
+      }catch{}
+    }
+    if(topic){a.topic=topic.slice(0,120);changed=true;}
+  }
+  return changed;
+}
 function main(){
   read();
   // Older versions kept one row per session or chat; the panel now groups them by project.
   const before=state.agents.length;
   // Session rows are recognised by their id too: 0.2.9 builds saved ChatGPT rows as "manual".
   state.agents=state.agents.filter(a=>a.id.startsWith('project:')||!(['hook','browser'].includes(a.source)||/^(?:claude|chatgpt):/.test(a.id)));
-  if(sweepRows()||state.agents.length!==before)save();
+  const filled=fillTopics();
+  if(sweepRows()||filled||state.agents.length!==before)save();
   setInterval(()=>{if(sweepRows())save();},60000).unref();coordinatorRunner.reconcile();checkSchedule();
   appServer=http.createServer((req,res)=>{appRequest(req,res).catch(e=>fail(res,e.message,500));});
   appServer.on('error',e=>{console.error('[ratchet] Server:',e.message);process.exit(1);});
