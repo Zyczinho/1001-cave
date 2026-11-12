@@ -28,6 +28,7 @@ if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.
     open:(kind,target)=>action('open-target',{kind,target}),
     focusAgent:id=>action('agent:focus',{id}),
     finishAgent:id=>action('agent:finish',{id}),
+    dayReview:()=>action('day:review'),
     guardStart:(id,guard)=>action('guard:start',{id,guard}),
     guardStop:id=>action('guard:stop',{id}),
     chatgptSignalRemove:id=>action('chatgpt:signal-remove',{id}),
