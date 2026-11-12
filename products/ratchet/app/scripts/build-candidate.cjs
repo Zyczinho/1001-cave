@@ -28,6 +28,7 @@ const packageFiles=[
   'ui/orb.css','ui/orb.html','ui/orb.js',
   'ui/panel.html','ui/panel.js','ui/style.css',
   'scripts/claude-hook.cjs','scripts/install-claude-hooks.cjs',
+  'straznik/city-route-google-photos.cjs',
   'scripts/remove-claude-hooks.cjs','assets/ratchet.png','assets/ratchet.ico',
   'browser-extension/manifest.json','browser-extension/background.js','browser-extension/content.js',
   'browser-extension/icon.png','browser-extension/CZYTAJ-MNIE.txt'

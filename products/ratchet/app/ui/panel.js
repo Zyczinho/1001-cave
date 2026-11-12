@@ -65,6 +65,8 @@ const bridge=window.ratchet||{
   scheduleAction:async(id,action)=>{const t=state().schedule.find(x=>x.id===id);if(action==='snooze')t.snoozeUntil=new Date(Date.now()+600000).toISOString();if(action==='start'&&t.target)window.open(t.target,'_blank','noopener,noreferrer');persistDemo();},
   focusAgent:async()=>toast('Przejście do Claude działa w aplikacji Windows'),
   finishAgent:async id=>{state().agents=state().agents.filter(x=>x.id!==id);persistDemo();},
+  guardStart:async()=>{throw Error('Strażnik działa w aplikacji Windows.');},
+  guardStop:async()=>{},
   open:async(kind,target)=>{if(kind==='folder')throw Error('Otwieranie folderów działa w aplikacji Windows');if(!/^https?:\/\//.test(target))throw Error('Niepoprawny link');window.open(target,'_blank','noopener,noreferrer');},
   chatgptSignalRemove:async id=>{state().chatgptSignals=(state().chatgptSignals||[]).filter(x=>x.id!==id);persistDemo();return true;},
   chatgptCreate:async()=>{throw Error('Funkcja wymaga tokenu Workspace Agents w aplikacji Windows.');},
@@ -243,9 +245,15 @@ function renderAgent(a){
   const tool=a.source==='hook'?'Claude':a.source==='browser'?'ChatGPT':'';
   const topic=tool?(a.topic||'Bez tematu'):'';
   const place=[tool,tool&&String(a.title).toLowerCase()!==tool.toLowerCase()?a.title:''].filter(Boolean).join(' · ');
+  // Guard (pilot): a shield on Claude rows whose project has a proof. On = the agent
+  // may not finish until the proof passes (see guardVerdict in core.cjs).
+  const guardOption=(snapshot.guardOptions?.[a.id]||[])[0];
+  const guardOn=Object.values(state().guards||{}).find(g=>g.row===a.id);
+  const guardNote=guardOn?' · Strażnik '+guardOn.rounds+'/'+(guardOption?.maxRounds||3):'';
   return '<article class="row agent-row"><span class="s-dot '+color+'" aria-hidden="true"></span>'
     +'<button class="row-main"'+open+'>'+(place?'<span class="row-meta">'+esc(place)+'</span>':'')
-    +'<span class="row-title">'+esc(topic||a.title)+'</span><span class="row-meta">'+esc(label)+(a.updatedAt?' · '+formatTime(a.updatedAt):'')+'</span></button>'
+    +'<span class="row-title">'+esc(topic||a.title)+'</span><span class="row-meta">'+esc(label)+esc(guardNote)+(a.updatedAt?' · '+formatTime(a.updatedAt):'')+'</span></button>'
+    +(guardOption?'<button class="row-act'+(guardOn?'':' quiet-act')+'" data-action="guard-toggle" data-id="'+esc(a.id)+'" data-guard="'+esc(guardOption.id)+'" data-on="'+(guardOn?'1':'')+'" aria-pressed="'+(guardOn?'true':'false')+'" title="'+(guardOn?'Wyłącz strażnika':'Strażnik: '+esc(guardOption.label))+'" aria-label="'+(guardOn?'Wyłącz strażnika':'Włącz strażnika: '+esc(guardOption.label))+'">'+I('shield')+'</button>':'')
     // Rows Rachet keeps itself end with one click (no question asked); they come back
     // when that work starts again. Rows added by hand keep the edit button.
     +(tool
@@ -651,6 +659,12 @@ async function handleAction(el){
   if(act==='open'){await bridge.open(el.dataset.kind,el.dataset.target);toast('Otwieram ↗');}
   if(act==='agent-focus'){await bridge.focusAgent(id);toast('Przechodzę do Claude ↗');}
   if(act==='agent-finish'){await bridge.finishAgent(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zakończone. Wróci, gdy znów zaczniesz ✓');}
+  if(act==='guard-toggle'){
+    if(el.dataset.on){await bridge.guardStop(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik wyłączony');return;}
+    const option=(snapshot.guardOptions?.[id]||[]).find(g=>g.id===el.dataset.guard);
+    if(!await compactConfirm('Włączyć strażnika dla sesji, w której teraz pracujesz? Gdy agent powie „gotowe”, Rachet sprawdzi: '+(option?.label||'warunek zadania')+'. Jeśli warunek nie jest spełniony, odeśle agenta do pracy (najwyżej '+(option?.maxRounds||3)+' razy), potem da Ci znać. Sprawdzenie czyta tylko pliki, bez kosztów.'))return;
+    await bridge.guardStart(id,el.dataset.guard);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik pilnuje tej sesji 🛡');
+  }
   if(act==='github-refresh'){toast('Sprawdzam GitHub…');const result=await bridge.refreshGithub();snapshot={...snapshot,...result};render();if(result.githubError)toast(result.githubError);else toast('GitHub zaktualizowany');}
   if(act==='handoff'){await bridge.handoff();toast('Handoff skopiowany do schowka ✓');}
   if(act==='diagnose'){await bridge.diagnose();$('#appMenu').hidden=true;toast('Zlecono lokalną diagnostykę. Raport otworzy się na komputerze.');}
