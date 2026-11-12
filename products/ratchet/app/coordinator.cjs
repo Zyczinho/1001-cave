@@ -12,6 +12,7 @@ const MAX_OUTPUT=6000;
 const MAX_ACTIVE=2;
 const MAX_RUNTIME_MS=6*60*1000;
 const MAX_BUDGET_USD='0.35'; // per stage, estimated by Claude; can be exceeded
+const MAX_CONTEXT=6000; // what Rachet itself saw in the folder (git status, commits, changed files)
 const trim=(v,n)=>String(v??'').trim().slice(0,n);
 const iso=()=>new Date().toISOString();
 const safeStatus=new Set(['queued','running','attention','done','cancelled']);
@@ -24,6 +25,7 @@ function normalizeCoordinator(raw){
       summary:trim(s?.summary,MAX_OUTPUT),error:trim(s?.error,400),retryUsed:s?.retryUsed===true
     })):[];
     return {id:trim(j.id,80),title:trim(j.title,120),goal:trim(j.goal,MAX_GOAL),
+      context:trim(j.context,MAX_CONTEXT),
       projectRoot:trim(j.projectRoot,1000),createdAt:trim(j.createdAt,60),
       updatedAt:trim(j.updatedAt,60),status:safeStatus.has(j.status)?j.status:'queued',
       stepIndex:Math.max(0,Math.min(2,Math.floor(Number(j.stepIndex)||0))),
@@ -45,7 +47,7 @@ function makeJob(data){
   if(/^\\\\/.test(location))throw Error('Ścieżki sieciowe nie są obsługiwane.');
   const at=iso();
   const reviewer=data?.reviewer==='codex'?'codex':'claude';
-  return {id:randomUUID(),title,goal,projectRoot:location,createdAt:at,updatedAt:at,
+  return {id:randomUUID(),title,goal,context:trim(data?.context,MAX_CONTEXT),projectRoot:location,createdAt:at,updatedAt:at,
     status:'queued',stepIndex:0,alerted:false,stages:ROLES.map(role=>({
       role,provider:role==='review'?reviewer:'claude',status:'queued',startedAt:'',finishedAt:'',summary:'',error:'',retryUsed:false
     }))};
@@ -58,6 +60,7 @@ function promptFor(job){
     'Role: '+(stage.role==='analysis'?'Analyst: investigate and propose concrete steps.':'Independent reviewer: inspect the previous result, challenge findings and propose acceptance tests.'),
     'Project: '+job.title,'Task: '+job.goal,
     'Working directory: '+job.projectRoot,
+    job.context?'What Rachet saw in this folder (git):\n'+job.context:'',
     previous?'Previous agent handoff:\n'+previous:'',
     'Do not edit files, commit, push, create PRs, install packages, or run commands.',
     'Use read-only built-in tools when necessary. Do not invoke network tools or connected apps.',
@@ -65,11 +68,25 @@ function promptFor(job){
     'Return your concise report in Polish, max 3000 characters.'
   ].filter(Boolean).join('\n\n').slice(0,11000);
 }
+// Only flags Claude Code really has (checked on 2.1.234): the old --restricted and
+// --permission-prompts made every stage stop with "unknown option". Read-only comes from
+// the tool list itself plus "dontAsk", which refuses anything not allowed up front.
 function claudeArgs(job){
-  return ['-p','--restricted','--permission-mode','plan','--permission-prompts','none',
-    '--tools','Read,Glob,Grep','--disallowedTools','mcp__*','--disable-slash-commands',
-    '--no-session-persistence','--max-budget-usd',MAX_BUDGET_USD,'--max-turns','6',
+  return ['-p','--permission-mode','dontAsk',
+    '--tools','Read,Glob,Grep','--allowedTools','Read,Glob,Grep','--disallowedTools','mcp__*',
+    '--disable-slash-commands','--no-session-persistence','--max-budget-usd',MAX_BUDGET_USD,'--max-turns','10',
     '--output-format','text',promptFor(job)];
+}
+// Rachet starts Claude without a shell, so "claude" must be a real .exe: on Windows a
+// bare name never finds npm's claude.cmd. Look where Claude Code installs itself.
+function claudeCommand({env=process.env,platform=process.platform,exists=f=>{try{return fs.statSync(f).isFile();}catch{return false;}}}={}){
+  if(platform!=='win32')return 'claude';
+  const W=path.win32;
+  const candidates=[env.RATCHET_CLAUDE_PATH,
+    ...String(env.PATH||env.Path||'').split(';').filter(Boolean).map(d=>W.join(d,'claude.exe')),
+    env.APPDATA&&W.join(env.APPDATA,'npm','node_modules','@anthropic-ai','claude-code','bin','claude.exe'),
+    env.USERPROFILE&&W.join(env.USERPROFILE,'.local','bin','claude.exe')];
+  return candidates.find(c=>c&&exists(c))||'claude';
 }
 
 function executionSpec(job){
@@ -80,7 +97,7 @@ function executionSpec(job){
     return {command:'codex',args:['exec','--sandbox','read-only','--ask-for-approval','never','--skip-git-repo-check',promptFor(job)]};
   }
   if(stage?.provider!=='claude')throw Error('Nieobsługiwany wykonawca');
-  return {command:'claude',args:claudeArgs(job)};
+  return {command:claudeCommand(),args:claudeArgs(job)};
 }
 
 class CoordinatorRunner {
@@ -166,4 +183,4 @@ class CoordinatorRunner {
     this.active.clear();this.persist();
   }
 }
-module.exports={normalizeCoordinator,makeJob,promptFor,claudeArgs,executionSpec,CoordinatorRunner,MAX_ACTIVE,MAX_RUNTIME_MS};
+module.exports={normalizeCoordinator,makeJob,promptFor,claudeArgs,claudeCommand,executionSpec,CoordinatorRunner,MAX_ACTIVE,MAX_RUNTIME_MS};

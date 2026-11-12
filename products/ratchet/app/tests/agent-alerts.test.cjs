@@ -113,7 +113,7 @@ test('panel: one "now" card, compact rows and folded extras in a 360 x 520 windo
   const js=read('ui/panel.js'),html=read('ui/panel.html');
   assert.match(js,/function renderNow\(\)/);
   assert.match(js,/function taskRow\(t,/);
-  assert.match(js,/more\('coordinator','Koordynator agentów \(beta\)'/);
+  assert.match(js,/more\('coordinator','Sprawdź pracę agenta'/);
   assert.doesNotMatch(html,/id="clock"|id="statusStrip"|class="footer"/,'clock, counters and footer took 120 px of the window');
   assert.match(html,/<title>Rachet<\/title>/);
 });
