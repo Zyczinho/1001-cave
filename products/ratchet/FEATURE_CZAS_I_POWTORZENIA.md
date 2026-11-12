@@ -29,6 +29,11 @@ Każde zdarzenie, które Rachet już widzi, dopisywać do lokalnego `events.json
 `{ts, źródło: claude|chatgpt, projekt, sesja, typ: start|praca|czeka_na_ciebie|koniec, tytuł}`.
 Tylko lokalnie, bez treści promptów. Test: zdarzenia z jednego dnia odtwarzają oś czasu.
 
+**Stan: zrobione (`app/journal.cjs`).** Plik: `%APPDATA%\Ratchet\dziennik\events-RRRR-MM.jsonl`, jeden na miesiąc,
+trzymane 6 miesięcy. Wpis: `{ts, src, project, session, type}`, typy: `start, prompt, work, needs_you, done, error, end`.
+`work` maksymalnie raz na minutę na sesję. Bez treści promptów i tytułów rozmów. Wyłączenie: `RATCHET_DISABLE_JOURNAL=1`.
+Odczyt dla E2: `readEvents(dir, {from, to})`.
+
 ### E2 — Czas: zadania i przerwy
 Z dziennika liczyć:
 - **czas zadania** = od pierwszego promptu do „koniec” / zamkniętego PR,

@@ -8,6 +8,7 @@ const {spawn} = require('node:child_process');
 const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
+const {Journal,claudeType,chatgptType}=require('./journal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
 const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
@@ -41,6 +42,8 @@ const CLAUDE_PORT = Number(process.env.RATCHET_HOOK_PORT || 47822);
 const DATA = path.join(process.env.APPDATA || path.join(os.homedir(), '.ratchet'), 'Ratchet', 'ratchet.json');
 const UI_ROOT = path.resolve(__dirname, 'ui');
 const JSON_LIMIT = 64 * 1024;
+// Local event log for task timing (no prompt text). Off with RATCHET_DISABLE_JOURNAL=1.
+const journal = new Journal({dir: path.join(path.dirname(DATA), 'dziennik'), enabled: process.env.RATCHET_DISABLE_JOURNAL !== '1'});
 let state = defaults(), github = null, githubError = null, lastFetch = 0;
 let appServer, hookServer, shuttingDown = false, quitRequested = false;
 let panelRequests = 0, panelHideRequests = 0, orbResetRequests = 0, focusRequests = 0, focusFolder = '', installingUpdate = false, updateAvailable = null;
@@ -455,6 +458,7 @@ async function appRequest(req,res) {
       const body=await bodyOf(req);
       const out=browserChatOutcome(body,{agents:[...sessions.values()]});
       const name=parseChatUrl(out.url).project||'ChatGPT',row=rowKey('chatgpt',name);
+      journal.record({src:'chatgpt',project:name,session:out.id.slice(8),type:chatgptType(body.state,sessions.get(out.id)?.status)});
       sessions.set(out.id,{id:out.id,source:'browser',status:out.status,target:out.url,note:out.title,updatedAt:new Date().toISOString(),row});
       upsertRow(row,{title:name,tool:'ChatGPT',source:'browser',kind:'url',target:out.url,note:out.title});
       save();
@@ -503,6 +507,7 @@ function startHookServer() {
       const name=projectName(cwd)||'Claude Code',row=rowKey('claude',name);
       const outcome=agentHookOutcome(event,{agents:[...sessions.values()],id,prev,cwd,
         notificationType:String(data.notification_type||'').slice(0,40),message:String(data.message||'').slice(0,200)});
+      journal.record({src:'claude',project:name,session,type:claudeType(event,outcome.status)});
       sessions.set(id,{id,source:'hook',status:outcome.status,target:cwd,note:outcome.note,updatedAt:new Date().toISOString(),row});
       upsertRow(row,{title:name,tool:'Claude Code',source:'hook',kind:'folder',target:cwd,note:outcome.note});
       save();
