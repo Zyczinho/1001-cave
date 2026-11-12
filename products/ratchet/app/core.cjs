@@ -81,7 +81,7 @@ function normalizeItem(collection, raw) {
       : [];
     return {id,title,time,endTime:endTime||null,date,days,project:cleanText(raw.project,70),target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url', note:cleanText(raw.note,500), enabled:raw.enabled !== false, snoozeUntil:raw.snoozeUntil || null,completedDates};
   }
-  return {id,title,tool:cleanText(raw.tool,70)||'Inny model',status:STATUS.includes(raw.status)?raw.status:'idle',target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url',branch:cleanText(raw.branch,120),note:cleanText(raw.note,500),source:['hook','browser'].includes(raw.source) ? raw.source : 'manual',updatedAt:cleanText(raw.updatedAt,50)||new Date().toISOString()};
+  return {id,title,tool:cleanText(raw.tool,70)||'Inny model',status:STATUS.includes(raw.status)?raw.status:'idle',target:cleanText(raw.target,2048),kind:raw.kind === 'folder' ? 'folder' : 'url',branch:cleanText(raw.branch,120),note:cleanText(raw.note,500),topic:cleanText(raw.topic,120),source:['hook','browser'].includes(raw.source) ? raw.source : 'manual',updatedAt:cleanText(raw.updatedAt,50)||new Date().toISOString()};
 }
 function dayKey(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
 function minuteOfDay(date) { return date.getHours()*60+date.getMinutes(); }
@@ -167,7 +167,7 @@ const BUSY_WINDOW_MS = 30 * 60 * 1000;
 // (see projectRoot in server.cjs), so a subfolder like "app" is never the name.
 // Claude chats started without a folder live in throwaway "scratch" folders, one per
 // chat. They are not projects, so they share one row instead of one row per chat.
-const SCRATCH_NAME = 'Szybkie czaty Claude';
+const SCRATCH_NAME = 'bez folderu';
 function projectName(cwd) {
   const parts = String(cwd || '').split(/[\\/]+/).filter(Boolean);
   if (parts.some(p => p.toLowerCase() === 'scratch-workspaces') || /^scratch-\d{4}-\d{2}-\d{2}-/i.test(parts[parts.length - 1] || '')) return SCRATCH_NAME;
@@ -264,7 +264,18 @@ function browserChatOutcome(signal = {}, {agents = [], now = Date.now(), project
       && parseChatUrl(a.target)?.projectId === chat.projectId && sessionLive(a, now));
     if (!othersBusy) alert = {phase: 'chatgpt-done', text: 'Gotowe: ' + label + ' — wejdź i zobacz.'};
   }
-  return {id, url: chat.url, title, status, note, alert};
+  return {id, url: chat.url, title, topic: chatTitle, status, note, alert};
+}
+// The topic of a Claude session is the title Claude gives it (the name in the Claude
+// app's session list). Claude writes it into the session file again and again, so the
+// last one in a chunk of the file is the current name.
+function transcriptTitle(text = '') {
+  let title = '';
+  const re = /"type":"(?:custom-title|ai-title)","(?:customTitle|aiTitle)":"((?:[^"\\]|\\.){1,400})"/g;
+  for (let m; (m = re.exec(String(text)));) {
+    try { title = JSON.parse('"' + m[1] + '"'); } catch {}
+  }
+  return title.replace(/\s+/g, ' ').trim().slice(0, 120);
 }
 // The panel shows one row per project, not one per conversation or session.
 // A row "works" while any of its sessions works; a browser session that stops
@@ -353,4 +364,4 @@ class BrowserFocus {
     return Object.assign(promise, {cancel: () => finish('', true)});
   }
 }
-module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
+module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,transcriptTitle,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};

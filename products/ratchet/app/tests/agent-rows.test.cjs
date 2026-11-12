@@ -11,8 +11,8 @@ const now=Date.parse('2026-11-12T16:00:00Z');
 const at=min=>new Date(now-min*60000).toISOString();
 
 test('every Claude chat without a folder shares one row',()=>{
-  assert.equal(projectName(SCRATCH+'scratch-2026-11-12-835967'),'Szybkie czaty Claude');
-  assert.equal(projectName(SCRATCH+'scratch-2026-11-11-7401b1'),'Szybkie czaty Claude');
+  assert.equal(projectName(SCRATCH+'scratch-2026-11-12-835967'),'bez folderu');
+  assert.equal(projectName(SCRATCH+'scratch-2026-11-11-7401b1'),'bez folderu');
   assert.equal(projectName('C:\\Users\\me\\BOX2BOX\\.claude\\worktrees\\store-results'),'BOX2BOX','real projects keep their name');
 });
 
@@ -35,8 +35,27 @@ test('old duplicate rows are tidied: scratch rows merge, nameless ChatGPT row go
     {id:'manual-1',title:'Ręczny agent',source:'manual',status:'idle',target:'',updatedAt:at(30*24*60)},
   ];
   const out=tidyAgentRows(rows,now);
-  assert.deepEqual(out.map(a=>a.id),[rowKey('claude','Szybkie czaty Claude'),'project:chatgpt:szukamy-pracy','project:claude:busy-repo','manual-1']);
+  assert.deepEqual(out.map(a=>a.id),[rowKey('claude','bez folderu'),'project:chatgpt:szukamy-pracy','project:claude:busy-repo','manual-1']);
   assert.equal(out[0].status,'working','the newest scratch chat decides the shared row');
-  assert.equal(out[0].title,'Szybkie czaty Claude');
+  assert.equal(out[0].title,'bez folderu');
   assert.equal(tidyAgentRows(out,now).length,out.length,'tidying twice changes nothing');
+});
+
+test('a row shows the topic: the Claude session title or the ChatGPT chat title',()=>{
+  const {transcriptTitle}=require('../core.cjs');
+  const file=[
+    '{"type":"custom-title","customTitle":"Stary tytu\u0142","sessionId":"a"}',
+    '{"type":"user","message":{"content":"\\"type\\":\\"custom-title\\" in a prompt is not a title"}}',
+    '{"type":"custom-title","customTitle":"Ratchet powiadomienia i \\"duplikaty\\"","sessionId":"a"}',
+  ].join('\n');
+  assert.equal(transcriptTitle(file),'Ratchet powiadomienia i "duplikaty"','the latest title wins');
+  assert.equal(transcriptTitle('{"type":"user"}'),'');
+  const r=browserChatOutcome({url:NAMED,state:'working',title:'Plan aplikacji - ChatGPT'},{now});
+  assert.equal(r.topic,'Plan aplikacji');
+});
+
+test('panel: grey line says where, white line says what',()=>{
+  const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','ui','panel.js'),'utf8');
+  assert.match(src,/esc\(place\)/);
+  assert.match(src,/esc\(topic\|\|a\.title\)/);
 });
