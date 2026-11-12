@@ -8,7 +8,7 @@ const {spawn} = require('node:child_process');
 const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
-const {Journal,claudeType,chatgptType}=require('./journal.cjs');
+const {Journal,readEvents,daySummary,claudeType,chatgptType}=require('./journal.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
 const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
@@ -144,7 +144,17 @@ function health() {
   const working=a.some(x=>x.status==='working')||coordinator.some(x=>x.status==='running')||monitored.some(x=>['queued','in_progress','suspended','submitting'].includes(x.status))||signals.some(x=>x.status==='working')||runs.some(x=>x.status!=='completed');
   return failed||blocked?'blocked':attention?'needs_attention':working?'working':runs.some(x=>x.conclusion==='success')?'ready':'idle';
 }
-function snapshot() {return {state,github,githubError,platform:process.platform,chatgptWorkspaceReady:chatgptWatcher.isConfigured()};}
+// Today's time summary for the Dziś tab (E2), re-counted at most every 30 seconds.
+let dayCache={at:0,value:null};
+function today(now=Date.now()){
+  if(now-dayCache.at<30000)return dayCache.value;
+  const midnight=new Date(now);midnight.setHours(0,0,0,0);
+  let value=null;
+  try{value=daySummary(readEvents(journal.dir,{from:midnight.toISOString()}),now);}catch{}
+  dayCache={at:now,value};
+  return value;
+}
+function snapshot() {return {state,github,githubError,platform:process.platform,chatgptWorkspaceReady:chatgptWatcher.isConfigured(),today:today()};}
 async function refreshGithub(force=false) {
   if(!force && Date.now()-lastFetch<10*60_000) return {github,githubError};
   const repo=state.settings.repo||'';

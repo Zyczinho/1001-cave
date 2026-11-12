@@ -320,3 +320,6 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .modal-card .field textarea{min-height:48px}
 .modal-card .field{margin-bottom:9px}
 .modal-card .form-actions{position:sticky;bottom:-14px;background:var(--surface);margin:6px -14px -14px;padding:10px 14px 14px;border-top:1px solid var(--line)}
+/* Czas dziś: four counts from the event log, two per row in the narrow panel. */
+.day-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 16px}
+.day-stats .metric b{font-size:16px}
