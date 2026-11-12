@@ -23,6 +23,7 @@ const CHECK_GOAL='Sprawdź pracę wykonaną w tym folderze (zmiany opisane niże
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,readEvents,daySummary,claudeType,chatgptType}=require('./journal.cjs');
+const {recordTopic,parseRegister,buildDayReview,reviewText,dayOf}=require('./day-review.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
 const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, GUARDS, guardsFor, guardVerdict, splitEvidence, normalizeVerification, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
@@ -40,6 +41,8 @@ function upsertRow(row, {title, tool, source, kind, target, note, topic, status}
   const clean = normalizeItem('agents', {...prev, id: row, title, tool, status: rowStatus(members), source, kind,
     target: target || prev?.target || '', note: note || prev?.note || '', topic: topic || prev?.topic || '', updatedAt: new Date().toISOString()});
   if (index >= 0) state.agents[index] = clean; else state.agents.unshift(clean);
+  // Remember today's goal (the session or chat title) for "Podsumuj dzień".
+  if (topic) state.dayLog = recordTopic(state.dayLog, {src: source === 'hook' ? 'claude' : 'chatgpt', project: title, topic, target: source === 'hook' ? clean.target : ''});
   state.agents = state.agents.slice(0, 100);
 }
 // Once a minute: a project row whose sessions went quiet stops saying "Pracuje".
@@ -401,6 +404,7 @@ async function handleAction(key,data) {
     panelRequests++;return {panelRequested:true};
   }
   if(key==='open-target')return data.kind==='url'&&parseChatUrl(data.target)?showChat(data.target):openTarget(data.kind,data.target);
+  if(key==='day:review')return dayReview();
   if(key==='guard:start'){
     // The guard goes to the session of this project that spoke last: the one you work in now.
     const id=String(data.id||''),agent=state.agents.find(x=>x.id===id&&x.source==='hook');
@@ -586,6 +590,78 @@ function sessionTitle(file){
     }finally{fs.closeSync(fd);}
   }catch{return '';}
 }
+// "Podsumuj dzień" (on request, no AI): goals from dayLog, work from today's git history
+// of each Claude project folder (read-only, local refs only, no fetch), results from guard
+// verdicts and the skills register, time from the event log.
+const REGISTER=path.join(os.homedir(),'.claude','skills','_rejestr','uzycia.md');
+function gitToday(dir,since){
+  const git=args=>{try{return execFileSync('git',args,{cwd:dir,encoding:'utf8',timeout:5000,windowsHide:true,stdio:['ignore','pipe','ignore']});}catch{return '';}};
+  const commits=new Map();
+  for(const line of git(['log','--all','--no-merges','--since='+since,'--format=%H%x09%s']).split('\n')){
+    const [hash,subject]=line.split('\t');if(hash&&subject)commits.set(hash,subject.slice(0,160));
+  }
+  const merged=[];
+  for(const rec of git(['log','origin/main','--merges','--first-parent','--since='+since,'--format=%s%x1f%b%x1e']).split('\x1e')){
+    const [subject='',body='']=rec.trim().split('\x1f'),m=/^Merge pull request (#\d+)/.exec(subject.trim());
+    if(m)merged.push((m[1]+' '+(body.trim().split('\n')[0]||'')).trim().slice(0,160));
+  }
+  return {commits,merged};
+}
+// Every Claude session touched today, from its own file: title (the goal) and folder only,
+// never the conversation. Covers sessions Rachet did not see or rows ended with "Zakończ".
+function todaysClaudeSessions(since,date){
+  const out=[];
+  let dirs=[];try{dirs=fs.readdirSync(CLAUDE_PROJECTS);}catch{return out;}
+  for(const d of dirs){
+    let files=[];try{files=fs.readdirSync(path.join(CLAUDE_PROJECTS,d)).filter(f=>f.endsWith('.jsonl'));}catch{continue;}
+    for(const f of files){
+      const file=path.join(CLAUDE_PROJECTS,d,f);
+      try{
+        const st=fs.statSync(file);if(st.mtimeMs<since||!st.size)continue;
+        // The Claude app re-writes titles into old session files, so the file date lies:
+        // only a message (user or assistant) from today counts as work today.
+        const fd=fs.openSync(file,'r'),tailLen=Math.min(st.size,262144),tail=Buffer.alloc(tailLen);
+        fs.readSync(fd,tail,0,tailLen,st.size-tailLen);
+        const b=Buffer.alloc(Math.min(st.size,65536));fs.readSync(fd,b,0,b.length,0);fs.closeSync(fd);
+        let last=0;
+        for(const line of tail.toString('utf8').split('\n'))if(/"type":"(?:user|assistant)"/.test(line)){
+          const t=Date.parse(/"timestamp":"([^"]+)"/.exec(line)?.[1]||'');if(t>last)last=t;
+        }
+        if(last<since)continue;
+        const topic=sessionTitle(file);if(!topic)continue;
+        const m=/"cwd":"((?:[^"\\]|\\.)*)"/.exec(b.toString('utf8'));if(!m)continue;
+        const cwd=JSON.parse('"'+m[1]+'"'),root=projectRoot(cwd);
+        out.push({date,src:'claude',project:projectName(root)||'Claude Code',topic,target:root});
+      }catch{}
+      if(out.length>=80)return out;
+    }
+  }
+  return out;
+}
+function dayReview(now=Date.now()){
+  const midnight=new Date(now);midnight.setHours(0,0,0,0);
+  const date=dayOf(midnight.toISOString()),since=midnight.toISOString();
+  let dayLog=state.dayLog;
+  // Copies, so reading today's sessions never rewrites what the profile keeps.
+  dayLog=dayLog.map(e=>({...e}));
+  for(const e of todaysClaudeSessions(midnight.getTime(),date))dayLog=recordTopic(dayLog,{at:new Date(now).toISOString(),...e},now);
+  const git={};
+  const roots=new Map();
+  for(const e of dayLog.filter(e=>e.date===date&&e.src==='claude'&&e.target)){
+    const root=projectRoot(e.target);
+    if(fs.existsSync(root))roots.set(root,e.project.toLowerCase());
+  }
+  for(const [root,key] of [...roots].slice(0,12)){
+    const g=gitToday(root,since),into=git[key]||(git[key]={commits:new Map(),merged:[]});
+    for(const [h,s] of g.commits)into.commits.set(h,s);
+    for(const m of g.merged)if(!into.merged.includes(m))into.merged.push(m);
+  }
+  for(const k of Object.keys(git))git[k]={commits:[...git[k].commits.values()],merged:git[k].merged};
+  let register=[];
+  try{register=parseRegister(fs.readFileSync(REGISTER,'utf8'),date);}catch{}
+  const review=buildDayReview({date,events:readEvents(journal.dir,{from:since}),dayLog,verifications:state.verifications,register,git,now});
+  return {review,text:reviewText(review)};
+}
 // Runs a guard's proof script with this Node, no shell, in the session's folder.
 // Resolves {code, output}; code 2 also covers "could not run" (never blocks the agent).
 function runGuard(guard,cwd){
@@ -690,6 +766,9 @@ function main(){
   // Session rows are recognised by their id too: 0.2.9 builds saved ChatGPT rows as "manual".
   state.agents=state.agents.filter(a=>a.id.startsWith('project:')||!(['hook','browser'].includes(a.source)||/^(?:claude|chatgpt):/.test(a.id)));
   const filled=fillTopics();
+  // Rows active today give "Podsumuj dzień" its first goals even before new events arrive.
+  for(const a of state.agents)if(a.topic&&a.id.startsWith('project:')&&['hook','browser'].includes(a.source))
+    state.dayLog=recordTopic(state.dayLog,{at:a.updatedAt,src:a.source==='hook'?'claude':'chatgpt',project:a.title,topic:a.topic,target:a.source==='hook'?a.target:''});
   if(sweepRows()||filled||state.agents.length!==before)save();
   setInterval(()=>{if(sweepRows())save();},60000).unref();coordinatorRunner.reconcile();checkSchedule();
   appServer=http.createServer((req,res)=>{appRequest(req,res).catch(e=>fail(res,e.message,500));});

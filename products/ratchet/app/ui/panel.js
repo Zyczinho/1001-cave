@@ -65,6 +65,7 @@ const bridge=window.ratchet||{
   scheduleAction:async(id,action)=>{const t=state().schedule.find(x=>x.id===id);if(action==='snooze')t.snoozeUntil=new Date(Date.now()+600000).toISOString();if(action==='start'&&t.target)window.open(t.target,'_blank','noopener,noreferrer');persistDemo();},
   focusAgent:async()=>toast('Przejście do Claude działa w aplikacji Windows'),
   finishAgent:async id=>{state().agents=state().agents.filter(x=>x.id!==id);persistDemo();},
+  dayReview:async()=>{throw Error('Podsumowanie dnia działa w aplikacji Windows.');},
   guardStart:async()=>{throw Error('Strażnik działa w aplikacji Windows.');},
   guardStop:async()=>{},
   open:async(kind,target)=>{if(kind==='folder')throw Error('Otwieranie folderów działa w aplikacji Windows');if(!/^https?:\/\//.test(target))throw Error('Niepoprawny link');window.open(target,'_blank','noopener,noreferrer');},
@@ -180,13 +181,27 @@ function duration(ms){
   const min=Math.round((ms||0)/60000);
   return min<60?min+' min':Math.floor(min/60)+' h'+(min%60?' '+min%60+' min':'');
 }
+// "Podsumuj dzień": on request, facts only (day-review.cjs). Kept until the panel reloads.
+let dayReviewData=null;
+function renderDayReview(){
+  const r=dayReviewData?.review;
+  if(!r)return '';
+  const line=(label,items,none)=>'<p class="task-note"><strong>'+label+':</strong> '+esc(items.length?items.join('; '):none)+'</p>';
+  return '<div class="list-head"><h3>Podsumowanie dnia</h3><span><button class="btn tiny secondary" data-action="day-review-copy">'+I('copy')+' Kopiuj</button> <button class="btn tiny ghost" data-action="day-review-close">Zamknij</button></span></div>'
+    +(r.projects.length?r.projects.map(p=>'<article class="agent-card"><div class="task-title">'+esc(p.name)+'</div>'
+      +'<p class="hint">'+esc((p.tools.join(', ')||'—')+' · '+duration(p.workMs))+'</p>'
+      +line('Cel',p.goals,'brak zapisanego celu')+line('Zrobione',p.done,'brak commitów')+line('Rezultat',p.results,'niezweryfikowane')+'</article>').join('')
+      :'<p class="list-empty">Dziś Rachet nie widział jeszcze pracy agentów.</p>')
+    +r.other.map(o=>'<p class="hint">'+esc(o.project+': '+o.text)+'</p>').join('');
+}
 function renderDayTime(){
   const d=snapshot.today;
-  if(!d||!d.since)return '';
+  if(!d||!d.since)return renderDayReview();
   const tile=(value,label)=>'<div class="metric"><b>'+esc(String(value))+'</b><span>'+esc(label)+'</span></div>';
-  return '<div class="list-head"><h3>Czas dziś <span>· od '+formatTime(d.since)+'</span></h3></div>'
+  return '<div class="list-head"><h3>Czas dziś <span>· od '+formatTime(d.since)+'</span></h3><button class="btn tiny secondary" data-action="day-review">Podsumuj dzień</button></div>'
     +'<div class="day-stats">'+tile(d.projects,'projekty')+tile(d.switches,'przełączenia')
-    +tile(duration(d.workMs),'agenci pracowali')+tile(duration(d.waitMs),'czekali na Ciebie')+'</div>';
+    +tile(duration(d.workMs),'agenci pracowali')+tile(duration(d.waitMs),'czekali na Ciebie')+'</div>'
+    +renderDayReview();
 }
 function tasksOnCalendarDay(key){
   // Work in local calendar days so recurring schedules don't shift due to UTC offsets.
@@ -665,6 +680,9 @@ async function handleAction(el){
   if(act==='open'){await bridge.open(el.dataset.kind,el.dataset.target);toast('Otwieram ↗');}
   if(act==='agent-focus'){await bridge.focusAgent(id);toast('Przechodzę do Claude ↗');}
   if(act==='agent-finish'){await bridge.finishAgent(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zakończone. Wróci, gdy znów zaczniesz ✓');}
+  if(act==='day-review'){dayReviewData=await bridge.dayReview();render();}
+  if(act==='day-review-close'){dayReviewData=null;render();}
+  if(act==='day-review-copy'&&dayReviewData?.text){await navigator.clipboard.writeText(dayReviewData.text);toast('Podsumowanie skopiowane ✓');}
   if(act==='guard-toggle'){
     if(el.dataset.on){await bridge.guardStop(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik wyłączony');return;}
     // A project can have several proofs: they are offered one by one, the first "yes" wins.

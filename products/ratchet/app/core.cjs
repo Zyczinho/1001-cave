@@ -3,6 +3,7 @@ const { randomUUID } = require('crypto');
 const {normalizeCoordinator}=require('./coordinator.cjs');
 const {normalizeChatGPTRuns}=require('./chatgpt-workspace.cjs');
 const {normalizeSignals}=require('./chatgpt-signal.cjs');
+const {normalizeDayLog}=require('./day-review.cjs');
 const COLLECTIONS = ['schedule', 'links', 'agents'];
 const STATUS = ['working', 'needs_attention', 'ready', 'blocked', 'idle'];
 const VALID_WEEKDAYS = [0,1,2,3,4,5,6];
@@ -29,6 +30,8 @@ const INIT = {
   // Guards switched on for one Claude session: "claude:<session>" -> {guard, row, rounds, startedAt}.
   guards: {},
   verifications: [],
+  // Session and chat titles of the last 7 days, for "Podsumuj dzień" (day-review.cjs).
+  dayLog: [],
   orbPosition: null
 };
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -53,6 +56,7 @@ function normalizeStore(obj) {
       .map(([id, g]) => [id, {guard: g.guard, row: String(g.row || ''), rounds: Math.max(0, Math.min(10, Math.floor(Number(g.rounds) || 0))), startedAt: String(g.startedAt || '')}])
       .slice(-20));
   if (Array.isArray(obj.verifications)) def.verifications = obj.verifications.slice(0, 30).map(normalizeVerification);
+  def.dayLog = normalizeDayLog(obj.dayLog);
   def.coordinator=normalizeCoordinator(obj.coordinator);
   def.chatgptRuns=normalizeChatGPTRuns(obj.chatgptRuns);
   def.chatgptSignals=normalizeSignals(obj.chatgptSignals);
