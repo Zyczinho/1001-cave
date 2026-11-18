@@ -147,9 +147,7 @@ test('Workspace adapter: UI does not request credentials in form or assert ordin
   const ui=fs.readFileSync(path.resolve(__dirname,'../ui/panel.js'),'utf8');
   const server=fs.readFileSync(path.resolve(__dirname,'../server.cjs'),'utf8');
   const native=fs.readFileSync(path.resolve(__dirname,'../Ratchet-Kuleczka.ps1'),'utf8');
-  assert.match(ui,/function renderChatGPTWorkspace/);
-  assert.match(ui,/Zwykłe rozmowy ChatGPT nie są tutaj automatycznie monitorowane/);
-  assert.match(ui,/data-action="chatgpt-refresh"/);
+  assert.doesNotMatch(ui,/function renderChatGPTWorkspace/,'Workspace UI was cut on 18.11: 0 uses; the adapter stays');
   assert.doesNotMatch(ui,/name="apiKey"|name="token"/);
   assert.match(server,/RATCHET_WORKSPACE_AGENT_TOKEN/);
   assert.match(server,/chatgptWatcher\.poll/);
