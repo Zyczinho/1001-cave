@@ -22,7 +22,7 @@ function folderChanges(dir){
 const CHECK_GOAL='Sprawdź pracę wykonaną w tym folderze (zmiany opisane niżej). Znajdź błędy, rzeczy niedokończone, brakujące testy i ryzyka przed scaleniem. Przy każdym znalezisku podaj plik i powód. Na końcu jedno zdanie: czy to jest gotowe do scalenia.';
 const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
-const {Journal,readEvents,daySummary,claudeType,chatgptType}=require('./journal.cjs');
+const {Journal,readEvents,daySummary,nextHint,claudeType,chatgptType}=require('./journal.cjs');
 const {recordTopic,parseRegister,buildDayReview,reviewText,dayOf}=require('./day-review.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
 const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, GUARDS, guardsFor, guardVerdict, splitEvidence, normalizeVerification, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
@@ -173,7 +173,12 @@ function today(now=Date.now()){
   if(now-dayCache.at<30000)return dayCache.value;
   const midnight=new Date(now);midnight.setHours(0,0,0,0);
   let value=null;
-  try{value=daySummary(readEvents(journal.dir,{from:midnight.toISOString()}),now);}catch{}
+  try{
+    const events=readEvents(journal.dir,{from:midnight.toISOString()});
+    value=daySummary(events,now);
+    // One quiet hint from the same events (journal.cjs, nextHint). Never an alert.
+    if(value)value.hint=nextHint({events,agents:state.agents,now});
+  }catch{}
   dayCache={at:now,value};
   return value;
 }

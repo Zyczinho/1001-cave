@@ -42,15 +42,11 @@ test('calendar: pressing Finish records only todays occurrence and survives edit
   const disk=JSON.parse(fs.readFileSync(path.join(data,'Ratchet','ratchet.json'),'utf8'));
   assert.deepEqual(disk.schedule[0].completedDates,[key]);
 });
-test('calendar: panel presents month, day selection and action to add on chosen date',()=>{
+test('calendar: the month view is gone; adding a task stays in Dziś',()=>{
   const html=fs.readFileSync(path.join(root,'ui/panel.html'),'utf8');
   const js=fs.readFileSync(path.join(root,'ui/panel.js'),'utf8');
-  assert.match(html,/data-tab="calendar"/);
-  assert.match(js,/function renderCalendar\(\)/);
-  assert.match(js,/data-action="calendar-day"/);
-  assert.match(js,/data-action="calendar-prev"/);
-  assert.match(js,/data-action="calendar-next"/);
+  assert.doesNotMatch(html,/data-tab="calendar"/);
+  assert.doesNotMatch(js,/function renderCalendar\(\)/);
   assert.match(js,/data-action="calendar-add"/);
-  assert.match(js,/function tasksOnCalendarDay\(key\)/);
 });
 test.after(()=>fs.rmSync(data,{recursive:true,force:true}));

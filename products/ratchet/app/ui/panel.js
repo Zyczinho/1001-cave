@@ -30,13 +30,12 @@ const demoInitial={
 const loadDemo=()=>{try{return JSON.parse(localStorage.getItem('ratchet-demo'))||demoInitial;}catch{return demoInitial;}};
 const persistDemo=()=>{try{localStorage.setItem('ratchet-demo',JSON.stringify(snapshot));}catch{/* Podgląd osadzony może blokować storage — wtedy działa w pamięci. */}};
 let snapshot=DEMO?loadDemo():demoInitial,tab='today',agentFilter=null,toastTimer,updateInfo=null;
-// One-time introduction is UI-only. No API call, model launch, or change to coordinator.enabled.
-const AGENT_GUIDE_KEY='ratchet-agents-intro-v1';
-const agentGuideWasSeen=()=>{try{return localStorage.getItem(AGENT_GUIDE_KEY)==='seen';}catch{return false;}};
-let agentGuideSeen=agentGuideWasSeen(),agentGuideOpen=false,agentGuideStep=0;
-function finishAgentGuide(){
-  agentGuideSeen=true;agentGuideOpen=false;agentGuideStep=0;
-  try{localStorage.setItem(AGENT_GUIDE_KEY,'seen');}catch{/* Keep the choice in this session when storage is unavailable. */}
+// "Nie teraz" on a hint hides that kind of hint for an hour (UI only, kept per viewer).
+const HINT_KEY='ratchet-hint-snooze';
+let hintSnooze=(()=>{try{return JSON.parse(localStorage.getItem(HINT_KEY))||{};}catch{return {};}})();
+function snoozeHint(id){
+  hintSnooze[id]=Date.now()+3600000;
+  try{localStorage.setItem(HINT_KEY,JSON.stringify(hintSnooze));}catch{/* the hour still holds in this session */}
 }
 const state=()=>snapshot.state;
 const $=sel=>document.querySelector(sel);
@@ -47,7 +46,6 @@ const now=()=>new Date();
 const dateKey=(d=now())=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const weekdays=['Nd','Pn','Wt','Śr','Cz','Pt','Sb'];
 const pad=n=>String(n).padStart(2,'0');
-let selectedDay=dateKey(),calendarMonth=new Date(now().getFullYear(),now().getMonth(),1);
 const plusMinutes=(time,minutes=60)=>{const [h,m]=String(time).split(':').map(Number);const v=Math.min(23*60+59,h*60+m+minutes);return `${pad(Math.floor(v/60))}:${pad(v%60)}`;};
 const formatTime=t=>new Date(t).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
 const formatDate=t=>new Date(t).toLocaleDateString('pl-PL',{day:'numeric',month:'long',weekday:'long'});
@@ -137,6 +135,14 @@ function renderNow(){
   }
   return '<section class="now is-calm"><div class="now-label">Spokojnie</div><h2>Nic pilnego</h2>'+(working||'<p>Dam znać, gdy coś będzie potrzebne.</p>')+'</section>';
 }
+// One quiet hint counted by Rachet from today's journal (nextHint in journal.cjs).
+// Never while something already needs you; "Nie teraz" hides that kind for an hour.
+function renderHint(){
+  const h=snapshot.today?.hint,x=health();
+  if(!h||x.attention||x.failed||(hintSnooze[h.id]||0)>Date.now())return '';
+  return '<section class="hint-card" aria-label="Podpowiedź"><div><strong>'+esc(h.title)+'</strong><p>'+esc(h.text)+'</p></div>'
+    +'<button class="btn tiny ghost" data-action="hint-snooze" data-id="'+esc(h.id)+'">Nie teraz</button></section>';
+}
 function sectionHeader(title,subtitle,button=''){return `<div class="section-header"><div><h1>${title}</h1>${subtitle?`<p class="sub">${subtitle}</p>`:''}</div>${button}</div>`;}
 function empty(title,desc,emoji='✦'){return `<div class="empty"><div class="empty-emoji">${emoji}</div><strong>${title}</strong><p>${desc}</p></div>`;}
 // Compact row: time, title (click = edit), one action. Everything else lives in the edit form.
@@ -158,11 +164,14 @@ function taskActions(t){
   return `<div class="task-actions"><button class="btn small" data-action="schedule-start" data-id="${esc(t.id)}">${I('play')} Działam${t.target?' · otwórz':''}</button><button class="btn secondary small" data-action="schedule-finish" data-id="${esc(t.id)}">${I('check')} Zakończ</button><button class="btn ghost small" data-action="schedule-snooze" data-id="${esc(t.id)}">+10 min</button><button class="plain-icon" aria-label="Edytuj" title="Edytuj" data-action="edit" data-collection="schedule" data-id="${esc(t.id)}">${I('edit')}</button><button class="plain-icon" aria-label="Usuń" title="Usuń" data-action="remove" data-collection="schedule" data-id="${esc(t.id)}">${I('trash')}</button></div>`;}
 function renderToday(){
   const tasks=todayTasks();
-  let html=renderNow();
+  let html=renderNow()+renderHint();
   html+='<div class="list-head"><h3>Dziś'+(tasks.length?' <span>· '+tasks.filter(doneToday).length+' z '+tasks.length+' zrobione</span>':'')+'</h3><button class="btn tiny secondary" data-action="calendar-add" data-date="'+dateKey()+'">+ Dodaj</button></div>';
   html+=tasks.length?'<div class="rows">'+tasks.map(t=>taskRow(t)).join('')+'</div>'
     :'<p class="list-empty">Pusto. Kliknij „+ Dodaj”.</p>';
   html+=renderDayTime();
+  // Shortcuts used to be a tab; folded here they cost one line.
+  html+=more('links','Skróty · '+state().links.length,(state().links.length?renderQuickLinks():'<p class="list-empty">Dodaj link do strony, czatu albo folder.</p>')
+    +'<button class="btn tiny secondary" data-action="new" data-collection="links">+ Dodaj skrót</button>');
   const recent=state().activity.slice(0,5);
   if(recent.length){
     html+=more('signals','Ostatnie sygnały · '+state().activity.length,
@@ -190,46 +199,6 @@ function renderDayTime(){
     +'<div class="day-stats">'+tile(d.projects,'projekty')+tile(d.switches,'przełączenia')
     +tile(duration(d.workMs),'agenci pracowali')+tile(duration(d.waitMs),'czekali na Ciebie')+'</div>';
 }
-function tasksOnCalendarDay(key){
-  // Work in local calendar days so recurring schedules don't shift due to UTC offsets.
-  const [year,month,day]=key.split('-').map(Number);
-  const weekday=new Date(year,month-1,day).getDay();
-  return state().schedule.filter(t=>t.date?t.date===key:(Array.isArray(t.days)&&t.days.includes(weekday)))
-    .sort((a,b)=>a.time.localeCompare(b.time));
-}
-function calendarDayName(key){
-  const [y,m,d]=key.split('-').map(Number);
-  return new Date(y,m-1,d).toLocaleDateString('pl-PL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-}
-function renderCalendar(){
-  const today=dateKey(),monthName=calendarMonth.toLocaleDateString('pl-PL',{month:'long',year:'numeric'});
-  const first=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth(),1);
-  const count=new Date(first.getFullYear(),first.getMonth()+1,0).getDate();
-  const leading=(first.getDay()+6)%7;
-  const names=['Pn','Wt','Śr','Cz','Pt','So','Nd'];
-  let grid='<div class="calendar-weekdays">'+names.map(x=>'<span>'+x+'</span>').join('')+'</div><div class="calendar-grid">';
-  for(let i=0;i<leading;i++)grid+='<span class="calendar-blank" aria-hidden="true"></span>';
-  for(let n=1;n<=count;n++){
-    const key=dateKey(new Date(first.getFullYear(),first.getMonth(),n));
-    const tasks=tasksOnCalendarDay(key);
-    const done=tasks.filter(t=>Array.isArray(t.completedDates)&&t.completedDates.includes(key)).length;
-    const classes=['calendar-day',key===today?'is-today':'',key===selectedDay?'is-selected':''].filter(Boolean).join(' ');
-    grid+='<button type="button" class="'+classes+'" data-action="calendar-day" data-date="'+key+'" aria-pressed="'+String(key===selectedDay)+'" aria-label="'+esc(calendarDayName(key))+', '+tasks.length+' zadań">'
-      +'<span class="day-number">'+n+'</span><span class="calendar-indicators">'
-      +(tasks.length?'<span class="calendar-dot'+(done===tasks.length?' is-done':'')+'"></span>':'')
-      +(tasks.length>1?'<span class="calendar-count">'+tasks.length+'</span>':'')
-      +'</span></button>';
-  }
-  grid+='</div>';
-  const tasks=tasksOnCalendarDay(selectedDay);
-  let html='<section class="calendar-shell"><div class="calendar-nav"><button class="calendar-nav-btn" type="button" data-action="calendar-prev" aria-label="Poprzedni miesiąc">‹</button><strong>'+esc(monthName)+'</strong>'
-    +(selectedDay!==today?'<button class="btn tiny ghost" data-action="calendar-today">Dziś</button>':'')
-    +'<button class="calendar-nav-btn" type="button" data-action="calendar-next" aria-label="Następny miesiąc">›</button></div>'+grid+'</section>';
-  html+='<div class="list-head"><h3>'+esc(calendarDayName(selectedDay).replace(/ \d{4}$/,''))+'</h3><button class="btn tiny secondary" data-action="calendar-add">+ Dodaj</button></div>';
-  if(!tasks.length)return html+'<p class="list-empty">Wolny dzień.</p>';
-  return html+'<div class="rows">'+tasks.map(t=>taskRow(t,selectedDay)).join('')+'</div>';
-}
-
 // Links: one line each. Click the name to open; the pencil edits (delete is in the form).
 function renderQuickLinks(limit){
   const items=state().links.slice(0,limit||100);
@@ -304,145 +273,12 @@ function renderFilteredAgents(){
 }
 
 
-const agentGuideSteps=[
-  {
-    icon:'glasses',
-    title:'Poznaj dwa tryby pracy',
-    body:'Obserwowanie pokazuje status istniejącej sesji AI. Koordynator uruchamia osobne, lokalne etapy analizy i recenzji. To dwie różne funkcje.',
-    note:'Claude Code wysyła hooki, a Workspace Agent ChatGPT ma oficjalne statusy API. Zwykła rozmowa ChatGPT nie udostępnia takiego sygnału.'
-  },
-  {
-    icon:'edit',
-    title:'Opisz pierwsze zadanie',
-    body:'W Koordynatorze wpisz tytuł i cel, wybierz folder projektu oraz drugiego wykonawcę: Claude Code lub Codex CLI.',
-    note:'Dodanie zadania zapisuje je w kolejce. Dopiero świadome włączenie Koordynatora może uruchomić agentów i zużyć ich limity.'
-  },
-  {
-    icon:'bell',
-    title:'Odbierz wynik, nie każdy sygnał',
-    body:'Śledź statusy: Oczekuje → Agent analizuje → Analizy gotowe. Po zakończeniu otwórz raporty obu agentów.',
-    note:'Rachet powiadomi Cię po obu etapach lub przy blokadzie. Raport nie oznacza wdrożenia kodu.'
-  }
-];
-function renderAgentGuide(){
-  if(agentGuideSeen&&!agentGuideOpen){
-    return '<div class="agent-guide-reopen"><button type="button" class="btn tiny ghost" data-action="agent-guide-restart">'
-      +I('bot')+' Jak korzystać z agentów?</button></div>';
-  }
-  const step=agentGuideSteps[agentGuideStep],last=agentGuideStep===agentGuideSteps.length-1;
-  return '<section class="agent-guide" aria-label="Samouczek centrum agentów">'
-    +'<div class="agent-guide-top"><span class="agent-guide-kicker">POZNAJ KOORDYNATORA</span>'
-    +'<span class="agent-guide-position">Krok '+(agentGuideStep+1)+' z '+agentGuideSteps.length+'</span></div>'
-    +'<div class="agent-guide-progress" role="progressbar" aria-label="Postęp samouczka" aria-valuemin="1" aria-valuemax="3" aria-valuenow="'+(agentGuideStep+1)+'">'
-    +agentGuideSteps.map((_,i)=>'<span class="'+(i<=agentGuideStep?'active':'')+'"></span>').join('')+'</div>'
-    +'<div class="agent-guide-icon">'+I(step.icon)+'</div>'
-    +'<h2>'+esc(step.title)+'</h2>'
-    +'<p class="agent-guide-description">'+esc(step.body)+'</p>'
-    +'<p class="agent-guide-note">'+I('shield')+' '+esc(step.note)+'</p>'
-    +'<div class="agent-guide-controls"><button type="button" class="btn tiny ghost" data-action="agent-guide-skip">Pomiń</button>'
-    +'<div class="agent-guide-right">'
-    +(agentGuideStep?'<button type="button" class="btn tiny secondary" data-action="agent-guide-back">Wstecz</button>':'')
-    +'<button type="button" class="btn small" data-action="agent-guide-next">'+(last?'Zakończ samouczek':'Dalej')+I(last?'check':'arrow')+'</button>'
-    +'</div></div></section>';
-}
-
-
-
-function renderChatGPTSignals(){
-  const signals=state().chatgptSignals||[];
-  let html='<div class="group-title"><h3>ChatGPT · sygnały z wtyczki</h3><span class="quiet">Raportowane przez model</span></div>';
-  html+='<div class="workspace-help">Po podłączeniu prywatnej wtyczki Rachet ChatGPT może wysłać sygnał rozpoczęcia, ukończenia lub blokady. '
-    +'To nie jest niezależne potwierdzenie zakończenia odpowiedzi przez platformę ChatGPT. '
-    +'Wtyczka musi faktycznie wywołać narzędzie — samo zamknięcie rozmowy nie uruchamia alertu.</div>';
-  for(const item of signals.slice(0,8)){
-    const labels={working:'Zgłosił rozpoczęcie',reported_done:'Zgłosił ukończenie',needs_attention:'Wymaga uwagi'};
-    html+='<article class="workspace-run"><div class="coordinator-job-head"><strong>'+esc(item.title)+'</strong><span class="pill '+(item.status==='needs_attention'?'bad':item.status==='reported_done'?'good':'')+'">'+esc(labels[item.status]||item.status)+'</span></div>'
-      +(item.note?'<p class="task-note">'+esc(item.note)+'</p>':'')+'<div class="inline-actions">'
-      +(item.conversationUrl?'<button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(item.conversationUrl)+'">Otwórz rozmowę</button>':'')
-      +(item.status!=='working'?'<button class="btn tiny ghost" data-action="chatgpt-signal-remove" data-id="'+esc(item.id)+'">Usuń wpis</button>':'')
-      +'</div></article>';
-  }
-  return html;
-}
-
-function renderChatGPTWorkspace(){
-  const jobs=state().chatgptRuns||[],ready=snapshot.chatgptWorkspaceReady===true;
-  let html='<div class="group-title"><h3>ChatGPT · prawdziwe statusy</h3><span class="quiet">Workspace Agents API</span></div>';
-  html+='<section class="chatgpt-workspace"><div class="workspace-head"><div><strong>Uruchom i monitoruj agenta ChatGPT</strong>'
-    +'<p class="hint">Odczytujemy status z API ChatGPT, nie zgadujemy z przeglądarki. Zwykłe rozmowy ChatGPT nie są tutaj automatycznie monitorowane.</p></div>'
-    +'<span class="pill '+(ready?'good':'')+'">'+(ready?'Połączono token':'Brak tokenu')+'</span></div>';
-  if(!ready){
-    html+='<div class="workspace-help">Dostęp wymaga opublikowanego Workspace Agent z kanałem API i osobnego tokenu Workspace Agents. '
-      +'Ustaw <code>RATCHET_WORKSPACE_AGENT_TOKEN</code> w środowisku aplikacji, a następnie uruchom testowego Racheta ponownie. '
-      +'Nie wklejaj tokenu do formularza zadania. Integracja jest wyłączona, dopóki nie ma tokenu.</div>';
-  }
-  html+='<form id="chatgptWorkspaceForm" class="coordinator-form">'
-    +'<input name="title" aria-label="Nazwa zadania ChatGPT" placeholder="Np. Audyt UX City Route" required maxlength="160" '+(!ready?'disabled':'')+'>'
-    +'<input name="triggerId" aria-label="Identyfikator kanału agenta ChatGPT" placeholder="agtch_..." required pattern="agtch_[A-Za-z0-9_-]{3,160}" '+(!ready?'disabled':'')+'>'
-    +'<textarea name="input" aria-label="Polecenie dla agenta ChatGPT" placeholder="Co dokładnie ma sprawdzić agent?" required minlength="12" maxlength="5000" '+(!ready?'disabled':'')+'></textarea>'
-    +'<button type="submit" class="btn small full" '+(!ready?'disabled':'')+'>Uruchom agenta ChatGPT i śledź wynik</button></form>';
-  html+='<p class="hint">Uruchomienie może zużywać limity lub środki przypisane do Workspace Agent. Status „Ukończone” to koniec uruchomienia, nie dowód wdrożenia zmian.</p></section>';
-  if(!jobs.length)return html;
-  html+='<div class="workspace-runs-head"><span>Ostatnie uruchomienia · '+jobs.length+'</span><button class="btn tiny ghost" data-action="chatgpt-refresh" '+(!ready?'disabled':'')+'>'+I('refresh')+' Sprawdź statusy</button></div>';
-  for(const j of jobs.slice(0,12)){
-    const labels={submitting:'Wysyłanie',queued:'W kolejce',in_progress:'Pracuje',suspended:'Czeka na działanie',completed:'Ukończone',failed:'Błąd',attention:'Wymaga uwagi'};
-    const color=j.status==='completed'?'good':j.status==='failed'||j.status==='attention'?'bad':'';
-    html+='<article class="workspace-run"><div class="coordinator-job-head"><strong>'+esc(j.title)+'</strong><span class="pill '+color+'">'+esc(labels[j.status]||j.status)+'</span></div>'
-      +(j.reason?'<p class="task-note workspace-reason">'+esc(j.reason)+'</p>':'')
-      +'<div class="inline-actions">';
-    if(j.conversationUrl)html+='<button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(j.conversationUrl)+'">'+I('external')+' Otwórz rozmowę</button>';
-    if(j.status==='attention'&&j.runId&&ready)html+='<button class="btn tiny secondary" data-action="chatgpt-resume" data-id="'+esc(j.id)+'">Wznów sprawdzanie</button>';
-    if(!['submitting','queued','in_progress','suspended'].includes(j.status))html+='<button class="btn tiny ghost" data-action="chatgpt-remove" data-id="'+esc(j.id)+'">Usuń z historii</button>';
-    html+='</div></article>';
-  }
-  return html;
-}
-
-function renderCoordinator(){
-  const c=state().coordinator||{enabled:false,jobs:[]};
-  const running=(c.jobs||[]).filter(j=>j.status==='running').length;
-  // One click: a Claude project from the Agenci list is checked by a second agent.
-  // Folder, title and the list of changes fill themselves (coordinator:check).
-  const projects=state().agents.filter(a=>a.source==='hook'&&a.kind==='folder'&&a.title!=='bez folderu').slice(0,6);
-  let html='<p class="hint">Drugi Claude czyta zmiany w folderze projektu (bez zapisu, commitów i wdrożeń), szuka błędów i ryzyk, a drugi etap sprawdza jego wnioski. Raport przyjdzie jako powiadomienie. Koszt: do ok. $0.70 z limitu Claude za jedno sprawdzenie.</p>';
-  html+=projects.length?'<div class="rows">'+projects.map(a=>'<article class="row agent-row"><div class="row-main"><span class="row-meta">Claude · '+esc(a.title)+'</span><span class="row-title">'+esc(a.topic||a.title)+'</span></div>'
-      +'<button class="btn tiny secondary" data-action="coordinator-check" data-id="'+esc(a.id)+'">Sprawdź</button></article>').join('')+'</div>'
-    :'<p class="list-empty">Brak projektów Claude do sprawdzenia. Pojawią się, gdy agent popracuje w jakimś folderze.</p>';
-  if(running)html+='<p class="hint">'+running+'/2 sprawdzenia trwają.</p>';
-  // The full form stays for custom tasks, folded so it does not get in the way.
-  html+='<details class="coordinator-report"><summary>Własne zadanie</summary><div class="coordinator-box"><div class="coordinator-top"><div><strong>Przekazywanie agent → agent</strong><p class="hint">2 etapy: analiza Claude Code → recenzja Claude Code lub Codex CLI. Odczyt repo, bez zapisu, commitów i wdrożeń.</p></div>'
-    +'<button class="btn small '+(c.enabled?'danger':'secondary')+'" data-action="coordinator-toggle" data-enabled="'+String(!c.enabled)+'">'+(c.enabled?'Wyłącz nowe':'Włącz')+'</button></div>';
-  html+='<form id="coordinatorForm" class="coordinator-form">'
-    +'<input name="title" aria-label="Tytuł zadania" placeholder="Np. Audyt zdjęć City Route" maxlength="120" required>'
-    +'<textarea name="goal" aria-label="Cel analizy" placeholder="Opisz, co mają przeanalizować i zweryfikować agenci. Minimum 15 znaków." required minlength="15" maxlength="3000"></textarea>'
-    +'<input name="projectRoot" aria-label="Folder projektu Windows" placeholder="C:\\Users\\...\\city-route-app" required>'
-    +'<select name="reviewer" aria-label="Drugi wykonawca"><option value="claude">Recenzja: drugi Claude Code</option><option value="codex">Recenzja: Codex CLI (jeśli zainstalowany)</option></select>'
-    +'<button class="btn small full" type="submit">+ Zleć analizę i recenzję</button></form>'
-    +'<p class="hint">Tryb wykonawczy domyślnie wyłączony. Claude ma szacowany limit $0.35 na etap (może zostać przekroczony). Codex zużywa limity swojego konta i nie ma limitu USD w Rachecie. Maks. 2 zadania równolegle. Nie steruje otwartymi rozmowami ChatGPT.</p></div></details>';
-  for(const job of (c.jobs||[]).slice(0,8)){
-    const names={queued:'Oczekuje',running:'Agent analizuje',attention:'Wymaga uwagi',done:'Analizy gotowe',cancelled:'Anulowano'};
-    const steps=job.stages||[];
-    html+='<article class="coordinator-job"><div class="coordinator-job-head"><strong>'+esc(job.title)+'</strong><span class="pill '+(job.status==='done'?'good':job.status==='attention'?'bad':'')+'">'+(names[job.status]||esc(job.status))+'</span></div>'
-      +'<p class="task-note">'+esc(job.goal)+'</p>'
-      +'<div class="coordinator-stages">'+steps.map((st,i)=>'<span class="'+(st.status==='done'?'is-done':st.status==='running'?'is-active':'')+'">'+(i===0?'1 Analiza':'2 Recenzja')+' · '+esc(st.status)+'</span>').join('')+'</div>';
-    const current=steps[job.stepIndex]||steps[steps.length-1];
-    if(job.status==='attention')html+='<p class="alert danger">'+I('alert')+esc(current?.error||'Brak dalszego wykonawcy')+'</p>';
-    if(job.status==='done')html+='<details class="coordinator-report"><summary>Pokaż raporty agentów</summary>'+steps.map(st=>'<p><strong>'+esc(st.role==='analysis'?'Analiza':'Recenzja')+'</strong></p><pre>'+esc(st.summary||'Brak raportu')+'</pre>').join('')+'</details>';
-    html+='<div class="inline-actions">';
-    if(job.status==='attention'&&!current?.retryUsed)html+='<button class="btn tiny secondary" data-action="coordinator-retry" data-id="'+esc(job.id)+'">Ponów raz</button>';
-    if(job.status!=='running')html+='<button class="btn tiny ghost" data-action="coordinator-remove" data-id="'+esc(job.id)+'">Usuń</button>';
-    html+='</div></article>';
-  }
-  return html;
-}
-
 function renderAgents(){
   if(agentFilter)return renderFilteredAgents();
   const a=state().agents,gh=snapshot.github,err=snapshot.githubError;
   const order={needs_attention:0,blocked:0,ready:1,working:2,idle:3};
   const sorted=[...a].sort((x,y)=>(order[x.status]??4)-(order[y.status]??4));
   let html='';
-  if(!agentGuideSeen)html+=renderAgentGuide();
   html+='<div class="list-head"><h3>Agenci</h3><button class="btn tiny secondary" data-action="new" data-collection="agents">+ Dodaj</button></div>';
   html+=sorted.length?'<div class="rows">'+sorted.map(renderAgent).join('')+'</div>'
     :'<p class="list-empty">Nikt teraz nie pracuje. Gdy agent skończy albo będzie Cię potrzebować, dam znać.</p>';
@@ -454,17 +290,10 @@ function renderAgents(){
   if(failedRuns)html+='<button class="btn tiny danger" data-action="metric" data-metric="risk">Zobacz błąd CI</button>';
   if(gh?.overlapping?.length)html+='<div class="alert">'+I('alert')+' <div>'+gh.overlapping.length+' '+(gh.overlapping.length===1?'para PR-ów zmienia':'pary PR-ów zmieniają')+' te same pliki. <button class="btn tiny ghost" data-action="metric" data-metric="risk">Pokaż</button></div></div>';
   if(gh?.prs?.length)html+=more('prs','Otwarte PR-y · '+gh.prs.length,gh.prs.map(p=>{const fail=gh.runs.filter(r=>r.head_sha===p.head_sha).some(r=>r.conclusion==='failure');return '<div class="signal"><span>#'+p.number+' '+esc(p.title)+(fail?'<small class="bad-text">CI błąd</small>':'')+'</span><button class="plain-icon" data-action="open" data-kind="url" data-target="'+esc(p.html_url)+'" title="Otwórz" aria-label="Otwórz PR #'+p.number+'">'+I('external')+'</button></div>';}).join(''));
-  // Advanced tools stay folded: they are optional and cost money or need tokens.
-  html+=more('coordinator','Sprawdź pracę agenta',renderCoordinator());
-  // ChatGPT Workspace needs a Workspace Agent token; without one it is only noise, so it
-  // shows up again only once it is set up.
-  if(snapshot.chatgptWorkspaceReady)html+=more('chatgpt','ChatGPT Workspace',renderChatGPTWorkspace()+renderChatGPTSignals());
   // Only copies text to the clipboard: nothing is sent, started or changed.
   html+=more('handoff','Skopiuj stan dla nowego agenta','<p class="hint">Kopiuje do schowka jeden tekst: sesje, PR-y, CI i ryzyka. Niczego nie wysyła, nie uruchamia i nie zmienia. Wklej go na początku nowej rozmowy z agentem, żeby nie tłumaczyć wszystkiego od zera.</p><button class="btn small full" data-action="handoff">'+I('copy')+' Skopiuj do schowka</button>');
-  if(agentGuideSeen)html+=renderAgentGuide();
   return html;
 }
-function renderLinks(){return '<div class="list-head"><h3>Skróty</h3><button class="btn tiny secondary" data-action="new" data-collection="links">+ Dodaj</button></div>'+(state().links.length?renderQuickLinks():'<p class="list-empty">Dodaj link do strony, czatu albo folder.</p>');}
 function renderUpdates(){
   const available=!!updateInfo?.available;
   return `<div class="settings-group update-group"><h3>Wersja <strong>0.2.9</strong></h3>
@@ -507,7 +336,7 @@ function compactConfirm(message){
     modal.addEventListener('keydown',keys);no.focus();
   });
 }
-function render(){renderBadge();document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));$('#view').innerHTML=tab==='today'?renderToday():tab==='calendar'?renderCalendar():tab==='agents'?renderAgents():tab==='links'?renderLinks():renderSettings();window.ratchetHydrateIcons?.(document);}
+function render(){renderBadge();document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));$('#view').innerHTML=tab==='today'?renderToday():tab==='agents'?renderAgents():renderSettings();window.ratchetHydrateIcons?.(document);}
 const templateMap={job:{title:'Szukanie pracy',time:'09:00',project:'Kariera',target:'https://chatgpt.com/'},city:{title:'Praca nad City Route',time:'10:00',project:'City Route',target:'https://github.com/Zyczinho/city-route-app'},box:{title:'Promocje Box2Box',time:'14:00',project:'Box2Box',target:'https://box2box.com.pl'}};
 const input=(name,label,value='',opts='')=>`<div class="field"><label for="field-${name}">${label}</label><input id="field-${name}" name="${name}" value="${esc(value)}" ${opts}></div>`;
 const select=(name,label,value,options)=>`<div class="field"><label for="field-${name}">${label}</label><select id="field-${name}" name="${name}">${options.map(([v,l])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${l}</option>`).join('')}</select></div>`;
@@ -577,73 +406,15 @@ async function saveForm(form){
 async function handleAction(el){
   const act=el.dataset.action,id=el.dataset.id,col=el.dataset.collection;
   if(act==='new')showModal(col);
-  if(act==='calendar-prev'||act==='calendar-next'){
-    const shift=act==='calendar-next'?1:-1;
-    calendarMonth=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()+shift,1);
-    selectedDay=dateKey(calendarMonth);
-    render();
-  }
-  if(act==='calendar-day'){
-    const key=el.dataset.date;
-    if(/^\d{4}-\d{2}-\d{2}$/.test(key)){selectedDay=key;render();}
-  }
-  if(act==='calendar-today'){
-    selectedDay=dateKey();calendarMonth=new Date(now().getFullYear(),now().getMonth(),1);render();
-  }
   if(act==='calendar-add'){
-    // One add form for Today and Calendar. Today starts at the next full hour.
-    const day=/^\d{4}-\d{2}-\d{2}$/.test(el.dataset.date||'')?el.dataset.date:selectedDay;
+    // One add form for Today; it starts at the next full hour.
+    const day=/^\d{4}-\d{2}-\d{2}$/.test(el.dataset.date||'')?el.dataset.date:dateKey();
     const start=day===dateKey()?pad(Math.min(23,now().getHours()+1))+':00':'09:00';
     showModal('schedule','',{date:day,time:start});
   }
   if(act==='template')showModal('schedule','',templateMap[el.dataset.template]);
   if(act==='switch'){tab=el.dataset.tab;agentFilter=null;render();}
   if(act==='metric'){tab='agents';agentFilter=el.dataset.metric;render();}
-  if(act==='agent-guide-restart'){agentGuideOpen=true;agentGuideStep=0;render();}
-  if(act==='agent-guide-skip'){finishAgentGuide();render();}
-  if(act==='agent-guide-back'){agentGuideStep=Math.max(0,agentGuideStep-1);render();}
-  if(act==='agent-guide-next'){
-    if(agentGuideStep===agentGuideSteps.length-1){finishAgentGuide();render();}
-    else{agentGuideStep=Math.min(agentGuideSteps.length-1,agentGuideStep+1);render();}
-  }
-  if(act==='chatgpt-signal-remove'){
-    if(!await compactConfirm('Usunąć sygnał z historii? Nie usuwa rozmowy ChatGPT.'))return;
-    await bridge.chatgptSignalRemove(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Sygnał usunięty');
-  }
-  if(act==='chatgpt-refresh'){
-    await bridge.chatgptRefresh();if(!DEMO)snapshot=await bridge.snapshot();render();toast('Statusy ChatGPT sprawdzone');
-  }
-  if(act==='chatgpt-resume'){
-    await bridge.chatgptResume(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Monitorowanie wznowione');
-  }
-  if(act==='chatgpt-remove'){
-    if(!await compactConfirm('Usunąć wpis z monitora? Nie usuwa to rozmowy ani agenta ChatGPT.'))return;
-    await bridge.chatgptRemove(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Wpis usunięty');
-  }
-  if(act==='coordinator-toggle'){
-    const enabled=el.dataset.enabled==='true';
-    if(enabled&&!await compactConfirm('Włączyć uruchamianie lokalnych agentów Claude Code? Dwa etapy analizy mogą wykorzystać płatne zapytania. Bez edycji kodu.'))return;
-    await bridge.coordinatorEnable(enabled);
-    if(!DEMO)snapshot=await bridge.snapshot();
-    render();toast(enabled?'Koordynator uruchomiony':'Nowe zadania wstrzymane');
-  }
-  if(act==='coordinator-check'){
-    // The cost question is asked once, on the first check; after that one click is enough.
-    if(!state().coordinator?.enabled){
-      if(!await compactConfirm('Sprawdzenie uruchamia na tym komputerze dwa etapy Claude: do ok. $0.70 z Twojego limitu za każde sprawdzenie. Agenci tylko czytają pliki, niczego nie zmieniają. Włączyć?'))return;
-      await bridge.coordinatorEnable(true);
-    }
-    await bridge.coordinatorCheck(id);
-    if(!DEMO)snapshot=await bridge.snapshot();
-    render();toast('Sprawdzam. Dam znać, gdy raport będzie gotowy.');
-  }
-  if(act==='coordinator-retry'){
-    await bridge.coordinatorRetry(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Ponowienie zlecone (maks. raz)');
-  }
-  if(act==='coordinator-remove'){
-    if(!await compactConfirm('Usunąć zadanie koordynatora wraz z raportami?'))return;
-    await bridge.coordinatorRemove(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zadanie usunięte');
-  }
   if(act==='filter-reset'){agentFilter=null;render();}
   if(act==='activity-remove'){
     await bridge.removeActivity(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Sygnał usunięty');
@@ -666,6 +437,7 @@ async function handleAction(el){
   }
   if(act==='open'){await bridge.open(el.dataset.kind,el.dataset.target);toast('Otwieram ↗');}
   if(act==='agent-focus'){await bridge.focusAgent(id);toast('Przechodzę do Claude ↗');}
+  if(act==='hint-snooze'){snoozeHint(id);render();return;}
   if(act==='agent-finish'){await bridge.finishAgent(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zakończone. Wróci, gdy znów zaczniesz ✓');}
   if(act==='guard-toggle'){
     if(el.dataset.on){await bridge.guardStop(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik wyłączony');return;}
@@ -730,31 +502,6 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-action]');if(a)safe(()=>handleAction(a));
 });
 document.addEventListener('submit',e=>{
-  if(e.target.id==='chatgptWorkspaceForm'){
-    e.preventDefault();safe(async()=>{
-      if(!snapshot.chatgptWorkspaceReady)throw Error('Nie podłączono tokenu Workspace Agents.');
-      const fd=new FormData(e.target);
-      const data={title:String(fd.get('title')||'').trim(),triggerId:String(fd.get('triggerId')||'').trim(),input:String(fd.get('input')||'').trim()};
-      if(!await compactConfirm('Uruchomić Workspace Agent ChatGPT? To nowe zlecenie i może zużywać limity konta.'))return;
-      const outcome=await bridge.chatgptCreate(data);
-      if(!DEMO)snapshot=await bridge.snapshot();
-      render();
-      toast(outcome.status==='queued'?'Agent ChatGPT przyjął zadanie':'Sprawdź status zlecenia w panelu');
-    });
-  }
-  if(e.target.id==='coordinatorForm'){
-    e.preventDefault();safe(async()=>{
-      const fd=new FormData(e.target);
-      await bridge.coordinatorCreate({
-        title:String(fd.get('title')||'').trim(),
-        goal:String(fd.get('goal')||'').trim(),
-        projectRoot:String(fd.get('projectRoot')||'').trim(),
-        reviewer:String(fd.get('reviewer')||'claude')
-      });
-      if(!DEMO)snapshot=await bridge.snapshot();
-      render();toast('Zadanie dodane do kolejki koordynatora');
-    });
-  }
   if(e.target.id==='itemForm'){e.preventDefault();safe(()=>saveForm(e.target));}
   if(e.target.id==='settingsForm'){
     e.preventDefault();safe(async()=>{
