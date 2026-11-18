@@ -30,13 +30,12 @@ const demoInitial={
 const loadDemo=()=>{try{return JSON.parse(localStorage.getItem('ratchet-demo'))||demoInitial;}catch{return demoInitial;}};
 const persistDemo=()=>{try{localStorage.setItem('ratchet-demo',JSON.stringify(snapshot));}catch{/* Podgląd osadzony może blokować storage — wtedy działa w pamięci. */}};
 let snapshot=DEMO?loadDemo():demoInitial,tab='today',agentFilter=null,toastTimer,updateInfo=null;
-// One-time introduction is UI-only. No API call, model launch, or change to coordinator.enabled.
-const AGENT_GUIDE_KEY='ratchet-agents-intro-v1';
-const agentGuideWasSeen=()=>{try{return localStorage.getItem(AGENT_GUIDE_KEY)==='seen';}catch{return false;}};
-let agentGuideSeen=agentGuideWasSeen(),agentGuideOpen=false,agentGuideStep=0;
-function finishAgentGuide(){
-  agentGuideSeen=true;agentGuideOpen=false;agentGuideStep=0;
-  try{localStorage.setItem(AGENT_GUIDE_KEY,'seen');}catch{/* Keep the choice in this session when storage is unavailable. */}
+// "Nie teraz" on a hint hides that kind of hint for an hour (UI only, kept per viewer).
+const HINT_KEY='ratchet-hint-snooze';
+let hintSnooze=(()=>{try{return JSON.parse(localStorage.getItem(HINT_KEY))||{};}catch{return {};}})();
+function snoozeHint(id){
+  hintSnooze[id]=Date.now()+3600000;
+  try{localStorage.setItem(HINT_KEY,JSON.stringify(hintSnooze));}catch{/* the hour still holds in this session */}
 }
 const state=()=>snapshot.state;
 const $=sel=>document.querySelector(sel);
@@ -137,6 +136,14 @@ function renderNow(){
   }
   return '<section class="now is-calm"><div class="now-label">Spokojnie</div><h2>Nic pilnego</h2>'+(working||'<p>Dam znać, gdy coś będzie potrzebne.</p>')+'</section>';
 }
+// One quiet hint counted by Rachet from today's journal (nextHint in journal.cjs).
+// Never while something already needs you; "Nie teraz" hides that kind for an hour.
+function renderHint(){
+  const h=snapshot.today?.hint,x=health();
+  if(!h||x.attention||x.failed||(hintSnooze[h.id]||0)>Date.now())return '';
+  return '<section class="hint-card" aria-label="Podpowiedź"><div><strong>'+esc(h.title)+'</strong><p>'+esc(h.text)+'</p></div>'
+    +'<button class="btn tiny ghost" data-action="hint-snooze" data-id="'+esc(h.id)+'">Nie teraz</button></section>';
+}
 function sectionHeader(title,subtitle,button=''){return `<div class="section-header"><div><h1>${title}</h1>${subtitle?`<p class="sub">${subtitle}</p>`:''}</div>${button}</div>`;}
 function empty(title,desc,emoji='✦'){return `<div class="empty"><div class="empty-emoji">${emoji}</div><strong>${title}</strong><p>${desc}</p></div>`;}
 // Compact row: time, title (click = edit), one action. Everything else lives in the edit form.
@@ -158,7 +165,7 @@ function taskActions(t){
   return `<div class="task-actions"><button class="btn small" data-action="schedule-start" data-id="${esc(t.id)}">${I('play')} Działam${t.target?' · otwórz':''}</button><button class="btn secondary small" data-action="schedule-finish" data-id="${esc(t.id)}">${I('check')} Zakończ</button><button class="btn ghost small" data-action="schedule-snooze" data-id="${esc(t.id)}">+10 min</button><button class="plain-icon" aria-label="Edytuj" title="Edytuj" data-action="edit" data-collection="schedule" data-id="${esc(t.id)}">${I('edit')}</button><button class="plain-icon" aria-label="Usuń" title="Usuń" data-action="remove" data-collection="schedule" data-id="${esc(t.id)}">${I('trash')}</button></div>`;}
 function renderToday(){
   const tasks=todayTasks();
-  let html=renderNow();
+  let html=renderNow()+renderHint();
   html+='<div class="list-head"><h3>Dziś'+(tasks.length?' <span>· '+tasks.filter(doneToday).length+' z '+tasks.length+' zrobione</span>':'')+'</h3><button class="btn tiny secondary" data-action="calendar-add" data-date="'+dateKey()+'">+ Dodaj</button></div>';
   html+=tasks.length?'<div class="rows">'+tasks.map(t=>taskRow(t)).join('')+'</div>'
     :'<p class="list-empty">Pusto. Kliknij „+ Dodaj”.</p>';
@@ -304,50 +311,6 @@ function renderFilteredAgents(){
 }
 
 
-const agentGuideSteps=[
-  {
-    icon:'glasses',
-    title:'Poznaj dwa tryby pracy',
-    body:'Obserwowanie pokazuje status istniejącej sesji AI. Koordynator uruchamia osobne, lokalne etapy analizy i recenzji. To dwie różne funkcje.',
-    note:'Claude Code wysyła hooki, a Workspace Agent ChatGPT ma oficjalne statusy API. Zwykła rozmowa ChatGPT nie udostępnia takiego sygnału.'
-  },
-  {
-    icon:'edit',
-    title:'Opisz pierwsze zadanie',
-    body:'W Koordynatorze wpisz tytuł i cel, wybierz folder projektu oraz drugiego wykonawcę: Claude Code lub Codex CLI.',
-    note:'Dodanie zadania zapisuje je w kolejce. Dopiero świadome włączenie Koordynatora może uruchomić agentów i zużyć ich limity.'
-  },
-  {
-    icon:'bell',
-    title:'Odbierz wynik, nie każdy sygnał',
-    body:'Śledź statusy: Oczekuje → Agent analizuje → Analizy gotowe. Po zakończeniu otwórz raporty obu agentów.',
-    note:'Rachet powiadomi Cię po obu etapach lub przy blokadzie. Raport nie oznacza wdrożenia kodu.'
-  }
-];
-function renderAgentGuide(){
-  if(agentGuideSeen&&!agentGuideOpen){
-    return '<div class="agent-guide-reopen"><button type="button" class="btn tiny ghost" data-action="agent-guide-restart">'
-      +I('bot')+' Jak korzystać z agentów?</button></div>';
-  }
-  const step=agentGuideSteps[agentGuideStep],last=agentGuideStep===agentGuideSteps.length-1;
-  return '<section class="agent-guide" aria-label="Samouczek centrum agentów">'
-    +'<div class="agent-guide-top"><span class="agent-guide-kicker">POZNAJ KOORDYNATORA</span>'
-    +'<span class="agent-guide-position">Krok '+(agentGuideStep+1)+' z '+agentGuideSteps.length+'</span></div>'
-    +'<div class="agent-guide-progress" role="progressbar" aria-label="Postęp samouczka" aria-valuemin="1" aria-valuemax="3" aria-valuenow="'+(agentGuideStep+1)+'">'
-    +agentGuideSteps.map((_,i)=>'<span class="'+(i<=agentGuideStep?'active':'')+'"></span>').join('')+'</div>'
-    +'<div class="agent-guide-icon">'+I(step.icon)+'</div>'
-    +'<h2>'+esc(step.title)+'</h2>'
-    +'<p class="agent-guide-description">'+esc(step.body)+'</p>'
-    +'<p class="agent-guide-note">'+I('shield')+' '+esc(step.note)+'</p>'
-    +'<div class="agent-guide-controls"><button type="button" class="btn tiny ghost" data-action="agent-guide-skip">Pomiń</button>'
-    +'<div class="agent-guide-right">'
-    +(agentGuideStep?'<button type="button" class="btn tiny secondary" data-action="agent-guide-back">Wstecz</button>':'')
-    +'<button type="button" class="btn small" data-action="agent-guide-next">'+(last?'Zakończ samouczek':'Dalej')+I(last?'check':'arrow')+'</button>'
-    +'</div></div></section>';
-}
-
-
-
 function renderChatGPTSignals(){
   const signals=state().chatgptSignals||[];
   let html='<div class="group-title"><h3>ChatGPT · sygnały z wtyczki</h3><span class="quiet">Raportowane przez model</span></div>';
@@ -442,7 +405,6 @@ function renderAgents(){
   const order={needs_attention:0,blocked:0,ready:1,working:2,idle:3};
   const sorted=[...a].sort((x,y)=>(order[x.status]??4)-(order[y.status]??4));
   let html='';
-  if(!agentGuideSeen)html+=renderAgentGuide();
   html+='<div class="list-head"><h3>Agenci</h3><button class="btn tiny secondary" data-action="new" data-collection="agents">+ Dodaj</button></div>';
   html+=sorted.length?'<div class="rows">'+sorted.map(renderAgent).join('')+'</div>'
     :'<p class="list-empty">Nikt teraz nie pracuje. Gdy agent skończy albo będzie Cię potrzebować, dam znać.</p>';
@@ -461,7 +423,6 @@ function renderAgents(){
   if(snapshot.chatgptWorkspaceReady)html+=more('chatgpt','ChatGPT Workspace',renderChatGPTWorkspace()+renderChatGPTSignals());
   // Only copies text to the clipboard: nothing is sent, started or changed.
   html+=more('handoff','Skopiuj stan dla nowego agenta','<p class="hint">Kopiuje do schowka jeden tekst: sesje, PR-y, CI i ryzyka. Niczego nie wysyła, nie uruchamia i nie zmienia. Wklej go na początku nowej rozmowy z agentem, żeby nie tłumaczyć wszystkiego od zera.</p><button class="btn small full" data-action="handoff">'+I('copy')+' Skopiuj do schowka</button>');
-  if(agentGuideSeen)html+=renderAgentGuide();
   return html;
 }
 function renderLinks(){return '<div class="list-head"><h3>Skróty</h3><button class="btn tiny secondary" data-action="new" data-collection="links">+ Dodaj</button></div>'+(state().links.length?renderQuickLinks():'<p class="list-empty">Dodaj link do strony, czatu albo folder.</p>');}
@@ -599,13 +560,6 @@ async function handleAction(el){
   if(act==='template')showModal('schedule','',templateMap[el.dataset.template]);
   if(act==='switch'){tab=el.dataset.tab;agentFilter=null;render();}
   if(act==='metric'){tab='agents';agentFilter=el.dataset.metric;render();}
-  if(act==='agent-guide-restart'){agentGuideOpen=true;agentGuideStep=0;render();}
-  if(act==='agent-guide-skip'){finishAgentGuide();render();}
-  if(act==='agent-guide-back'){agentGuideStep=Math.max(0,agentGuideStep-1);render();}
-  if(act==='agent-guide-next'){
-    if(agentGuideStep===agentGuideSteps.length-1){finishAgentGuide();render();}
-    else{agentGuideStep=Math.min(agentGuideSteps.length-1,agentGuideStep+1);render();}
-  }
   if(act==='chatgpt-signal-remove'){
     if(!await compactConfirm('Usunąć sygnał z historii? Nie usuwa rozmowy ChatGPT.'))return;
     await bridge.chatgptSignalRemove(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Sygnał usunięty');
@@ -666,6 +620,7 @@ async function handleAction(el){
   }
   if(act==='open'){await bridge.open(el.dataset.kind,el.dataset.target);toast('Otwieram ↗');}
   if(act==='agent-focus'){await bridge.focusAgent(id);toast('Przechodzę do Claude ↗');}
+  if(act==='hint-snooze'){snoozeHint(id);render();return;}
   if(act==='agent-finish'){await bridge.finishAgent(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zakończone. Wróci, gdy znów zaczniesz ✓');}
   if(act==='guard-toggle'){
     if(el.dataset.on){await bridge.guardStop(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik wyłączony');return;}

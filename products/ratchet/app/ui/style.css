@@ -156,33 +156,6 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .coordinator-report summary{cursor:pointer;color:#abcbef;padding:5px}
 .coordinator-report pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;background:#132234;padding:7px;border-radius:7px;font-size:9px}
 
-/* First-run Agents guide: compact enough for Ratchet's native 360 x 520 companion. */
-.agent-guide{
-  margin:0 0 15px;padding:14px 13px 12px;
-  border:1px solid rgba(118,166,225,.42);border-radius:15px;
-  background:linear-gradient(145deg,#243950,#1b2b3d);
-}
-.agent-guide-top,.agent-guide-controls,.agent-guide-right{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.agent-guide-kicker{font-size:9px;letter-spacing:.7px;color:#a4cfff;font-weight:800}
-.agent-guide-position{color:#aec0d2;font-size:10px;white-space:nowrap}
-.agent-guide-progress{display:flex;gap:5px;margin-top:10px}
-.agent-guide-progress>span{height:4px;flex:1;border-radius:6px;background:#364d64}
-.agent-guide-progress>span.active{background:#80b8fa}
-.agent-guide-icon{
-  margin:12px auto 7px;background:#345471;border:1px solid #47729c;
-  width:39px;height:39px;border-radius:12px;display:grid;place-items:center;color:#d3eaff
-}
-.agent-guide-icon .ui-icon{width:21px;height:21px}
-.agent-guide h2{text-align:center;font-size:14px;line-height:1.35;margin:6px 0 7px}
-.agent-guide-description{font-size:11px;line-height:1.55;text-align:center;color:#d2e4f5;margin:0}
-.agent-guide-note{display:flex;align-items:flex-start;gap:6px;border-radius:9px;background:#182b3e;border:1px solid #39536b;padding:8px;margin:10px 0;color:#a5c2db;font-size:10px;line-height:1.45}
-.agent-guide-note .icon-slot{margin-top:1px}
-.agent-guide-controls{margin-top:10px}
-.agent-guide-right{justify-content:flex-end}
-.agent-guide-reopen{display:flex;justify-content:flex-end;margin:-4px 0 12px}
-.agent-guide button{white-space:normal;text-align:center}
-@media(max-width:520px){.agent-guide{padding:12px 11px}.agent-guide h2{font-size:13px}.agent-guide-controls{gap:4px}.agent-guide-controls .btn{padding:6px 7px}}
-
 /* ChatGPT Workspace Agent API status, separate from regular browser chats. */
 .chatgpt-workspace{border:1px solid #415e78;background:linear-gradient(155deg,#1b3141,#192a3d);padding:12px;border-radius:13px;margin-bottom:10px}
 .workspace-head{display:flex;justify-content:space-between;align-items:flex-start;gap:7px}
@@ -241,6 +214,10 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .now.is-alert .now-label{color:var(--warn)}
 .now h2{font-size:17px;line-height:1.3;margin:4px 0 0;font-weight:700;letter-spacing:-.2px;overflow-wrap:anywhere}
 .now p{font-size:12px;color:var(--muted);margin:5px 0 0;line-height:1.45}
+.hint-card{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px dashed var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.hint-card strong{font-size:13px;font-weight:650}
+.hint-card p{font-size:12px;color:var(--muted);margin:3px 0 0;line-height:1.4}
+.hint-card .btn{flex:none}
 .now-actions{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
 .quick-form{gap:6px;margin:0 0 4px}
 .quick-form input{height:36px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--text);font-size:12px}
@@ -314,8 +291,6 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .calendar-dot{background:var(--accent)}
 .calendar-dot.is-done{background:var(--ok)}
 /* Agents guide uses the same quiet card */
-.agent-guide{background:var(--surface);border:1px solid var(--line)}
-.agent-guide-reopen{justify-content:center;margin:14px 0 0}
 @media (prefers-reduced-motion:reduce){.more>summary:after{transition:none}}
 .modal-card .field textarea{min-height:48px}
 .modal-card .field{margin-bottom:9px}

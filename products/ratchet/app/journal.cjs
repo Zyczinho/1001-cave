@@ -126,4 +126,45 @@ function daySummary(events = [], now = Date.now()) {
   return {since, projects: projects.size, switches, workMs: Math.max(0, workMs), waitMs: Math.max(0, waitMs)};
 }
 
-module.exports = {Journal, readEvents, daySummary, claudeType, chatgptType, TYPES, WORK_EVERY_MS};
+// One quiet hint for the Dziś tab: the next useful thing to do, or null. Rules come from
+// the owner's logs (ANALIZA_LOGOW_2026-11-18.md), cheapest first, no AI and no cost:
+// - waiting: finished agents nobody opened (Nov 12-18: ~26 h of agents idle 5-120 min),
+// - tooMany: four or more projects prompted within an hour (148 switches in 519 prompts),
+// - longSession: one session going all day (multi-day "Dzień dobry" chats lost the thread),
+// - noBreak: three hours of activity without a 20-minute pause.
+// `agents` are visible panel rows ({title, status, updatedAt}); events are today's journal.
+const HOUR = 3600 * 1000;
+function nextHint({events = [], agents = [], now = Date.now()} = {}) {
+  const ago = iso => now - Date.parse(iso || 0);
+  const ready = agents.filter(a => a.status === 'ready' && ago(a.updatedAt) >= 15 * 60000 && ago(a.updatedAt) <= 8 * HOUR)
+    .sort((a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt));
+  if (ready.length) {
+    const min = Math.round(ago(ready[0].updatedAt) / 60000);
+    return {id: 'waiting', title: ready.length === 1 ? 'Gotowe, czeka ' + min + ' min' : ready.length + ' agentów skończyło',
+      text: ready.length === 1 ? clean(ready[0].title, 60) + ': zobacz wynik albo odhacz ✓.' : 'Najdłużej czeka ' + min + ' min. Odbierz albo odhacz ✓.'};
+  }
+  const recent = new Set(events.filter(e => e.type === 'prompt' && now - Date.parse(e.ts) <= HOUR).map(e => e.src + ':' + e.project));
+  if (recent.size >= 4) return {id: 'tooMany', title: recent.size + (recent.size < 5 ? ' projekty' : ' projektów') + ' w godzinę', text: 'Skończ jeden, zanim zaczniesz kolejny.'};
+  const first = new Map(), last = new Map(), prompts = new Map();
+  for (const e of events) {
+    const k = e.src + ':' + e.session, t = Date.parse(e.ts);
+    if (!first.has(k)) first.set(k, t);
+    last.set(k, t);
+    if (e.type === 'prompt') prompts.set(k, (prompts.get(k) || 0) + 1);
+  }
+  for (const [k, t] of first) {
+    if (now - last.get(k) <= 30 * 60000 && last.get(k) - t >= 6 * HOUR && (prompts.get(k) || 0) >= 30)
+      return {id: 'longSession', title: 'Jedna rozmowa od ' + Math.floor((now - t) / HOUR) + ' h', text: 'Zacznij nową od krótkiego przekazania. Długa gubi wątek i zjada limit.'};
+  }
+  let runFrom = null, prev = null;
+  for (const e of events) {
+    const t = Date.parse(e.ts);
+    if (prev === null || t - prev >= 20 * 60000) runFrom = t;
+    prev = t;
+  }
+  if (prev !== null && now - prev < 20 * 60000 && prev - runFrom >= 3 * HOUR)
+    return {id: 'noBreak', title: Math.floor((prev - runFrom) / HOUR) + ' h bez przerwy', text: '10 minut przerwy. Agenci poczekają.'};
+  return null;
+}
+
+module.exports = {Journal, readEvents, daySummary, nextHint, claudeType, chatgptType, TYPES, WORK_EVERY_MS};
