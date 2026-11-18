@@ -41,8 +41,13 @@ test('a click between two polls is kept for the next poll, but not for long',asy
 
 test('a quiet poll ends empty so the extension asks again',async()=>{
   const focus=new BrowserFocus({holdMs:20});
-  assert.equal(await focus.wait(),'');
-  assert.equal(focus.waiters.length,0);
+  // The hold timer is unref'd so Rachet can exit; here nothing else keeps the event
+  // loop alive, and Windows CI ended the run before it fired (cancelled 3 tests).
+  const keepAlive=setTimeout(()=>{},1000);
+  try{
+    assert.equal(await focus.wait(),'');
+    assert.equal(focus.waiters.length,0);
+  }finally{clearTimeout(keepAlive);}
 });
 
 test('extension: finds the open tab without the tabs permission, new tab only as a fallback',()=>{
