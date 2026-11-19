@@ -302,3 +302,8 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .now.waiting{padding:12px 12px 4px}
 .now.waiting .rows{margin-top:6px;background:transparent;border:0;border-radius:0}
 .now.waiting .row{padding-left:2px}
+/* Popraw wyniki: the proposed change and the new address before saving. */
+.refine-name{margin:0 0 10px;font-weight:650}
+.refine-proposal{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin:4px 0 2px}
+.refine-proposal strong{font-size:12px;line-height:1.45}
+.refine-url{font-size:10px;color:var(--muted);overflow-wrap:anywhere;font-family:Consolas,monospace}
