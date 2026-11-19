@@ -3,6 +3,8 @@
 // with one exception: on Stop, when a Rachet guard is on for this session and the task's
 // proof failed, Rachet answers {decision:"block", reason} and this script prints it, so
 // Claude keeps working (Claude Code hooks: Stop decision control).
+// Rachet's own short Claude calls (e.g. "Popraw link") are not the owner's sessions.
+if(process.env.RATCHET_QUIET_SESSION==='1')process.exit(0);
 let input='';
 process.stdin.setEncoding('utf8');
 // Stop carries Claude's whole last message, so the limit is generous; only ids are sent on.

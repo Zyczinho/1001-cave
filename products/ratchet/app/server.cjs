@@ -6,6 +6,7 @@ const http = require('node:http');
 const os = require('node:os');
 const {spawn,execFile,execFileSync} = require('node:child_process');
 const {makeJob,CoordinatorRunner}=require('./coordinator.cjs');
+const {refineLink,applyRefinement,undoRefinement}=require('./link-refine.cjs');
 // "Sprawdź pracę": the reviewing agent may only read files, so Rachet itself collects
 // what changed in the folder (read-only git commands, no shell) and hands it over.
 function folderChanges(dir){
@@ -314,6 +315,14 @@ async function handleAction(key,data) {
     stage.retryUsed=true;stage.status='queued';stage.error='';
     job.status='queued';job.alerted=false;job.updatedAt=new Date().toISOString();
     save();coordinatorRunner.tick();return {queued:true};
+  }
+  // "Popraw link": propose (nothing saved), then apply or undo on the owner's click.
+  if(key==='link:refine'||key==='link:apply'||key==='link:undo'){
+    const i=state.links.findIndex(x=>x.id===String(data.id||''));
+    if(i<0) throw Error('Nie znaleziono skrótu');
+    if(key==='link:refine') return refineLink(state.links[i],data.note);
+    state.links[i]=normalizeItem('links',key==='link:apply'?applyRefinement(state.links[i],data):undoRefinement(state.links[i]));
+    save();return state.links[i];
   }
   if(key==='item:save'){
     if(!['schedule','links','agents'].includes(data.collection)) throw Error('Nieznana kolekcja');

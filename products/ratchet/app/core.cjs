@@ -80,7 +80,11 @@ function normalizeItem(collection, raw) {
     const kind = raw.kind === 'folder' ? 'folder' : 'url';
     const target = cleanText(raw.target, 2048);
     if (!target) throw Error('Podaj link albo ścieżkę folderu');
-    return { id, title, kind, target, group: cleanText(raw.group, 60) || 'Inne' };
+    // Earlier versions of the address after "Popraw link", newest first (one click back).
+    const history = (Array.isArray(raw.history) ? raw.history : []).slice(0, 5)
+      .map(h => ({ target: cleanText(h?.target, 2048), note: cleanText(h?.note, 300), change: cleanText(h?.change, 200), at: cleanText(h?.at, 50) }))
+      .filter(h => h.target);
+    return { id, title, kind, target, group: cleanText(raw.group, 60) || 'Inne', ...(history.length ? { history } : {}) };
   }
   if (collection === 'schedule') {
     const time = cleanText(raw.time, 5);

@@ -76,6 +76,9 @@ const bridge=window.ratchet||{
   coordinatorEnable:async enabled=>{state().coordinator.enabled=enabled;persistDemo();return {enabled};},
   coordinatorRetry:async()=>{throw Error('Uruchamianie agentów działa w aplikacji Windows.');},
   coordinatorRemove:async id=>{state().coordinator.jobs=state().coordinator.jobs.filter(j=>j.id!==id);persistDemo();},
+  refineLink:async()=>{throw Error('Poprawianie linków przez Claude działa w aplikacji Windows.');},
+  applyLink:async()=>{},
+  undoLink:async()=>{},
   checkUpdate:async()=>({available:false,version:'0.2.9',current:'0.2.9'}),
   installUpdate:async()=>toast('Aktualizator działa w aplikacji Windows'),
   testNotification:async()=>({queued:false,notificationsEnabled:false}),
@@ -200,7 +203,40 @@ function renderQuickLinks(limit){
   const items=state().links.slice(0,limit||100);
   return '<div class="rows">'+items.map(x=>'<article class="row link-row"><span class="row-icon">'+I(x.kind==='folder'?'folder':'link')+'</span>'
     +'<button class="row-main" data-action="open" data-kind="'+esc(x.kind)+'" data-target="'+esc(x.target)+'" title="Otwórz"><span class="row-title">'+esc(x.title)+'</span>'+(x.group?'<span class="row-meta">'+esc(x.group)+'</span>':'')+'</button>'
+    // Only saved searches (an address with a query) get "Popraw wyniki".
+    +(x.kind==='url'&&/\?./.test(x.target)?'<button class="row-act quiet-act" data-action="refine" data-id="'+esc(x.id)+'" title="Popraw wyniki" aria-label="Popraw wyniki: '+esc(x.title)+'">'+I('tune')+'</button>':'')
     +'<button class="row-act quiet-act" data-action="edit" data-collection="links" data-id="'+esc(x.id)+'" title="Edytuj" aria-label="Edytuj: '+esc(x.title)+'">'+I('edit')+'</button></article>').join('')+'</div>';
+}
+// "Popraw wyniki": one sentence about what is wrong, Claude proposes a new address,
+// the owner sees the change and saves it (or opens it first). Nothing changes without "Zapisz".
+let refineProposal=null;
+function showRefine(id,note=''){
+  const link=state().links.find(x=>x.id===id);if(!link)return;
+  refineProposal=null;
+  const last=link.history?.[0];
+  $('#modalTitle').textContent='Popraw wyniki';
+  const form=$('#itemForm');form.dataset.mode='refine';form.dataset.id=id;
+  form.innerHTML='<p class="refine-name">'+esc(link.title)+'</p>'
+    +'<div class="field"><label for="field-refine">Co jest nie tak z wynikami?</label><textarea id="field-refine" name="note" maxlength="300" required placeholder="Np. za dużo stanowisk seniorskich, za dużo firm konsultingowych">'+esc(note)+'</textarea></div>'
+    +'<div id="refineResult" aria-live="polite"></div>'
+    +(last?'<p class="hint">Ostatnia zmiana: '+esc(last.change||last.note)+' <button type="button" class="btn tiny ghost" data-action="refine-undo" data-id="'+esc(id)+'">Cofnij</button></p>':'')
+    +'<div class="form-actions" id="refineActions"><button class="btn secondary" type="button" data-action="modal-close">Anuluj</button><button class="btn" type="submit">'+I('tune')+' Popraw</button></div>';
+  window.ratchetHydrateIcons?.($('#modal'));
+  $('#modal').hidden=false;$('#field-refine').focus();
+}
+async function submitRefine(form){
+  const id=form.dataset.id,note=String(new FormData(form).get('note')||'').trim();
+  if(!note)throw Error('Napisz, co jest nie tak z wynikami.');
+  const btn=form.querySelector('button[type="submit"]');btn.disabled=true;btn.textContent='Claude poprawia…';
+  $('#refineResult').innerHTML='<p class="hint">Zwykle trwa to kilka sekund.</p>';
+  try{refineProposal={...await bridge.refineLink(id,note),note};}
+  catch(e){$('#refineResult').innerHTML='';btn.disabled=false;btn.innerHTML=I('tune')+' Popraw';throw e;}
+  const p=refineProposal;
+  $('#refineResult').innerHTML='<div class="refine-proposal"><strong>'+esc(p.same?'Link już spełnia tę uwagę':p.change)+'</strong><span class="refine-url">'+esc(p.url)+'</span></div>';
+  $('#refineActions').innerHTML='<button class="btn ghost" type="button" data-action="refine-preview">'+I('external')+' Podgląd</button><span class="spacer"></span>'
+    +'<button class="btn secondary" type="button" data-action="refine-again" data-id="'+esc(id)+'">Jeszcze raz</button>'
+    +(p.same?'':'<button class="btn" type="button" data-action="refine-save" data-id="'+esc(id)+'">'+I('check')+' Zapisz</button>');
+  window.ratchetHydrateIcons?.($('#modal'));
 }
 // Three words a person understands: works, done, needs you.
 const labels={working:['Pracuje','blue'],needs_attention:['Potrzebuje Cię','amber'],ready:['Gotowe — zobacz','green'],blocked:['Potrzebuje Cię','red'],idle:['Spoczynek','idle']};
@@ -337,7 +373,7 @@ function showModal(collection,id='',prefill={}){
     fields+=input('branch','Gałąź Git (opcjonalnie)',item.branch,'placeholder="feature/xyz"');
     fields+=`<div class="field"><label for="field-note">Co dokładnie robi agent?</label><textarea id="field-note" name="note" placeholder="Ostatnie polecenie, na co czeka, co przetestować">${esc(item.note||'')}</textarea></div>`;
   }
-  $('#itemForm').dataset.collection=collection;$('#itemForm').dataset.id=id;
+  $('#itemForm').dataset.collection=collection;$('#itemForm').dataset.id=id;delete $('#itemForm').dataset.mode;
   const removeBtn=id?`<button class="btn ghost danger-text" type="button" data-action="remove" data-collection="${esc(collection)}" data-id="${esc(id)}">Usuń</button><span class="spacer"></span>`:'';
   $('#itemForm').innerHTML=fields+`<div class="form-actions">${removeBtn}<button class="btn secondary" type="button" data-action="modal-close">Anuluj</button><button class="btn" type="submit">${id?'Zapisz':'Dodaj'}</button></div>`;
   window.ratchetHydrateIcons?.($('#modal'));
@@ -401,6 +437,16 @@ async function handleAction(el){
     if(!DEMO)snapshot=await bridge.snapshot();render();toast(act==='schedule-start'?'Działamy! ✦':act==='schedule-finish'?'Zakończono ✓':'Przypomnę za 10 minut');
   }
   if(act==='open'){await bridge.open(el.dataset.kind,el.dataset.target);toast('Otwieram ↗');}
+  if(act==='refine')showRefine(id);
+  if(act==='refine-again')showRefine(id,refineProposal?.note||'');
+  if(act==='refine-preview'&&refineProposal){await bridge.open('url',refineProposal.url);toast('Otwieram podgląd ↗');}
+  if(act==='refine-save'&&refineProposal){
+    await bridge.applyLink(id,refineProposal);refineProposal=null;
+    if(!DEMO)snapshot=await bridge.snapshot();$('#modal').hidden=true;render();toast('Link poprawiony ✓');
+  }
+  if(act==='refine-undo'){
+    await bridge.undoLink(id);if(!DEMO)snapshot=await bridge.snapshot();$('#modal').hidden=true;render();toast('Przywrócono poprzedni link');
+  }
   if(act==='agent-focus'){await bridge.focusAgent(id);toast('Przechodzę do Claude ↗');}
   if(act==='hint-snooze'){snoozeHint(id);render();return;}
   if(act==='agent-finish'){await bridge.finishAgent(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zakończone. Wróci, gdy znów zaczniesz ✓');}
@@ -465,7 +511,7 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-action]');if(a)safe(()=>handleAction(a));
 });
 document.addEventListener('submit',e=>{
-  if(e.target.id==='itemForm'){e.preventDefault();safe(()=>saveForm(e.target));}
+  if(e.target.id==='itemForm'){e.preventDefault();safe(()=>e.target.dataset.mode==='refine'?submitRefine(e.target):saveForm(e.target));}
   if(e.target.id==='settingsForm'){
     e.preventDefault();safe(async()=>{
       const data=new FormData(e.target),s={repo:String(data.get('repo')||'').trim(),notifications:data.get('notifications')==='on',alwaysOnTop:data.get('alwaysOnTop')==='on',autoStart:data.get('autoStart')==='on',avatarSize:Number(data.get('avatarSize')||84)};
