@@ -14,12 +14,12 @@ orb.addEventListener('pointerup',()=>{if(pointer&&!pointer.moved)bridge?.toggleP
 orb.addEventListener('pointercancel',()=>{pointer=null;});
 function show(snapshot) {
   const a=snapshot?.state?.agents||[];
-  const runs=snapshot?.github?.runs||[];
+  // Only sessions colour the orb; GitHub CI was dropped from the panel (owner never opened it).
   let status='idle';
-  if(runs.some(r=>r.status==='completed'&&['failure','timed_out','action_required'].includes(r.conclusion)) || a.some(x=>x.status==='blocked'))status='blocked';
-  else if(a.some(x=>x.status==='needs_attention')||(snapshot?.github?.overlapping||[]).length)status='needs_attention';
-  else if(a.some(x=>x.status==='working')||runs.some(r=>r.status!=='completed'))status='working';
-  else if(runs.some(r=>r.status==='completed'&&r.conclusion==='success'))status='ready';
+  if(a.some(x=>x.status==='blocked'))status='blocked';
+  else if(a.some(x=>x.status==='needs_attention'))status='needs_attention';
+  else if(a.some(x=>x.status==='working'))status='working';
+  else if(a.some(x=>x.status==='ready'))status='ready';
   orb.dataset.status=status;
   document.getElementById('badge').title=status;
 }

@@ -40,7 +40,7 @@ test('three hours of activity without a 20-minute pause',()=>{
 test('panel shows the hint quietly and never over an alert',()=>{
   const js=fs.readFileSync(path.join(__dirname,'..','ui','panel.js'),'utf8');
   assert.match(js,/renderNow\(\)\+renderHint\(\)/);
-  assert.match(js,/x\.attention\|\|x\.failed/);
+  assert.match(js,/if\(!h\|\|waitingAgents\(\)\.length/);
   assert.match(js,/data-action="hint-snooze"/);
   assert.doesNotMatch(js,/agentGuide/,'the three-step coordinator tutorial is gone');
 });

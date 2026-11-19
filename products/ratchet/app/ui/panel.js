@@ -29,7 +29,7 @@ const demoInitial={
 };
 const loadDemo=()=>{try{return JSON.parse(localStorage.getItem('ratchet-demo'))||demoInitial;}catch{return demoInitial;}};
 const persistDemo=()=>{try{localStorage.setItem('ratchet-demo',JSON.stringify(snapshot));}catch{/* Podgląd osadzony może blokować storage — wtedy działa w pamięci. */}};
-let snapshot=DEMO?loadDemo():demoInitial,tab='today',agentFilter=null,toastTimer,updateInfo=null;
+let snapshot=DEMO?loadDemo():demoInitial,tab='today',toastTimer,updateInfo=null;
 // "Nie teraz" on a hint hides that kind of hint for an hour (UI only, kept per viewer).
 const HINT_KEY='ratchet-hint-snooze';
 let hintSnooze=(()=>{try{return JSON.parse(localStorage.getItem(HINT_KEY))||{};}catch{return {};}})();
@@ -76,8 +76,6 @@ const bridge=window.ratchet||{
   coordinatorEnable:async enabled=>{state().coordinator.enabled=enabled;persistDemo();return {enabled};},
   coordinatorRetry:async()=>{throw Error('Uruchamianie agentów działa w aplikacji Windows.');},
   coordinatorRemove:async id=>{state().coordinator.jobs=state().coordinator.jobs.filter(j=>j.id!==id);persistDemo();},
-  handoff:async()=>{const text=`Rachet (podgląd) — agenci:\n${state().agents.map(a=>`${a.title}: ${a.status} ${a.note}`).join('\n')}`;await navigator.clipboard.writeText(text);return text;},
-  refreshGithub:async()=>({github:null,githubError:'GitHub jest obsługiwany w aplikacji Windows.'}),
   checkUpdate:async()=>({available:false,version:'0.2.9',current:'0.2.9'}),
   installUpdate:async()=>toast('Aktualizator działa w aplikacji Windows'),
   testNotification:async()=>({queued:false,notificationsEnabled:false}),
@@ -91,33 +89,31 @@ function health(){
   const agents=state().agents;
   const jobs=state().coordinator?.jobs||[],chatRuns=state().chatgptRuns||[],signals=state().chatgptSignals||[];
   const running=agents.filter(x=>x.status==='working').length+jobs.filter(x=>x.status==='running').length+chatRuns.filter(x=>['queued','in_progress','suspended','submitting'].includes(x.status)).length+signals.filter(x=>x.status==='working').length;
-  const attention=agents.filter(x=>x.status==='needs_attention'||x.status==='blocked').length+jobs.filter(x=>x.status==='attention').length+chatRuns.filter(x=>x.status==='failed'||x.status==='attention').length+signals.filter(x=>x.status==='needs_attention').length;
-  const failed=(snapshot.github?.runs||[]).some(x=>x.status==='completed'&&['failure','timed_out'].includes(x.conclusion));
-  const overlaps=(snapshot.github?.overlapping||[]).length;
-  return {running,attention,failed,overlaps};
+  const attention=agents.filter(x=>x.status==='needs_attention'||x.status==='blocked').length;
+  return {running,attention};
+}
+// Sessions that stopped and wait for the owner: a question, an error or finished work.
+// Longest wait first, because that one has been idle the longest (owner, 19.11).
+const WAITING={needs_attention:'Pyta o decyzję',blocked:'Błąd — zajrzyj',ready:'Skończyła — zobacz'};
+function waitingAgents(){
+  return state().agents.filter(a=>WAITING[a.status])
+    .sort((x,y)=>Date.parse(x.updatedAt||0)-Date.parse(y.updatedAt||0));
 }
 // The Agents tab shows a small count only when something needs the user.
 function renderBadge(){
-  const h=health(),badge=$('#agentsBadge');if(!badge)return;
-  const n=h.attention+(h.failed?1:0);
+  const n=waitingAgents().length,badge=$('#agentsBadge');if(!badge)return;
   badge.hidden=!n;badge.textContent=n?String(n):'';
 }
 const minutesOf=t=>+String(t).slice(0,2)*60+Number(String(t).slice(3,5));
 const doneToday=t=>Array.isArray(t.completedDates)&&t.completedDates.includes(dateKey());
-// One answer to "what matters now": an agent that needs you, else the current block, else the next one.
+// One answer to "what matters now": sessions waiting for you, else the current block, else the next one.
 function renderNow(){
   const h=health(),nowMin=now().getHours()*60+now().getMinutes();
-  const waiting=state().agents.filter(a=>a.status==='needs_attention'||a.status==='blocked');
-  if(h.attention||h.failed){
-    const a=waiting[0];
-    const title=a?esc(a.title):h.failed?'Test CI na GitHubie nie przeszedł':'Agent czeka na Ciebie';
-    const why=a?esc(a.note||'Czeka na Twoją decyzję'):h.failed?'Zobacz, co się zepsuło.':'Sprawdź listę agentów.';
-    const go=a&&a.source==='hook'&&h.attention===1&&!h.failed
-      ?'<button class="btn" data-action="agent-focus" data-id="'+esc(a.id)+'">'+I('external')+' Przejdź do Claude</button>'
-      :a&&a.target&&h.attention===1&&!h.failed
-      ?'<button class="btn" data-action="open" data-kind="'+esc(a.kind||'url')+'" data-target="'+esc(a.target)+'">'+I('external')+' Otwórz</button>'
-      :'<button class="btn" data-action="metric" data-metric="'+(h.attention?'attention':'risk')+'">Zobacz</button>';
-    return '<section class="now is-alert"><div class="now-label">Potrzebuję Cię'+((h.attention+(h.failed?1:0))>1?' · '+(h.attention+(h.failed?1:0)):'')+'</div><h2>'+title+'</h2><p>'+why+'</p><div class="now-actions">'+go+'</div></section>';
+  const waiting=waitingAgents();
+  if(waiting.length){
+    // One row per session: click jumps straight into it, ✓ clears it without going there.
+    return '<section class="now is-alert waiting"><div class="now-label">Czeka na Ciebie · '+waiting.length+'</div>'
+      +'<div class="rows">'+waiting.map(waitingRow).join('')+'</div></section>';
   }
   const pending=todayTasks().filter(t=>t.enabled&&!doneToday(t));
   const current=pending.find(t=>minutesOf(t.time)<=nowMin&&nowMin<minutesOf(t.endTime||plusMinutes(t.time)));
@@ -138,8 +134,8 @@ function renderNow(){
 // One quiet hint counted by Rachet from today's journal (nextHint in journal.cjs).
 // Never while something already needs you; "Nie teraz" hides that kind for an hour.
 function renderHint(){
-  const h=snapshot.today?.hint,x=health();
-  if(!h||x.attention||x.failed||(hintSnooze[h.id]||0)>Date.now())return '';
+  const h=snapshot.today?.hint;
+  if(!h||waitingAgents().length||(hintSnooze[h.id]||0)>Date.now())return '';
   return '<section class="hint-card" aria-label="Podpowiedź"><div><strong>'+esc(h.title)+'</strong><p>'+esc(h.text)+'</p></div>'
     +'<button class="btn tiny ghost" data-action="hint-snooze" data-id="'+esc(h.id)+'">Nie teraz</button></section>';
 }
@@ -208,17 +204,34 @@ function renderQuickLinks(limit){
 }
 // Three words a person understands: works, done, needs you.
 const labels={working:['Pracuje','blue'],needs_attention:['Potrzebuje Cię','amber'],ready:['Gotowe — zobacz','green'],blocked:['Potrzebuje Cię','red'],idle:['Spoczynek','idle']};
-function renderAgent(a){
-  const [label,color]=labels[a.status]||labels.idle;
-  // A Claude Code session leads to the Claude window; a manual entry to its link.
-  const open=a.source==='hook'?' data-action="agent-focus" data-id="'+esc(a.id)+'" title="Przejdź do Claude"'
+// A Claude Code session leads to the Claude window; a manual entry to its link.
+function agentOpen(a){
+  return a.source==='hook'?' data-action="agent-focus" data-id="'+esc(a.id)+'" title="Przejdź do Claude"'
     :a.target?' data-action="open" data-kind="'+esc(a.kind||'url')+'" data-target="'+esc(a.target)+'" title="Otwórz"'
     :' data-action="edit" data-collection="agents" data-id="'+esc(a.id)+'" title="Edytuj"';
-  // Every automatic row reads the same way. Grey above: where it runs (tool · folder or
-  // ChatGPT project). White: what it is about (session or chat title), never the folder.
+}
+// Every automatic row reads the same way. Grey above: where it runs (tool · folder or
+// ChatGPT project). White: what it is about (session or chat title), never the folder.
+function agentNames(a){
   const tool=a.source==='hook'?'Claude':a.source==='browser'?'ChatGPT':'';
   const topic=tool?(a.topic||'Bez tematu'):'';
   const place=[tool,tool&&String(a.title).toLowerCase()!==tool.toLowerCase()?a.title:''].filter(Boolean).join(' · ');
+  return {tool,topic,place};
+}
+function waitingRow(a){
+  const {tool,topic,place}=agentNames(a);
+  const since=a.updatedAt?Date.now()-Date.parse(a.updatedAt):0;
+  const wait=since>=60000?' · '+duration(since):'';
+  const color=a.status==='ready'?'green':a.status==='blocked'?'red':'amber';
+  return '<article class="row agent-row"><span class="s-dot '+color+'" aria-hidden="true"></span>'
+    +'<button class="row-main"'+agentOpen(a)+'>'+(place?'<span class="row-meta">'+esc(place)+'</span>':'')
+    +'<span class="row-title">'+esc(topic||a.title)+'</span><span class="row-meta">'+esc(WAITING[a.status]+wait)+'</span></button>'
+    +(tool?'<button class="row-act quiet-act" data-action="agent-finish" data-id="'+esc(a.id)+'" title="Odhacz" aria-label="Odhacz: '+esc(topic)+'">'+I('check')+'</button>':'')
+    +'</article>';
+}
+function renderAgent(a){
+  const [label,color]=labels[a.status]||labels.idle;
+  const open=agentOpen(a),{tool,topic,place}=agentNames(a);
   // Guard (pilot): a shield on Claude rows whose project has a proof. On = the agent
   // may not finish until the proof passes (see guardVerdict in core.cjs).
   const guardOptions=snapshot.guardOptions?.[a.id]||[],guardOption=guardOptions[0];
@@ -238,60 +251,14 @@ function renderAgent(a){
       :'<button class="row-act quiet-act" data-action="edit" data-collection="agents" data-id="'+esc(a.id)+'" title="Edytuj" aria-label="Edytuj: '+esc(a.title)+'">'+I('edit')+'</button>')
     +'</article>';
 }
-function renderFilteredAgents(){
-  const all=state().agents, gh=snapshot.github;
-  const titles={working:'Agenci w pracy',attention:'Wymaga uwagi',risk:'Ryzyka i błędy'};
-  let html='<div class="list-head"><h3>'+(titles[agentFilter]||'Agenci')+'</h3><button class="btn tiny secondary" data-action="filter-reset">Wszyscy agenci</button></div>';
-  if(agentFilter==='working'||agentFilter==='attention'){
-    const selected=all.filter(a=>agentFilter==='working'?a.status==='working':a.status==='needs_attention'||a.status==='blocked');
-    html+=selected.map(renderAgent).join('');
-    const tasks=(state().coordinator?.jobs||[]).filter(j=>agentFilter==='working'?j.status==='running':j.status==='attention');
-    const chatTasks=(state().chatgptRuns||[]).filter(j=>agentFilter==='working'?['queued','in_progress','suspended'].includes(j.status):['attention','failed'].includes(j.status));
-    const signalTasks=(state().chatgptSignals||[]).filter(j=>agentFilter==='working'?j.status==='working':j.status==='needs_attention');
-    html+=tasks.map(j=>'<article class="agent-card"><div class="task-title">Koordynator: '+esc(j.title)+'</div><p class="task-note">'+esc(j.status==='running'?'Przekazywanie między agentami trwa':'Brak dalszego wykonawcy, sprawdź zadanie')+'</p><button class="btn tiny secondary" data-action="filter-reset">Otwórz centrum agentów</button></article>').join('');
-    html+=chatTasks.map(j=>'<article class="agent-card"><strong>ChatGPT: '+esc(j.title)+'</strong><p class="task-note">'+esc(j.status)+'</p>'+(j.conversationUrl?'<button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(j.conversationUrl)+'">Otwórz ChatGPT</button>':'')+'</article>').join('');
-    html+=signalTasks.map(j=>'<article class="agent-card"><strong>ChatGPT (wtyczka): '+esc(j.title)+'</strong><p class="task-note">'+esc(j.status)+'</p></article>').join('');
-    if(!selected.length&&!tasks.length&&!chatTasks.length&&!signalTasks.length)html+=empty('Brak agentów','Żadna sesja nie ma teraz tego statusu.','✓');
-    if(agentFilter==='working'){
-      const running=(gh?.runs||[]).filter(x=>x.status!=='completed');
-      html+=running.map(x=>'<div class="pr-card"><div class="pr-title">'+esc(x.name||'GitHub Actions')+' · CI trwa</div><button class="btn tiny secondary" data-action="open" data-kind="url" data-target="'+esc(x.html_url)+'">Otwórz</button></div>').join('');
-    }
-    return html;
-  }
-  const failed=(gh?.runs||[]).filter(x=>['failure','timed_out','action_required'].includes(x.conclusion));
-  const overlaps=gh?.overlapping||[];
-  const blocked=all.filter(x=>x.status==='blocked');
-  html+=failed.map(x=>'<div class="alert danger">'+I('alert')+' <div>'+esc(x.name||'GitHub Actions')+' — '+esc(x.conclusion)+' <button class="btn tiny" data-action="open" data-kind="url" data-target="'+esc(x.html_url)+'">Sprawdź CI</button></div></div>').join('');
-  html+=overlaps.map(x=>{
-    const repo=state().settings.repo;
-    return '<div class="alert">'+I('alert')+' <div>Możliwe nakładanie plików: '+esc(x.files.join(', '))+'<div class="inline-actions"><button class="btn tiny secondary" data-action="open" data-kind="url" data-target="https://github.com/'+esc(repo)+'/pull/'+Number(x.a)+'">PR #'+Number(x.a)+'</button><button class="btn tiny secondary" data-action="open" data-kind="url" data-target="https://github.com/'+esc(repo)+'/pull/'+Number(x.b)+'">PR #'+Number(x.b)+'</button></div></div></div>';
-  }).join('');
-  html+=blocked.map(renderAgent).join('');
-  if(!failed.length&&!overlaps.length&&!blocked.length)html+=empty('Brak wykrytych ryzyk','Na podstawie ostatniego odczytu GitHuba i sesji agentów.','✓');
-  if(snapshot.githubError)html+='<div class="alert danger">'+esc(snapshot.githubError)+'</div>';
-  return html;
-}
-
-
 function renderAgents(){
-  if(agentFilter)return renderFilteredAgents();
-  const a=state().agents,gh=snapshot.github,err=snapshot.githubError;
+  const a=state().agents;
   const order={needs_attention:0,blocked:0,ready:1,working:2,idle:3};
   const sorted=[...a].sort((x,y)=>(order[x.status]??4)-(order[y.status]??4));
   let html='';
   html+='<div class="list-head"><h3>Agenci</h3><button class="btn tiny secondary" data-action="new" data-collection="agents">+ Dodaj</button></div>';
   html+=sorted.length?'<div class="rows">'+sorted.map(renderAgent).join('')+'</div>'
     :'<p class="list-empty">Nikt teraz nie pracuje. Gdy agent skończy albo będzie Cię potrzebować, dam znać.</p>';
-  // GitHub in one line; details only when something is wrong.
-  const failedRuns=(gh?.runs||[]).filter(r=>r.conclusion==='failure').length;
-  const ghLine=gh?(gh.prs.length+' PR · '+(failedRuns?failedRuns+' błąd CI':gh.runs.some(r=>r.status!=='completed')?'CI w toku':'CI w porządku')):(err?'brak odczytu':'sprawdzam…');
-  html+='<div class="list-head"><h3>GitHub</h3><button class="plain-icon" data-action="github-refresh" title="Odśwież" aria-label="Odśwież GitHub">'+I('refresh')+'</button></div>';
-  html+='<div class="rows"><article class="row"><span class="s-dot '+(failedRuns?'red':gh?'green':'idle')+'" aria-hidden="true"></span><button class="row-main" data-action="open" data-kind="url" data-target="https://github.com/'+esc(state().settings.repo)+'/pulls"><span class="row-title">'+esc(state().settings.repo)+'</span><span class="row-meta">'+esc(ghLine)+'</span></button></article></div>';
-  if(failedRuns)html+='<button class="btn tiny danger" data-action="metric" data-metric="risk">Zobacz błąd CI</button>';
-  if(gh?.overlapping?.length)html+='<div class="alert">'+I('alert')+' <div>'+gh.overlapping.length+' '+(gh.overlapping.length===1?'para PR-ów zmienia':'pary PR-ów zmieniają')+' te same pliki. <button class="btn tiny ghost" data-action="metric" data-metric="risk">Pokaż</button></div></div>';
-  if(gh?.prs?.length)html+=more('prs','Otwarte PR-y · '+gh.prs.length,gh.prs.map(p=>{const fail=gh.runs.filter(r=>r.head_sha===p.head_sha).some(r=>r.conclusion==='failure');return '<div class="signal"><span>#'+p.number+' '+esc(p.title)+(fail?'<small class="bad-text">CI błąd</small>':'')+'</span><button class="plain-icon" data-action="open" data-kind="url" data-target="'+esc(p.html_url)+'" title="Otwórz" aria-label="Otwórz PR #'+p.number+'">'+I('external')+'</button></div>';}).join(''));
-  // Only copies text to the clipboard: nothing is sent, started or changed.
-  html+=more('handoff','Skopiuj stan dla nowego agenta','<p class="hint">Kopiuje do schowka jeden tekst: sesje, PR-y, CI i ryzyka. Niczego nie wysyła, nie uruchamia i nie zmienia. Wklej go na początku nowej rozmowy z agentem, żeby nie tłumaczyć wszystkiego od zera.</p><button class="btn small full" data-action="handoff">'+I('copy')+' Skopiuj do schowka</button>');
   return html;
 }
 function renderUpdates(){
@@ -413,9 +380,7 @@ async function handleAction(el){
     showModal('schedule','',{date:day,time:start});
   }
   if(act==='template')showModal('schedule','',templateMap[el.dataset.template]);
-  if(act==='switch'){tab=el.dataset.tab;agentFilter=null;render();}
-  if(act==='metric'){tab='agents';agentFilter=el.dataset.metric;render();}
-  if(act==='filter-reset'){agentFilter=null;render();}
+  if(act==='switch'){tab=el.dataset.tab;render();}
   if(act==='activity-remove'){
     await bridge.removeActivity(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Sygnał usunięty');
   }
@@ -450,8 +415,6 @@ async function handleAction(el){
     if(!option)return;
     await bridge.guardStart(id,option.id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik pilnuje tej sesji 🛡');
   }
-  if(act==='github-refresh'){toast('Sprawdzam GitHub…');const result=await bridge.refreshGithub();snapshot={...snapshot,...result};render();if(result.githubError)toast(result.githubError);else toast('GitHub zaktualizowany');}
-  if(act==='handoff'){await bridge.handoff();toast('Handoff skopiowany do schowka ✓');}
   if(act==='diagnose'){await bridge.diagnose();$('#appMenu').hidden=true;toast('Zlecono lokalną diagnostykę. Raport otworzy się na komputerze.');}
   if(act==='update-check'){
     tab='settings';render();toast('Sprawdzam kanał aktualizacji…');
@@ -498,7 +461,7 @@ document.addEventListener('click',e=>{
     $('#appMenuToggle').setAttribute('aria-expanded','false');
   }
   const tabButton=e.target.closest('[data-tab].tab');
-  if(tabButton){tab=tabButton.dataset.tab;agentFilter=null;render();return;}
+  if(tabButton){tab=tabButton.dataset.tab;render();return;}
   const a=e.target.closest('[data-action]');if(a)safe(()=>handleAction(a));
 });
 document.addEventListener('submit',e=>{
