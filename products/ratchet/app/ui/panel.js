@@ -228,11 +228,11 @@ async function submitRefine(form){
   const id=form.dataset.id,note=String(new FormData(form).get('note')||'').trim();
   if(!note)throw Error('Napisz, co jest nie tak z wynikami.');
   const btn=form.querySelector('button[type="submit"]');btn.disabled=true;btn.textContent='Claude poprawia…';
-  $('#refineResult').innerHTML='<p class="hint">Zwykle trwa to kilka sekund.</p>';
+  $('#refineResult').innerHTML='<p class="hint">Claude poprawia link, zwykle 20–40 sekund.</p>';
   try{refineProposal={...await bridge.refineLink(id,note),note};}
   catch(e){$('#refineResult').innerHTML='';btn.disabled=false;btn.innerHTML=I('tune')+' Popraw';throw e;}
   const p=refineProposal;
-  $('#refineResult').innerHTML='<div class="refine-proposal"><strong>'+esc(p.same?'Link już spełnia tę uwagę':p.change)+'</strong><span class="refine-url">'+esc(p.url)+'</span></div>';
+  $('#refineResult').innerHTML='<div class="refine-proposal"><strong>'+esc(p.same?'Bez zmian: '+p.change.replace(/^bez zmian:?\s*/i,''):p.change)+'</strong><span class="refine-url">'+esc(p.url)+'</span></div>';
   $('#refineActions').innerHTML='<button class="btn ghost" type="button" data-action="refine-preview">'+I('external')+' Podgląd</button><span class="spacer"></span>'
     +'<button class="btn secondary" type="button" data-action="refine-again" data-id="'+esc(id)+'">Jeszcze raz</button>'
     +(p.same?'':'<button class="btn" type="button" data-action="refine-save" data-id="'+esc(id)+'">'+I('check')+' Zapisz</button>');

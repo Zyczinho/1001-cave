@@ -59,10 +59,17 @@ test('save keeps the old address; undo brings it back; history survives a restar
   assert.throws(()=>undoRefinement(LINK),/wcześniejszej/);
   assert.throws(()=>applyRefinement(LINK,{url:'https://pracuj.pl/praca'}),/inną stronę/);
 });
-test('prompt names the real LinkedIn filters and forbids leaving the site',()=>{
+test('prompt names the real filter codes and forbids leaving the site',()=>{
   const p=refinePrompt(LINK,'za dużo seniorów');
-  assert.match(p,/f_E/);assert.match(p,/ta sama domena/);assert.match(p,/"url"/);
-  assert.ok(refineArgs(p).includes('--no-session-persistence'));
+  assert.match(p,/ta sama domena/);assert.match(p,/"url"/);
+  // Checked on the sites 19.11: without these Claude cut "mid" thinking it was senior.
+  assert.match(p,/4 mid-senior/);assert.match(p,/17 junior, 4 mid, 18 senior/);assert.match(p,/praca-zdalna/);
+  const args=refineArgs(p);
+  assert.ok(args.includes('--no-session-persistence'));
+  // The owner's plugins and MCP servers are not loaded for this one-shot call.
+  assert.ok(args.includes('--strict-mcp-config'));
+  assert.equal(args[args.indexOf('--setting-sources')+1],'project');
+  assert.ok(!args.includes('--bare'),'--bare drops claude.ai login');
 });
 test("Rachet's own Claude call does not show up as a session row",()=>{
   const hook=path.join(__dirname,'..','scripts','claude-hook.cjs');

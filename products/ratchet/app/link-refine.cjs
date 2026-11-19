@@ -19,18 +19,26 @@ function refinePrompt(link,note){
     '',
     'Zasady:',
     '- Zostań na tej samej stronie (ta sama domena). Zmieniaj tylko ścieżkę i parametry wyszukiwania.',
-    '- Używaj tylko parametrów, które ta strona naprawdę obsługuje. LinkedIn: keywords (operatory AND, OR, NOT, nawiasy, cudzysłowy), location, geoId, f_E (poziomy doświadczenia 1-6, przecinki jako %2C), f_TPR (np. r86400 = 24 h, r604800 = 7 dni), f_WT (1 stacjonarnie, 2 zdalnie, 3 hybrydowo), sortBy. Pracuj.pl i RocketJobs: tylko ich własne filtry; nie mają wykluczania słów.',
-    '- Jeśli czegoś nie da się zrobić linkiem na tej stronie, zrób to, co się da, i napisz to wprost w "change".',
+    '- Używaj tylko tych filtrów (kody sprawdzone na stronach 19.11.2026):',
+    '  LinkedIn: keywords (AND, OR, NOT, nawiasy, cudzysłowy), location, geoId, sortBy=DD,',
+    '    f_E poziom: 1 staż, 2 entry (junior), 3 associate, 4 mid-senior, 5 director, 6 executive (przecinki jako %2C),',
+    '    f_TPR świeżość: r86400 = 24 h, r604800 = 7 dni, f_WT: 1 stacjonarnie, 2 zdalnie, 3 hybrydowo.',
+    '  Pracuj.pl: et poziom: 1 staż, 3 asystent, 17 junior, 4 mid, 18 senior, 19 ekspert, 20 menedżer; brak wykluczania słów.',
+    '  RocketJobs: ścieżka /oferty-pracy/<miasto lub praca-zdalna>/<kategoria>, experience-level=junior,mid,senior; brak wykluczania słów.',
+    '- Najpierw sprawdź, co link już filtruje. Jeśli już spełnia uwagę, zwróć ten sam url.',
+    '- Jeśli czegoś nie da się zrobić linkiem na tej stronie, zrób to, co się da.',
     '- Zachowaj resztę wyszukiwania bez zmian.',
     '',
     'Odpowiedz wyłącznie jednym obiektem JSON, bez komentarza:',
-    '{"url":"<nowy pełny link https>","change":"<jedno krótkie zdanie po polsku: co zmieniłeś>"}'
+    '{"url":"<pełny link https>","change":"<najwyżej 15 słów po polsku: co zmieniłeś; albo dlaczego nic nie zmieniłeś lub czego nie da się zrobić>"}'
   ].join('\n');
 }
-// No tools at all: Claude only reads the prompt and answers. Hooks stay quiet because
+// No tools at all: Claude only reads the prompt and answers. The owner's own settings,
+// plugins and MCP servers are not loaded (35 s → ~20 s to start, measured 19.11), and
 // claude-hook.cjs exits on RATCHET_QUIET_SESSION, so no "Claude · Temp" row appears.
 function refineArgs(prompt){
   return ['-p','--permission-mode','dontAsk','--tools','','--disallowedTools','mcp__*',
+    '--strict-mcp-config','--setting-sources','project',
     '--disable-slash-commands','--no-session-persistence','--max-turns','1',
     '--model','sonnet','--output-format','text',prompt];
 }
