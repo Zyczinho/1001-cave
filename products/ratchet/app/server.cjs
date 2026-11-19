@@ -25,7 +25,7 @@ const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,readEvents,daySummary,nextHint,claudeType,chatgptType}=require('./journal.cjs');
 const {recordTopic,parseRegister,buildDayReview,reviewText,dayOf}=require('./day-review.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
-const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, GUARDS, guardsFor, guardVerdict, splitEvidence, normalizeVerification, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
+const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, launchCommand, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, GUARDS, guardsFor, guardVerdict, splitEvidence, normalizeVerification, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
 const sessions = new Map();
 // The row's topic is the topic of the session or chat that spoke last.
@@ -238,11 +238,10 @@ function openTarget(kind,target) {
   const t=validateTarget(kind,target);
   if(process.platform!=='win32') return Promise.resolve({wouldOpen:t});
   if(kind==='folder' && !fs.existsSync(t)) throw Error('Folder lub plik nie istnieje: '+t);
-  // explorer.exe opens a validated http(s) URL in the default browser or a folder in
-  // Explorer. No shell, no quoting, and no hidden encoded PowerShell command line,
-  // which antivirus behaviour shields flag as malware.
-  const explorer=path.join(process.env.SystemRoot||'C:\\Windows','explorer.exe');
-  const proc=spawn(explorer,[t],{windowsHide:true,stdio:'ignore',detached:true});
+  // No shell, no quoting, and no hidden encoded PowerShell command line,
+  // which antivirus behaviour shields flag as malware. See launchCommand.
+  const [exe,args]=launchCommand(kind,t,process.env.SystemRoot||'C:\\Windows');
+  const proc=spawn(exe,args,{windowsHide:true,stdio:'ignore',detached:true});
   proc.on('error',e=>console.error('Launch:',e.message));proc.unref();
   return Promise.resolve({opened:true});
 }
