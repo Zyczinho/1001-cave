@@ -138,6 +138,14 @@ function validateTarget(kind, target) {
   if (!['https:', 'http:'].includes(url.protocol)) throw Error('Dozwolone są tylko linki HTTP/HTTPS');
   return url.href;
 }
+// Which program opens a validated target. A folder opens in Explorer. A link goes to
+// the URL protocol handler (the same one Start > Run uses): explorer.exe silently
+// drops an address whose query holds "=" or ",", so every LinkedIn/Pracuj link was dead.
+// Still no shell, no quoting and no PowerShell command line for antivirus to flag.
+function launchCommand(kind, target, systemRoot = 'C:\\Windows') {
+  if (kind === 'folder') return [systemRoot + '\\explorer.exe', [target]];
+  return [systemRoot + '\\System32\\rundll32.exe', ['url.dll,FileProtocolHandler', target]];
+}
 function mergeRepoData(pulls, runs, filesByPr = {}) {
   const prs = (pulls || []).slice(0,30).map(pr => ({number:pr.number,title:pr.title,html_url:pr.html_url,head_sha:pr.head?.sha||'',branch:pr.head?.ref||'',draft:!!pr.draft,mergeable:pr.mergeable,updated_at:pr.updated_at}));
   const prHeads=new Set(prs.map(p=>p.head_sha));
@@ -447,4 +455,4 @@ class BrowserFocus {
     return Object.assign(promise, {cancel: () => finish('', true)});
   }
 }
-module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,transcriptTitle,topicFromNote,rowWakes,GUARDS,guardsFor,guardVerdict,splitEvidence,normalizeVerification,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
+module.exports = {BrowserFocus,defaults,normalizeStore,normalizePanelSize,normalizeItem,dueTasks,dueEndTasks,dayKey,validateTarget,launchCommand,mergeRepoData,handoffText,agentHookOutcome,projectName,parseChatUrl,chatProjectName,tidyAgentRows,transcriptTitle,topicFromNote,rowWakes,GUARDS,guardsFor,guardVerdict,splitEvidence,normalizeVerification,browserChatOutcome,sessionLive,rowStatus,rowKey,STALE_MS};
