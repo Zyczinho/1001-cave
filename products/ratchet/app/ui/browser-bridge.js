@@ -40,8 +40,6 @@ if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.
     coordinatorEnable:enabled=>action('coordinator:enable',{enabled}),
     coordinatorRetry:id=>action('coordinator:retry',{id}),
     coordinatorRemove:id=>action('coordinator:remove',{id}),
-    handoff:async()=>{const value=await action('handoff');await navigator.clipboard.writeText(value);return value;},
-    refreshGithub:()=>action('github:refresh'),
     hidePanel:async()=>{await action('panel:hide');window.close();return true;},
     checkUpdate:()=>action('update:check'),
     installUpdate:()=>action('update:install'),

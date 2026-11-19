@@ -91,7 +91,9 @@ test('clicking an agent alert leads to Claude, not just the panel',()=>{
   assert.match(orb,/\$info\.focusRequests[\s\S]*?Focus-RatchetAgent/);
   // In the panel, a Claude Code session row and the "needs you" card go to Claude.
   assert.match(js,/a\.source==='hook'\?' data-action="agent-focus"/);
-  assert.match(js,/data-action="agent-focus" data-id="'\+esc\(a\.id\)\+'">'\+I\('external'\)\+' Przejdź do Claude/);
+  // The "Czeka na Ciebie" rows use the same jump (agentOpen).
+  assert.match(js,/waiting\.map\(waitingRow\)/);
+  assert.match(js,/function waitingRow\(a\)[\s\S]*?agentOpen\(a\)/);
 });
 
 test('panel: Today and Calendar add through one form; note sits under the link',()=>{

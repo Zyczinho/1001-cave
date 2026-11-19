@@ -298,3 +298,7 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 /* Czas dziś: four counts from the event log, two per row in the narrow panel. */
 .day-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 16px}
 .day-stats .metric b{font-size:16px}
+/* Czeka na Ciebie: one row per waiting session inside the Now card. */
+.now.waiting{padding:12px 12px 4px}
+.now.waiting .rows{margin-top:6px;background:transparent;border:0;border-radius:0}
+.now.waiting .row{padding-left:2px}

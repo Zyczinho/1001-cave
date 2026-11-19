@@ -6,10 +6,8 @@ const path=require('node:path');
 const app=path.resolve(__dirname,'..');
 const read=p=>fs.readFileSync(path.join(app,p),'utf8');
 
-test('P0: status counters navigate to filters and signals are clearable',()=>{
+test('P0: signals are clearable',()=>{
   const js=read('ui/panel.js');
-  assert.match(js,/data-action="metric"/);
-  assert.match(js,/renderFilteredAgents/);
   assert.match(js,/data-action="activity-clear"/);
   assert.match(js,/data-action="activity-remove"/);
   assert.match(js,/clearActivity\(\)/);
