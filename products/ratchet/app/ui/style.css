@@ -310,3 +310,6 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 /* Rachunki: the amount sits in the time column; meta turns red only when overdue or failed. */
 .bill-row .btn.tiny{flex-shrink:0}
 .row-meta.is-bad{color:var(--bad)}
+/* Liczby: a bill added after this month's day is neither paid nor late, just quiet. */
+.row.is-later .row-title{color:var(--muted)}
+.metric.is-bad b{color:var(--bad)}

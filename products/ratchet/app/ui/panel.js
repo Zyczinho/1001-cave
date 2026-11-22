@@ -32,7 +32,7 @@ const demoInitial={
     ]
   },
   bills:{needing:[{id:'b-music',kind:'alert',cycle:'',due:'',daysLeft:null},{id:'b-phone',kind:'due',cycle:'2026-11',due:'2026-11-12',daysLeft:2}],
-    month:{month:'2026-11',rows:[{id:'b-music',title:'Muzyka',amount:24,currency:'zł',mode:'auto',due:'2026-11-05',state:'alert'},{id:'b-phone',title:'Telefon',amount:60,currency:'zł',mode:'manual',due:'2026-11-12',state:'soon'},{id:'b-net',title:'Internet',amount:80,currency:'zł',mode:'manual',due:'2026-11-28',state:'upcoming'}],totals:{'zł':{all:164,left:164}}}},
+    month:{month:'2026-11',rows:[{id:'b-music',title:'Muzyka',amount:24,currency:'zł',mode:'auto',due:'2026-11-05',state:'alert'},{id:'b-phone',title:'Telefon',amount:60,currency:'zł',mode:'manual',due:'2026-11-12',state:'soon'},{id:'b-net',title:'Internet',amount:80,currency:'zł',mode:'manual',due:'2026-11-28',state:'upcoming'}],totals:{'zł':{all:164,left:164,done:0}}}},
   github:null,githubError:'Podgląd przeglądarkowy — monitorowanie GitHuba działa w aplikacji Windows.'
 };
 const loadDemo=()=>{try{return JSON.parse(localStorage.getItem('ratchet-demo'))||demoInitial;}catch{return demoInitial;}};
@@ -180,8 +180,6 @@ function renderToday(){
   html+='<div class="list-head"><h3>Dziś'+(tasks.length?' <span>· '+tasks.filter(doneToday).length+' z '+tasks.length+' zrobione</span>':'')+'</h3><button class="btn tiny secondary" data-action="calendar-add" data-date="'+dateKey()+'">+ Dodaj</button></div>';
   html+=tasks.length?'<div class="rows">'+tasks.map(t=>taskRow(t)).join('')+'</div>'
     :'<p class="list-empty">Pusto. Kliknij „+ Dodaj”.</p>';
-  html+=renderDayTime();
-  html+=renderBills();
   // Shortcuts used to be a tab; folded here they cost one line.
   html+=more('links','Skróty · '+state().links.length,(state().links.length?renderQuickLinks():'<p class="list-empty">Dodaj link do strony, czatu albo folder.</p>')
     +'<button class="btn tiny secondary" data-action="new" data-collection="links">+ Dodaj skrót</button>');
@@ -224,21 +222,36 @@ function billWaitingRow(x){
       :'<button class="btn tiny secondary" data-action="bill-paid" data-id="'+esc(b.id)+'" data-cycle="'+esc(x.cycle)+'" aria-label="Zapłacone: '+esc(b.title)+'">Zapłacone</button>')
     +'</article>';
 }
-const BILL_STATE={paid:'zapłacone',charged:'pobrane',untracked:'przed dodaniem',overdue:'po terminie',soon:'wkrótce',upcoming:'',alert:'nie przeszła'};
-function renderBills(){
+const BILL_STATE={paid:'zapłacone',charged:'pobrane',untracked:'od przyszłego miesiąca',overdue:'po terminie',soon:'wkrótce',upcoming:'',alert:'nie przeszła'};
+// Liczby (owner, 22.11): one tab for what can be counted — this month's bills first,
+// then today's time. "Czeka na Ciebie" in Dziś still carries anything that needs a click.
+function renderNumbers(){
   const m=snapshot.bills?.month,bills=state().bills||[];
-  const add='<button class="btn tiny secondary" data-action="new" data-collection="bills">+ Dodaj rachunek</button>';
-  if(!m||!bills.length)return more('bills','Rachunki','<p class="list-empty">Dodaj telefon, internet, czynsz. Rachet przypomni 3 dni przed terminem.</p>'+add);
-  const left=Object.entries(m.totals).filter(([,t])=>t.left>0).map(([c,t])=>money(t.left,c));
-  const monthName=MONTHS[Number(m.month.slice(5))-1];
-  const summary='Rachunki · '+monthName+' · '+(left.length?'zostało '+left.join(' + '):'wszystko zapłacone');
-  const rows=m.rows.map(r=>{
-    const done=['paid','charged','untracked'].includes(r.state);
-    const meta=[shortDate(r.due),r.mode==='auto'?'z karty':'',BILL_STATE[r.state]].filter(Boolean).join(' · ');
-    return '<article class="row'+(done?' is-done':'')+'"><span class="row-time">'+esc(money(r.amount,r.currency)||'—')+'</span>'
-      +'<button class="row-main" data-action="bill-edit" data-id="'+esc(r.id)+'"><span class="row-title">'+esc(r.title)+'</span><span class="row-meta'+(['overdue','alert'].includes(r.state)?' is-bad':'')+'">'+esc(meta)+'</span></button></article>';
-  }).join('');
-  return more('bills',esc(summary),'<div class="rows">'+rows+'</div>'+add);
+  const add='<button class="btn tiny secondary" data-action="new" data-collection="bills">+ Dodaj</button>';
+  let html='';
+  if(!m||!bills.length){
+    html+='<div class="list-head"><h3>Płatności</h3>'+add+'</div>'
+      +'<p class="list-empty">Dodaj telefon, internet, czynsz. Rachet przypomni 3 dni przed terminem.</p>';
+  }else{
+    const sum=pick=>Object.entries(m.totals).map(([c,t])=>[c,pick(t)]).filter(([,v])=>v>0).map(([c,v])=>money(v,c)).join(' + ')||'0 zł';
+    const count=st=>m.rows.filter(r=>st.includes(r.state)).length;
+    const tile=(value,label,bad)=>'<div class="metric'+(bad?' is-bad':'')+'"><b>'+esc(String(value))+'</b><span>'+esc(label)+'</span></div>';
+    const monthName=MONTHS[Number(m.month.slice(5))-1];
+    html+='<div class="list-head"><h3>Płatności <span>· '+monthName+'</span></h3>'+add+'</div>'
+      +'<div class="day-stats">'+tile(sum(t=>t.left),'zostało do zapłaty')+tile(sum(t=>t.done||0),'zapłacone i pobrane')
+      +tile(count(['overdue']),'po terminie',count(['overdue'])>0)+tile(count(['alert']),'nieudane płatności',count(['alert'])>0)+'</div>';
+    const row=r=>{
+      const done=['paid','charged'].includes(r.state),later=r.state==='untracked';
+      const meta=[shortDate(r.due),BILL_STATE[r.state]].filter(Boolean).join(' · ');
+      return '<article class="row'+(done?' is-done':'')+(later?' is-later':'')+'"><span class="row-time">'+esc(money(r.amount,r.currency)||'—')+'</span>'
+        +'<button class="row-main" data-action="bill-edit" data-id="'+esc(r.id)+'"><span class="row-title">'+esc(r.title)+'</span><span class="row-meta'+(['overdue','alert'].includes(r.state)?' is-bad':'')+'">'+esc(meta)+'</span></button></article>';
+    };
+    const mine=m.rows.filter(r=>r.mode==='manual'),card=m.rows.filter(r=>r.mode==='auto');
+    if(mine.length)html+='<div class="list-head"><h3>Płacisz sam</h3></div><div class="rows">'+mine.map(row).join('')+'</div>';
+    if(card.length)html+='<div class="list-head"><h3>Z karty</h3></div><div class="rows">'+card.map(row).join('')+'</div>';
+  }
+  html+=renderDayTime();
+  return html;
 }
 // Today's time, counted by Rachet from its local event log (journal.cjs, daySummary).
 function duration(ms){
@@ -396,7 +409,7 @@ function compactConfirm(message){
     modal.addEventListener('keydown',keys);no.focus();
   });
 }
-function render(){renderBadge();document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));$('#view').innerHTML=tab==='today'?renderToday():tab==='agents'?renderAgents():renderSettings();window.ratchetHydrateIcons?.(document);}
+function render(){renderBadge();document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));$('#view').innerHTML=tab==='today'?renderToday():tab==='agents'?renderAgents():tab==='numbers'?renderNumbers():renderSettings();window.ratchetHydrateIcons?.(document);}
 const templateMap={job:{title:'Szukanie pracy',time:'09:00',project:'Kariera',target:'https://chatgpt.com/'},city:{title:'Praca nad City Route',time:'10:00',project:'City Route',target:'https://github.com/Zyczinho/city-route-app'},box:{title:'Promocje Box2Box',time:'14:00',project:'Box2Box',target:'https://box2box.com.pl'}};
 const input=(name,label,value='',opts='')=>`<div class="field"><label for="field-${name}">${label}</label><input id="field-${name}" name="${name}" value="${esc(value)}" ${opts}></div>`;
 const select=(name,label,value,options)=>`<div class="field"><label for="field-${name}">${label}</label><select id="field-${name}" name="${name}">${options.map(([v,l])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${l}</option>`).join('')}</select></div>`;
@@ -591,4 +604,4 @@ $('#closePanel').addEventListener('click',()=>safe(()=>bridge.hidePanel()));
 document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#modal').hidden=true;});
 bridge.onSnapshot(next=>{snapshot=next;render();});
 safe(async()=>{snapshot=await bridge.snapshot();if(DEMO)persistDemo();render();if(!DEMO){try{updateInfo=await bridge.checkUpdate();if(updateInfo.available){document.body.classList.add('update-available');toast('Nowy Rachet '+updateInfo.version+' — otwórz Ustawienia');}}catch(e){console.info('Rachet update check:',e.message);}}});
-setInterval(()=>{if(tab==='today')render();},30000);
+setInterval(()=>{if(tab==='today'||tab==='numbers')render();},30000);

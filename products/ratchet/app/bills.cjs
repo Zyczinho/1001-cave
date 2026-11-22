@@ -94,11 +94,13 @@ function monthView(bills,now=new Date()){
   const totals={};
   for(const r of rows){
     if(r.amount===null)continue;
-    const t=totals[r.currency]||(totals[r.currency]={all:0,left:0});
+    const t=totals[r.currency]||(totals[r.currency]={all:0,left:0,done:0});
     t.all+=r.amount;
-    if(!['paid','charged','untracked'].includes(r.state))t.left+=r.amount;
+    // A bill added after its day this month is neither left nor done.
+    if(['paid','charged'].includes(r.state))t.done+=r.amount;
+    else if(r.state!=='untracked')t.left+=r.amount;
   }
-  for(const t of Object.values(totals)){t.all=Math.round(t.all*100)/100;t.left=Math.round(t.left*100)/100;}
+  for(const t of Object.values(totals))for(const k of ['all','left','done'])t[k]=Math.round(t[k]*100)/100;
   return {month:ym,rows,totals};
 }
 function money(amount,currency){

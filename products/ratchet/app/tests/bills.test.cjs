@@ -47,9 +47,9 @@ test('month view: states and what is left to pay per currency',()=>{
   const bills=[bill(),bill({title:'Internet',amount:80,day:28}),bill({title:'Muzyka',mode:'auto',day:14,amount:30}),bill({title:'Newsletter',mode:'auto',day:21,amount:60,currency:'$'})];
   const m=monthView([markPaid(bills[0],'2026-11'),...bills.slice(1)],at('2026-11-20'));
   assert.deepEqual(m.rows.map(r=>[r.title,r.state]),[['Telefon','paid'],['Muzyka','charged'],['Newsletter','upcoming'],['Internet','upcoming']]);
-  assert.deepEqual(m.totals,{'zł':{all:209.9,left:80},'$':{all:60,left:60}});
+  assert.deepEqual(m.totals,{'zł':{all:209.9,left:80,done:129.9},'$':{all:60,left:60,done:0}});
   const late=monthView([bill({since:'2026-11-15'})],at('2026-11-20'));
-  assert.equal(late.rows[0].state,'untracked');assert.equal(late.totals['zł'].left,0);
+  assert.equal(late.rows[0].state,'untracked');assert.equal(late.totals['zł'].left,0);assert.equal(late.totals['zł'].done,0);
 });
 test('one reminder per bill and month, and one per failed payment',()=>{
   const failed=bill({title:'Newsletter',mode:'auto',alert:{text:'Karta odrzuciła $60.',at:'2026-11-22T13:20:00Z'}});
@@ -77,11 +77,13 @@ test('the start list is read once, without duplicates, then set aside',()=>{
   assert.equal(importStartList(dir,r.bills).imported,0);
   fs.rmSync(dir,{recursive:true,force:true});
 });
-test('the panel shows bills in "Czeka na Ciebie" and a folded month list',()=>{
+test('the panel shows bills in "Czeka na Ciebie" and the month in the Liczby tab',()=>{
   const js=fs.readFileSync(path.join(__dirname,'..','ui','panel.js'),'utf8');
   assert.match(js,/bills\.map\(billWaitingRow\)/);
   assert.match(js,/data-action="bill-paid"[\s\S]*?data-cycle/);
-  assert.match(js,/more\('bills'/);
+  assert.match(js,/function renderNumbers\(\)/);
+  assert.match(js,/tab==='numbers'\?renderNumbers\(\)/);
+  assert.doesNotMatch(js,/html\+=renderBills\(\)/);
   const bridge=fs.readFileSync(path.join(__dirname,'..','ui','browser-bridge.js'),'utf8');
   for(const a of ['bill:save','bill:remove','bill:paid','bill:resolved'])assert.ok(bridge.includes("'"+a+"'"),a);
 });
