@@ -57,3 +57,19 @@ test('candidate generator refuses missing/occupied output directory',()=>{
     assert.equal(fs.readFileSync(path.join(dir,'marker'),'utf8'),'do-not-overwrite');
   }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });
+
+// 22.11: bills.cjs was required by core.cjs and server.cjs but missing from the
+// package, so the installed server never answered /api/ping. Every local module a
+// packaged script requires must be packaged too.
+test('every local require of a packaged script is packaged',()=>{
+  const root=path.join(__dirname,'..');
+  const missing=[];
+  for(const file of packageFiles.filter(f=>/\.c?js$/.test(f))){
+    const src=fs.readFileSync(path.join(root,file),'utf8');
+    for(const m of src.matchAll(/require\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g)){
+      const target=path.relative(root,path.resolve(path.dirname(path.join(root,file)),m[1])).split(path.sep).join('/');
+      if(!packageFiles.includes(target))missing.push(file+' -> '+target);
+    }
+  }
+  assert.deepEqual(missing,[]);
+});
