@@ -26,6 +26,8 @@ const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,readEvents,daySummary,nextHint,claudeType,chatgptType}=require('./journal.cjs');
 const {recordTopic,parseRegister,buildDayReview,reviewText,dayOf}=require('./day-review.cjs');
 const {normalizeBill,billsNeedingYou,markPaid,monthView,billReminders,importStartList}=require('./bills.cjs');
+const {providerFor,checkMailbox,applyEvents}=require('./mail.cjs');
+const {MailStore,protect,unprotect}=require('./mail-store.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
 const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, launchCommand, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, GUARDS, guardsFor, guardVerdict, splitEvidence, normalizeVerification, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
@@ -190,8 +192,42 @@ function today(now=Date.now()){
   dayCache={at:now,value};
   return value;
 }
+// Poczta: read-only mailbox checks that turn invoices and failed payments into bill updates.
+const MAIL_EVERY_MS=3600000,MAIL_FIRST_DAYS=45;
+let mailStore=null,mailChecking=false;
+async function checkOne(account,password){
+  const since=account.lastCheck?new Date(Date.parse(account.lastCheck)-2*86400000):new Date(Date.now()-MAIL_FIRST_DAYS*86400000);
+  const seen=new Set(account.seen||[]);
+  const {events,ids}=await checkMailbox({email:account.email,password,since,seen});
+  const r=applyEvents(state.bills,events);
+  if(r.changes.length){state.bills=r.bills;save();checkSchedule();}
+  return {changes:r.changes,account:{lastCheck:new Date().toISOString(),lastError:'',lastChanges:r.changes.slice(-5),seen:[...seen,...ids].slice(-3000)}};
+}
+function mailError(e){
+  const m=String(e&&e.message||e);
+  if(/AUTHENTICATIONFAILED|Invalid credentials|LOGIN failed|authentication failed|Application-specific password/i.test(m))
+    return 'Skrzynka nie przyjęła hasła. Dla Gmaila potrzebne jest hasło aplikacji, dla Onetu włączony dostęp IMAP.';
+  // Avast Mail Shield re-signs mail connections with its "Untrusted Root"; Rachet does not
+  // switch verification off, the owner decides in Avast (Osłona poczty, IMAP).
+  if(/certificate|UNABLE_TO_VERIFY|self[- ]signed/i.test(m))
+    return 'Antywirus przechwytuje połączenie z pocztą i oznacza je jako niezaufane (Avast: Osłona poczty). Rachet nie omija tej blokady.';
+  if(/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|nie odpowiada/i.test(m))return 'Brak połączenia ze skrzynką — sprawdzę przy następnej próbie.';
+  return m.slice(0,200);
+}
+async function checkAllMail(){
+  if(mailChecking||!mailStore)return;
+  mailChecking=true;
+  try{
+    for(const account of mailStore.data.accounts){
+      try{const r=await checkOne(account,await unprotect(account.secret));mailStore.upsert({email:account.email,...r.account});}
+      // lastCheck stays at the last success, so no mail is skipped after a few failed hours.
+      catch(e){mailStore.upsert({email:account.email,lastError:mailError(e),lastTry:new Date().toISOString()});}
+    }
+  }finally{mailChecking=false;}
+}
 function snapshot() {return {state,github,githubError,platform:process.platform,chatgptWorkspaceReady:chatgptWatcher.isConfigured(),today:today(),
   bills:{needing:billsNeedingYou(state.bills).map(x=>({id:x.bill.id,kind:x.kind,cycle:x.cycle||'',due:x.due||'',daysLeft:x.daysLeft??null})),month:monthView(state.bills)},
+  mail:{accounts:mailStore?mailStore.view():[],checking:mailChecking},
   // Guards a Claude row can switch on (pilot: City Route photos).
   guardOptions:Object.fromEntries(state.agents.filter(a=>a.source==='hook').map(a=>[a.id,guardsFor(a.title).map(g=>({id:g.id,label:g.label,maxRounds:g.maxRounds,note:g.note||''}))]).filter(([,g])=>g.length))};}
 async function refreshGithub(force=false) {
@@ -335,12 +371,24 @@ async function handleAction(key,data) {
   if(key==='bill:save'){
     const prev=state.bills.find(x=>x.id===String(data.id||''));
     // The form edits name, amount and day; payment history and a failed-payment note stay.
-    const clean=normalizeBill({...data,...(prev?{paid:prev.paid,since:prev.since,alert:prev.alert}:{})});
+    const clean=normalizeBill({...data,...(prev?{paid:prev.paid,since:prev.since,alert:prev.alert,mailbox:prev.mailbox,mailWords:prev.mailWords}:{})});
     const i=state.bills.findIndex(x=>x.id===clean.id);
     if(i>=0)state.bills[i]=clean;else{if(state.bills.length>=100)throw Error('Limit 100 rachunków');state.bills.push(clean);}
     save();return clean;
   }
   if(key==='bill:remove'){state.bills=state.bills.filter(x=>x.id!==String(data.id||''));save();return true;}
+  if(key==='mail:add'){
+    const email=String(data.email||'').trim().toLowerCase(),password=String(data.password||'');
+    if(!providerFor(email))throw Error('Obsługuję Gmail, Onet (op.pl), WP/o2 i Outlook. Ten adres nie pasuje.');
+    if(!password)throw Error('Wpisz hasło');
+    // Connect first: a wrong password is never stored.
+    let found;
+    try{found=await checkOne({email,...(mailStore.get(email)||{}),secret:null},password);}catch(e){throw Error(mailError(e));}
+    mailStore.upsert({email,secret:await protect(password),...found.account});
+    return {changes:found.changes};
+  }
+  if(key==='mail:remove'){mailStore.remove(data.email);return true;}
+  if(key==='mail:check'){await checkAllMail();return mailStore.view();}
   if(key==='bill:paid'||key==='bill:resolved'){
     const i=state.bills.findIndex(x=>x.id===String(data.id||''));
     if(i<0)throw Error('Nie znaleziono rachunku');
@@ -798,6 +846,7 @@ function fillTopics(){
 function main(){
   read();
   {const r=importStartList(path.dirname(DATA),state.bills);if(r.imported){state.bills=r.bills;save();}}
+  mailStore=new MailStore(path.dirname(DATA));
   // Older versions kept one row per session or chat; the panel now groups them by project.
   const before=state.agents.length;
   // Session rows are recognised by their id too: 0.2.9 builds saved ChatGPT rows as "manual".
@@ -813,6 +862,9 @@ function main(){
   appServer.listen(PORT,'127.0.0.1',()=>console.log('Ratchet '+CURRENT_VERSION+' start: http://127.0.0.1:'+PORT+' commit '+(BUILD.commit||'dev')));
   if(process.env.RATCHET_DISABLE_HOOKS!=='1')startHookServer();
   setInterval(checkSchedule,15000);
+  // Mail: two minutes after start, then every hour.
+  setTimeout(()=>checkAllMail().catch(()=>{}),120000).unref();
+  setInterval(()=>checkAllMail().catch(()=>{}),MAIL_EVERY_MS).unref();
   setInterval(()=>coordinatorRunner.tick(),4000);
   setInterval(()=>chatgptWatcher.poll().catch(()=>{}),15000);
   chatgptWatcher.poll().catch(()=>{});

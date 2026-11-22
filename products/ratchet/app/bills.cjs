@@ -35,7 +35,10 @@ function normalizeBill(raw,now=new Date()){
     currency:CURRENCIES.includes(raw.currency)?raw.currency:'zł',day,
     // manual = you pay it (reminder + "Zapłacone"); auto = the card is charged, Rachet only shows it.
     mode:raw.mode==='auto'?'auto':'manual',
-    link,note:text(raw.note,200),since,paid,alert
+    link,note:text(raw.note,200),since,paid,alert,
+    // Mail matching (mail.cjs): the mailbox it arrives in and extra words to recognise it.
+    ...(text(raw.mailbox,120)?{mailbox:text(raw.mailbox,120).toLowerCase()}:{}),
+    ...(Array.isArray(raw.mailWords)&&raw.mailWords.length?{mailWords:raw.mailWords.map(w=>text(w,40).toLowerCase()).filter(Boolean).slice(0,5)}:{})
   };
 }
 function normalizeBills(list){
