@@ -24,8 +24,16 @@ const demoInitial={
       {id:'box',title:'Box2Box',kind:'url',target:'https://box2box.com.pl',group:'Sklep'},
       {id:'chatgpt',title:'ChatGPT',kind:'url',target:'https://chatgpt.com/',group:'AI'},
       {id:'claude',title:'Claude',kind:'url',target:'https://claude.ai/',group:'AI'}
-    ],agents:[],coordinator:{enabled:false,jobs:[]},chatgptRuns:[],chatgptSignals:[],activity:[],reminded:{}
-  },github:null,githubError:'Podgląd przeglądarkowy — monitorowanie GitHuba działa w aplikacji Windows.'
+    ],agents:[],coordinator:{enabled:false,jobs:[]},chatgptRuns:[],chatgptSignals:[],activity:[],reminded:{},
+    bills:[
+      {id:'b-phone',title:'Telefon',amount:60,currency:'zł',day:12,mode:'manual',link:'',note:'',since:'2026-01-01',paid:[],alert:null},
+      {id:'b-net',title:'Internet',amount:80,currency:'zł',day:28,mode:'manual',link:'',note:'',since:'2026-01-01',paid:[],alert:null},
+      {id:'b-music',title:'Muzyka',amount:24,currency:'zł',day:5,mode:'auto',link:'',note:'',since:'2026-01-01',paid:[],alert:{text:'Karta odrzuciła płatność.',at:'2026-11-21T12:00:00Z'}}
+    ]
+  },
+  bills:{needing:[{id:'b-music',kind:'alert',cycle:'',due:'',daysLeft:null},{id:'b-phone',kind:'due',cycle:'2026-11',due:'2026-11-12',daysLeft:2}],
+    month:{month:'2026-11',rows:[{id:'b-music',title:'Muzyka',amount:24,currency:'zł',mode:'auto',due:'2026-11-05',state:'alert'},{id:'b-phone',title:'Telefon',amount:60,currency:'zł',mode:'manual',due:'2026-11-12',state:'soon'},{id:'b-net',title:'Internet',amount:80,currency:'zł',mode:'manual',due:'2026-11-28',state:'upcoming'}],totals:{'zł':{all:164,left:164}}}},
+  github:null,githubError:'Podgląd przeglądarkowy — monitorowanie GitHuba działa w aplikacji Windows.'
 };
 const loadDemo=()=>{try{return JSON.parse(localStorage.getItem('ratchet-demo'))||demoInitial;}catch{return demoInitial;}};
 const persistDemo=()=>{try{localStorage.setItem('ratchet-demo',JSON.stringify(snapshot));}catch{/* Podgląd osadzony może blokować storage — wtedy działa w pamięci. */}};
@@ -86,7 +94,11 @@ const bridge=window.ratchet||{
   diagnose:async()=>{throw Error('Diagnostyka działa w aplikacji Windows');},
   hidePanel:async()=>toast('Podgląd: ukrywanie działa w aplikacji Windows'),
   quit:async()=>toast('Podgląd: wyłączanie działa w aplikacji Windows'),
-  resetOrb:async()=>toast('Pozycja kuleczki działa w aplikacji Windows')
+  resetOrb:async()=>toast('Pozycja kuleczki działa w aplikacji Windows'),
+  billSave:async()=>{throw Error('Rachunki zapisują się w aplikacji Windows.');},
+  billRemove:async()=>{throw Error('Rachunki zapisują się w aplikacji Windows.');},
+  billPaid:async()=>toast('Podgląd: „Zapłacone” działa w aplikacji Windows'),
+  billResolved:async()=>toast('Podgląd: „Załatwione” działa w aplikacji Windows')
 };
 function health(){
   const agents=state().agents;
@@ -112,11 +124,12 @@ const doneToday=t=>Array.isArray(t.completedDates)&&t.completedDates.includes(da
 // One answer to "what matters now": sessions waiting for you, else the current block, else the next one.
 function renderNow(){
   const h=health(),nowMin=now().getHours()*60+now().getMinutes();
-  const waiting=waitingAgents();
-  if(waiting.length){
+  const waiting=waitingAgents(),bills=billsNeeding();
+  if(waiting.length||bills.length){
     // One row per session: click jumps straight into it, ✓ clears it without going there.
-    return '<section class="now is-alert waiting"><div class="now-label">Czeka na Ciebie · '+waiting.length+'</div>'
-      +'<div class="rows">'+waiting.map(waitingRow).join('')+'</div></section>';
+    // Bills that need you sit in the same list: a failed payment, overdue, or due in 3 days.
+    return '<section class="now is-alert waiting"><div class="now-label">Czeka na Ciebie · '+(waiting.length+bills.length)+'</div>'
+      +'<div class="rows">'+waiting.map(waitingRow).join('')+bills.map(billWaitingRow).join('')+'</div></section>';
   }
   const pending=todayTasks().filter(t=>t.enabled&&!doneToday(t));
   const current=pending.find(t=>minutesOf(t.time)<=nowMin&&nowMin<minutesOf(t.endTime||plusMinutes(t.time)));
@@ -138,7 +151,7 @@ function renderNow(){
 // Never while something already needs you; "Nie teraz" hides that kind for an hour.
 function renderHint(){
   const h=snapshot.today?.hint;
-  if(!h||waitingAgents().length||(hintSnooze[h.id]||0)>Date.now())return '';
+  if(!h||waitingAgents().length||billsNeeding().length||(hintSnooze[h.id]||0)>Date.now())return '';
   return '<section class="hint-card" aria-label="Podpowiedź"><div><strong>'+esc(h.title)+'</strong><p>'+esc(h.text)+'</p></div>'
     +'<button class="btn tiny ghost" data-action="hint-snooze" data-id="'+esc(h.id)+'">Nie teraz</button></section>';
 }
@@ -168,6 +181,7 @@ function renderToday(){
   html+=tasks.length?'<div class="rows">'+tasks.map(t=>taskRow(t)).join('')+'</div>'
     :'<p class="list-empty">Pusto. Kliknij „+ Dodaj”.</p>';
   html+=renderDayTime();
+  html+=renderBills();
   // Shortcuts used to be a tab; folded here they cost one line.
   html+=more('links','Skróty · '+state().links.length,(state().links.length?renderQuickLinks():'<p class="list-empty">Dodaj link do strony, czatu albo folder.</p>')
     +'<button class="btn tiny secondary" data-action="new" data-collection="links">+ Dodaj skrót</button>');
@@ -183,6 +197,49 @@ function renderToday(){
   return html;
 }
 
+// Rachunki (bills.cjs): the server says which bills need you and how the month stands.
+const billById=id=>(state().bills||[]).find(b=>b.id===id);
+const MONTHS=['styczeń','luty','marzec','kwiecień','maj','czerwiec','lipiec','sierpień','wrzesień','październik','listopad','grudzień'];
+function money(amount,currency){
+  if(amount===null||amount===undefined)return '';
+  const n=Number(amount).toLocaleString('pl-PL',{minimumFractionDigits:Number.isInteger(amount)?0:2,maximumFractionDigits:2});
+  return currency==='zł'?n+' zł':currency+n;
+}
+const shortDate=d=>{const [,m,day]=String(d).split('-').map(Number);return day+'.'+pad(m);};
+function dueWords(daysLeft){
+  if(daysLeft<0)return 'po terminie '+(-daysLeft)+' '+(daysLeft===-1?'dzień':'dni');
+  return daysLeft===0?'termin dziś':daysLeft===1?'termin jutro':'termin za '+daysLeft+' dni';
+}
+function billsNeeding(){return (snapshot.bills?.needing||[]).filter(x=>billById(x.id));}
+function billWaitingRow(x){
+  const b=billById(x.id),amount=money(b.amount,b.currency);
+  const alert=x.kind==='alert';
+  const meta=alert?b.alert.text:[amount,dueWords(x.daysLeft)].filter(Boolean).join(' · ');
+  const open=b.link?' data-action="open" data-kind="url" data-target="'+esc(b.link)+'" title="Otwórz płatność"':' data-action="bill-edit" data-id="'+esc(b.id)+'"';
+  return '<article class="row agent-row bill-row"><span class="s-dot '+(alert||x.daysLeft<0?'red':'amber')+'" aria-hidden="true"></span>'
+    +'<button class="row-main"'+open+'><span class="row-meta">'+(alert?'Płatność nie przeszła':'Rachunek')+'</span>'
+    +'<span class="row-title">'+esc(b.title)+'</span><span class="row-meta">'+esc(meta)+'</span></button>'
+    +(alert
+      ?'<button class="btn tiny secondary" data-action="bill-resolved" data-id="'+esc(b.id)+'" aria-label="Załatwione: '+esc(b.title)+'">Załatwione</button>'
+      :'<button class="btn tiny secondary" data-action="bill-paid" data-id="'+esc(b.id)+'" data-cycle="'+esc(x.cycle)+'" aria-label="Zapłacone: '+esc(b.title)+'">Zapłacone</button>')
+    +'</article>';
+}
+const BILL_STATE={paid:'zapłacone',charged:'pobrane',untracked:'przed dodaniem',overdue:'po terminie',soon:'wkrótce',upcoming:'',alert:'nie przeszła'};
+function renderBills(){
+  const m=snapshot.bills?.month,bills=state().bills||[];
+  const add='<button class="btn tiny secondary" data-action="new" data-collection="bills">+ Dodaj rachunek</button>';
+  if(!m||!bills.length)return more('bills','Rachunki','<p class="list-empty">Dodaj telefon, internet, czynsz. Rachet przypomni 3 dni przed terminem.</p>'+add);
+  const left=Object.entries(m.totals).filter(([,t])=>t.left>0).map(([c,t])=>money(t.left,c));
+  const monthName=MONTHS[Number(m.month.slice(5))-1];
+  const summary='Rachunki · '+monthName+' · '+(left.length?'zostało '+left.join(' + '):'wszystko zapłacone');
+  const rows=m.rows.map(r=>{
+    const done=['paid','charged','untracked'].includes(r.state);
+    const meta=[shortDate(r.due),r.mode==='auto'?'z karty':'',BILL_STATE[r.state]].filter(Boolean).join(' · ');
+    return '<article class="row'+(done?' is-done':'')+'"><span class="row-time">'+esc(money(r.amount,r.currency)||'—')+'</span>'
+      +'<button class="row-main" data-action="bill-edit" data-id="'+esc(r.id)+'"><span class="row-title">'+esc(r.title)+'</span><span class="row-meta'+(['overdue','alert'].includes(r.state)?' is-bad':'')+'">'+esc(meta)+'</span></button></article>';
+  }).join('');
+  return more('bills',esc(summary),'<div class="rows">'+rows+'</div>'+add);
+}
 // Today's time, counted by Rachet from its local event log (journal.cjs, daySummary).
 function duration(ms){
   const min=Math.round((ms||0)/60000);
@@ -344,8 +401,8 @@ const templateMap={job:{title:'Szukanie pracy',time:'09:00',project:'Kariera',ta
 const input=(name,label,value='',opts='')=>`<div class="field"><label for="field-${name}">${label}</label><input id="field-${name}" name="${name}" value="${esc(value)}" ${opts}></div>`;
 const select=(name,label,value,options)=>`<div class="field"><label for="field-${name}">${label}</label><select id="field-${name}" name="${name}">${options.map(([v,l])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${l}</option>`).join('')}</select></div>`;
 function showModal(collection,id='',prefill={}){
-  const item=state()[collection].find(x=>x.id===id)||prefill||{};
-  $('#modalTitle').textContent=(id?'Edytuj':'Dodaj')+' '+({schedule:'blok dnia',links:'skrót',agents:'agenta'}[collection]);
+  const item=(state()[collection]||[]).find(x=>x.id===id)||prefill||{};
+  $('#modalTitle').textContent=(id?'Edytuj':'Dodaj')+' '+({schedule:'blok dnia',links:'skrót',agents:'agenta',bills:'rachunek'}[collection]);
   const days=item.days||[now().getDay()];
   let fields='';
   if(collection==='schedule'){
@@ -359,6 +416,11 @@ function showModal(collection,id='',prefill={}){
     extra+=input('project','Projekt',item.project,'placeholder="Np. City Route"');
     extra+=`<label class="checkbox-row"><input type="checkbox" name="enabled" ${item.enabled!==false?'checked':''}> Przypominaj o początku i końcu</label>`;
     fields+=more('task-more','Więcej opcji',extra);
+  } else if(collection==='bills'){
+    fields+=input('title','Za co?',item.title,'placeholder="Np. Telefon, Internet, Czynsz" required maxlength="80"');
+    fields+=`<div class="form-grid">${input('amount','Kwota',item.amount??'','inputmode="decimal" placeholder="Np. 80"')}${select('currency','Waluta',item.currency||'zł',[['zł','zł'],['€','€'],['$','$']])}</div>`;
+    fields+=`<div class="form-grid">${input('day','Dzień miesiąca',item.day||'','type="number" min="1" max="31" required')}${select('mode','Jak płacisz?',item.mode||'manual',[['manual','Sam (przypomnij)'],['auto','Z karty (tylko pokaż)']])}</div>`;
+    fields+=input('link','Link do płatności (opcjonalnie)',item.link,'placeholder="https://..."');
   } else if(collection==='links'){
     fields+=input('title','Nazwa skrótu',item.title,'placeholder="Np. Sesja o City Route" required');
     fields+=select('kind','Typ celu',item.kind||'url',[['url','Strona / czat'],['folder','Folder / plik Windows']]);
@@ -401,7 +463,8 @@ async function saveForm(form){
   if(col==='agents'){
     item.source='manual';item.updatedAt=new Date().toISOString();
   }
-  await bridge.save(col,item);
+  if(col==='bills')await bridge.billSave(item);
+  else await bridge.save(col,item);
   if(!DEMO)snapshot=await bridge.snapshot();
   $('#modal').hidden=true;
   render();toast('Zapisane ✓');
@@ -427,10 +490,11 @@ async function handleAction(el){
   if(act==='edit')showModal(col,id);
   if(act==='modal-close')$('#modal').hidden=true;
   if(act==='remove') {
-    const item=state()[col].find(x=>x.id===id);
+    const item=(state()[col]||[]).find(x=>x.id===id);
     if(!await compactConfirm(`Usunąć: ${item?.title||'element'}?`))return;
     $('#modal').hidden=true;
-    await bridge.remove(col,id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Usunięto');
+    if(col==='bills')await bridge.billRemove(id);else await bridge.remove(col,id);
+    if(!DEMO)snapshot=await bridge.snapshot();render();toast('Usunięto');
   }
   if(act==='schedule-start'||act==='schedule-snooze'||act==='schedule-finish'){
     await bridge.scheduleAction(id,act==='schedule-start'?'start':act==='schedule-finish'?'finish':'snooze');
@@ -449,6 +513,9 @@ async function handleAction(el){
   }
   if(act==='agent-focus'){await bridge.focusAgent(id);toast('Przechodzę do Claude ↗');}
   if(act==='hint-snooze'){snoozeHint(id);render();return;}
+  if(act==='bill-edit')showModal('bills',id);
+  if(act==='bill-paid'){await bridge.billPaid(id,el.dataset.cycle);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zapłacone ✓');}
+  if(act==='bill-resolved'){await bridge.billResolved(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Załatwione ✓');}
   if(act==='agent-finish'){await bridge.finishAgent(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zakończone. Wróci, gdy znów zaczniesz ✓');}
   if(act==='guard-toggle'){
     if(el.dataset.on){await bridge.guardStop(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Strażnik wyłączony');return;}

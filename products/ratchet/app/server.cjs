@@ -25,6 +25,7 @@ const {ChatGPTWorkspaceWatcher}=require('./chatgpt-workspace.cjs');
 const {startSignal,updateSignal}=require('./chatgpt-signal.cjs');
 const {Journal,readEvents,daySummary,nextHint,claudeType,chatgptType}=require('./journal.cjs');
 const {recordTopic,parseRegister,buildDayReview,reviewText,dayOf}=require('./day-review.cjs');
+const {normalizeBill,billsNeedingYou,markPaid,monthView,billReminders,importStartList}=require('./bills.cjs');
 const {CURRENT_VERSION,checkUpdate,stageUpdate} = require('./updater.cjs');
 const {defaults, normalizeStore, normalizePanelSize, normalizeItem, dueTasks, dueEndTasks, dayKey, validateTarget, launchCommand, mergeRepoData, handoffText, agentHookOutcome, projectName, parseChatUrl, chatProjectName, tidyAgentRows, transcriptTitle, topicFromNote, rowWakes, GUARDS, guardsFor, guardVerdict, splitEvidence, normalizeVerification, browserChatOutcome, BrowserFocus, sessionLive, rowStatus, rowKey, STALE_MS} = require('./core.cjs');
 // Live Claude Code sessions and ChatGPT chats (memory only). The profile keeps one row per project.
@@ -154,6 +155,12 @@ function checkSchedule(now = new Date()) {
     state.activity.unshift(notification(task,'end',now));
     updated=true;
   }
+  // Bills: one reminder when a bill enters its 3-day window, is overdue or a payment failed.
+  for(const r of billReminders(state.bills,state.reminded,now)){
+    state.reminded[r.key]=true;
+    state.activity.unshift({id:`${Date.now()}-${r.key}-${Math.random()}`,text:r.text,at:now.toISOString(),level:'reminder',phase:'bill'});
+    updated=true;
+  }
   if(updated){state.activity=state.activity.slice(0,80);save();}
 }
 function health() {
@@ -184,6 +191,7 @@ function today(now=Date.now()){
   return value;
 }
 function snapshot() {return {state,github,githubError,platform:process.platform,chatgptWorkspaceReady:chatgptWatcher.isConfigured(),today:today(),
+  bills:{needing:billsNeedingYou(state.bills).map(x=>({id:x.bill.id,kind:x.kind,cycle:x.cycle||'',due:x.due||'',daysLeft:x.daysLeft??null})),month:monthView(state.bills)},
   // Guards a Claude row can switch on (pilot: City Route photos).
   guardOptions:Object.fromEntries(state.agents.filter(a=>a.source==='hook').map(a=>[a.id,guardsFor(a.title).map(g=>({id:g.id,label:g.label,maxRounds:g.maxRounds,note:g.note||''}))]).filter(([,g])=>g.length))};}
 async function refreshGithub(force=false) {
@@ -323,6 +331,21 @@ async function handleAction(key,data) {
     if(key==='link:refine') return refineLink(state.links[i],data.note);
     state.links[i]=normalizeItem('links',key==='link:apply'?applyRefinement(state.links[i],data):undoRefinement(state.links[i]));
     save();return state.links[i];
+  }
+  if(key==='bill:save'){
+    const prev=state.bills.find(x=>x.id===String(data.id||''));
+    // The form edits name, amount and day; payment history and a failed-payment note stay.
+    const clean=normalizeBill({...data,...(prev?{paid:prev.paid,since:prev.since,alert:prev.alert}:{})});
+    const i=state.bills.findIndex(x=>x.id===clean.id);
+    if(i>=0)state.bills[i]=clean;else{if(state.bills.length>=100)throw Error('Limit 100 rachunków');state.bills.push(clean);}
+    save();return clean;
+  }
+  if(key==='bill:remove'){state.bills=state.bills.filter(x=>x.id!==String(data.id||''));save();return true;}
+  if(key==='bill:paid'||key==='bill:resolved'){
+    const i=state.bills.findIndex(x=>x.id===String(data.id||''));
+    if(i<0)throw Error('Nie znaleziono rachunku');
+    state.bills[i]=key==='bill:paid'?markPaid(state.bills[i],data.cycle):{...state.bills[i],alert:null};
+    save();return state.bills[i];
   }
   if(key==='item:save'){
     if(!['schedule','links','agents'].includes(data.collection)) throw Error('Nieznana kolekcja');
@@ -774,6 +797,7 @@ function fillTopics(){
 }
 function main(){
   read();
+  {const r=importStartList(path.dirname(DATA),state.bills);if(r.imported){state.bills=r.bills;save();}}
   // Older versions kept one row per session or chat; the panel now groups them by project.
   const before=state.agents.length;
   // Session rows are recognised by their id too: 0.2.9 builds saved ChatGPT rows as "manual".

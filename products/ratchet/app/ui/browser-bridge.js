@@ -50,6 +50,10 @@ if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.
     testNotification:()=>action('notification:test'),
     notificationStatus:id=>action('notification:status',{id}),
     quit:()=>action('quit'),
-    resetOrb:()=>action('orb:reset')
+    resetOrb:()=>action('orb:reset'),
+    billSave:bill=>action('bill:save',bill),
+    billRemove:id=>action('bill:remove',{id}),
+    billPaid:(id,cycle)=>action('bill:paid',{id,cycle}),
+    billResolved:id=>action('bill:resolved',{id})
   };
 }
