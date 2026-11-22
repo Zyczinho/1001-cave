@@ -307,3 +307,9 @@ button:focus-visible{outline:2px solid #9bc9ff;outline-offset:2px}
 .refine-proposal{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin:4px 0 2px}
 .refine-proposal strong{font-size:12px;line-height:1.45}
 .refine-url{font-size:10px;color:var(--muted);overflow-wrap:anywhere;font-family:Consolas,monospace}
+/* Rachunki: the amount sits in the time column; meta turns red only when overdue or failed. */
+.bill-row .btn.tiny{flex-shrink:0}
+.row-meta.is-bad{color:var(--bad)}
+/* Liczby: a bill added after this month's day is neither paid nor late, just quiet. */
+.row.is-later .row-title{color:var(--muted)}
+.metric.is-bad b{color:var(--bad)}

@@ -7,6 +7,7 @@ const {normalizeDayLog}=require('./day-review.cjs');
 const COLLECTIONS = ['schedule', 'links', 'agents'];
 const STATUS = ['working', 'needs_attention', 'ready', 'blocked', 'idle'];
 const VALID_WEEKDAYS = [0,1,2,3,4,5,6];
+const {normalizeBills} = require('./bills.cjs');
 const INIT = {
   version: 1,
   settings: { repo: 'Zyczinho/city-route-app', notifications: true, autoStart: false, alwaysOnTop: true, avatarSize: 84, panelSize: null },
@@ -32,6 +33,8 @@ const INIT = {
   verifications: [],
   // Session and chat titles of the last 7 days, for "Podsumuj dzień" (day-review.cjs).
   dayLog: [],
+  // Bills the owner pays or is charged for every month (bills.cjs).
+  bills: [],
   orbPosition: null
 };
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -57,6 +60,7 @@ function normalizeStore(obj) {
       .slice(-20));
   if (Array.isArray(obj.verifications)) def.verifications = obj.verifications.slice(0, 30).map(normalizeVerification);
   def.dayLog = normalizeDayLog(obj.dayLog);
+  def.bills = normalizeBills(obj.bills);
   def.coordinator=normalizeCoordinator(obj.coordinator);
   def.chatgptRuns=normalizeChatGPTRuns(obj.chatgptRuns);
   def.chatgptSignals=normalizeSignals(obj.chatgptSignals);
