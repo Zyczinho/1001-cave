@@ -98,7 +98,10 @@ const bridge=window.ratchet||{
   billSave:async()=>{throw Error('Rachunki zapisują się w aplikacji Windows.');},
   billRemove:async()=>{throw Error('Rachunki zapisują się w aplikacji Windows.');},
   billPaid:async()=>toast('Podgląd: „Zapłacone” działa w aplikacji Windows'),
-  billResolved:async()=>toast('Podgląd: „Załatwione” działa w aplikacji Windows')
+  billResolved:async()=>toast('Podgląd: „Załatwione” działa w aplikacji Windows'),
+  mailAdd:async()=>{throw Error('Podłączanie poczty działa w aplikacji Windows.');},
+  mailCheck:async()=>{},
+  mailRemove:async()=>{}
 };
 function health(){
   const agents=state().agents;
@@ -250,8 +253,24 @@ function renderNumbers(){
     if(mine.length)html+='<div class="list-head"><h3>Płacisz sam</h3></div><div class="rows">'+mine.map(row).join('')+'</div>';
     if(card.length)html+='<div class="list-head"><h3>Z karty</h3></div><div class="rows">'+card.map(row).join('')+'</div>';
   }
+  html+=renderMail();
   html+=renderDayTime();
   return html;
+}
+// Poczta: mailboxes Rachet reads once an hour (read-only) for invoices and failed payments.
+function renderMail(){
+  const accounts=snapshot.mail?.accounts||[],checking=snapshot.mail?.checking;
+  let html='<div class="list-head"><h3>Poczta'+(checking?' <span>· sprawdzam…</span>':'')+'</h3>'
+    +(accounts.length?'<button class="btn tiny ghost" data-action="mail-check">Sprawdź teraz</button>':'')+'</div>';
+  if(accounts.length){
+    html+='<div class="rows">'+accounts.map(a=>{
+      const meta=a.lastError||(a.lastCheck?'sprawdzone '+formatTime(a.lastCheck)+(a.lastChanges.length?' · '+a.lastChanges.slice(-2).join(', '):''):'jeszcze nie sprawdzone');
+      return '<article class="row"><span class="s-dot '+(a.lastError?'red':'green')+'" aria-hidden="true"></span>'
+        +'<div class="row-main"><span class="row-title">'+esc(a.email)+'</span><span class="row-meta'+(a.lastError?' is-bad':'')+'">'+esc(meta)+'</span></div>'
+        +'<button class="row-act quiet-act" data-action="mail-remove" data-id="'+esc(a.email)+'" title="Odłącz skrzynkę" aria-label="Odłącz '+esc(a.email)+'">'+I('x')+'</button></article>';
+    }).join('')+'</div>';
+  }else html+='<p class="list-empty">Podłącz skrzynkę, a Rachet sam znajdzie faktury i nieudane płatności.</p>';
+  return html+'<button class="btn tiny secondary" data-action="new" data-collection="mail">+ Podłącz skrzynkę</button>';
 }
 // Today's time, counted by Rachet from its local event log (journal.cjs, daySummary).
 function duration(ms){
@@ -415,7 +434,7 @@ const input=(name,label,value='',opts='')=>`<div class="field"><label for="field
 const select=(name,label,value,options)=>`<div class="field"><label for="field-${name}">${label}</label><select id="field-${name}" name="${name}">${options.map(([v,l])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${l}</option>`).join('')}</select></div>`;
 function showModal(collection,id='',prefill={}){
   const item=(state()[collection]||[]).find(x=>x.id===id)||prefill||{};
-  $('#modalTitle').textContent=(id?'Edytuj':'Dodaj')+' '+({schedule:'blok dnia',links:'skrót',agents:'agenta',bills:'rachunek'}[collection]);
+  $('#modalTitle').textContent=(id?'Edytuj':'Dodaj')+' '+({schedule:'blok dnia',links:'skrót',agents:'agenta',bills:'rachunek',mail:'skrzynkę'}[collection]);
   const days=item.days||[now().getDay()];
   let fields='';
   if(collection==='schedule'){
@@ -429,6 +448,12 @@ function showModal(collection,id='',prefill={}){
     extra+=input('project','Projekt',item.project,'placeholder="Np. City Route"');
     extra+=`<label class="checkbox-row"><input type="checkbox" name="enabled" ${item.enabled!==false?'checked':''}> Przypominaj o początku i końcu</label>`;
     fields+=more('task-more','Więcej opcji',extra);
+  } else if(collection==='mail'){
+    fields+=input('email','Adres e-mail','','type="email" required autocomplete="off" placeholder="np. ktos@gmail.com"');
+    fields+=input('password','Hasło','','type="password" required autocomplete="new-password"');
+    fields+='<p class="hint"><b>Gmail:</b> wklej hasło aplikacji z myaccount.google.com/apppasswords (wymaga weryfikacji dwuetapowej), nie zwykłe hasło.<br>'
+      +'<b>Onet (op.pl):</b> najpierw włącz w ustawieniach poczty dostęp przez programy pocztowe (IMAP), potem wpisz hasło do poczty.<br>'
+      +'Rachet tylko czyta (nie oznacza maili jako przeczytane). Hasło zostaje na tym komputerze, zaszyfrowane przez Windows.</p>';
   } else if(collection==='bills'){
     fields+=input('title','Za co?',item.title,'placeholder="Np. Telefon, Internet, Czynsz" required maxlength="80"');
     fields+=`<div class="form-grid">${input('amount','Kwota',item.amount??'','inputmode="decimal" placeholder="Np. 80"')}${select('currency','Waluta',item.currency||'zł',[['zł','zł'],['€','€'],['$','$']])}</div>`;
@@ -475,6 +500,14 @@ async function saveForm(form){
   }
   if(col==='agents'){
     item.source='manual';item.updatedAt=new Date().toISOString();
+  }
+  if(col==='mail'){
+    // Connecting reads up to 45 days of mail once, so it can take a while.
+    toast('Łączę ze skrzynką i czytam ostatnie 45 dni…');
+    const r=await bridge.mailAdd(item);
+    snapshot=await bridge.snapshot();$('#modal').hidden=true;render();
+    toast(r?.changes?.length?'Podłączone ✓ Zmiany: '+r.changes.length:'Podłączone ✓ Nic nowego');
+    return;
   }
   if(col==='bills')await bridge.billSave(item);
   else await bridge.save(col,item);
@@ -527,6 +560,11 @@ async function handleAction(el){
   if(act==='agent-focus'){await bridge.focusAgent(id);toast('Przechodzę do Claude ↗');}
   if(act==='hint-snooze'){snoozeHint(id);render();return;}
   if(act==='bill-edit')showModal('bills',id);
+  if(act==='mail-check'){toast('Sprawdzam pocztę…');await bridge.mailCheck();if(!DEMO)snapshot=await bridge.snapshot();render();toast('Poczta sprawdzona ✓');}
+  if(act==='mail-remove'){
+    if(!await compactConfirm('Odłączyć '+id+'? Rachet usunie zapisane hasło.'))return;
+    await bridge.mailRemove(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Odłączone');
+  }
   if(act==='bill-paid'){await bridge.billPaid(id,el.dataset.cycle);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zapłacone ✓');}
   if(act==='bill-resolved'){await bridge.billResolved(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Załatwione ✓');}
   if(act==='agent-finish'){await bridge.finishAgent(id);if(!DEMO)snapshot=await bridge.snapshot();render();toast('Zakończone. Wróci, gdy znów zaczniesz ✓');}

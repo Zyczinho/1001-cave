@@ -54,6 +54,9 @@ if(!window.ratchet && location.protocol==='http:' && location.hostname==='127.0.
     billSave:bill=>action('bill:save',bill),
     billRemove:id=>action('bill:remove',{id}),
     billPaid:(id,cycle)=>action('bill:paid',{id,cycle}),
-    billResolved:id=>action('bill:resolved',{id})
+    billResolved:id=>action('bill:resolved',{id}),
+    mailAdd:({email,password})=>action('mail:add',{email,password}),
+    mailCheck:()=>action('mail:check'),
+    mailRemove:email=>action('mail:remove',{email})
   };
 }
